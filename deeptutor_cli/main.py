@@ -8,10 +8,11 @@ from deeptutor.logging import configure_logging
 from deeptutor.runtime.mode import RunMode, set_mode
 from deeptutor.services.setup import get_backend_port
 
+from .auth_cmd import register as register_auth
 from .book import register as register_book
 from .bot import register as register_bot
 from .chat import register as register_chat
-from .common import build_turn_request, console, maybe_run
+from .common import build_turn_request, console, get_cli_app, maybe_run
 from .config_cmd import register as register_config
 from .kb import register as register_kb
 from .memory import register as register_memory
@@ -40,6 +41,7 @@ session_app = typer.Typer(help="Manage shared sessions.")
 notebook_app = typer.Typer(help="Manage notebooks and imported markdown records.")
 provider_app = typer.Typer(help="Manage provider OAuth login.")
 book_app = typer.Typer(help="Manage interactive Books (BookEngine).")
+auth_app = typer.Typer(help="Register, login, and manage CLI authentication.")
 
 app.add_typer(bot_app, name="bot")
 app.add_typer(chat_app, name="chat")
@@ -51,6 +53,7 @@ app.add_typer(session_app, name="session")
 app.add_typer(notebook_app, name="notebook")
 app.add_typer(provider_app, name="provider")
 app.add_typer(book_app, name="book")
+app.add_typer(auth_app, name="auth")
 
 register_bot(bot_app)
 register_chat(chat_app)
@@ -62,6 +65,7 @@ register_session(session_app)
 register_notebook(notebook_app)
 register_provider(provider_app)
 register_book(book_app)
+register_auth(auth_app)
 
 
 @app.command("run")
@@ -84,8 +88,6 @@ def run_capability(
     fmt: str = typer.Option("rich", "--format", "-f", help="Output format: rich | json."),
 ) -> None:
     """Run any capability in a single turn (agent-first entry point)."""
-    from deeptutor.app import DeepTutorApp
-
     from .common import run_turn_and_render
 
     request = build_turn_request(
@@ -100,7 +102,7 @@ def run_capability(
         notebook_refs=notebook_ref,
         history_refs=history_ref,
     )
-    maybe_run(run_turn_and_render(app=DeepTutorApp(), request=request, fmt=fmt))
+    maybe_run(run_turn_and_render(app=get_cli_app(), request=request, fmt=fmt))
 
 
 @app.command()

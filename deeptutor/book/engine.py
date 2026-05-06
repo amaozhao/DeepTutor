@@ -1218,14 +1218,18 @@ class BookEngine:
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-_engine: BookEngine | None = None
+_engines: dict[str, BookEngine] = {}
 
 
 def get_book_engine() -> BookEngine:
-    global _engine
-    if _engine is None:
-        _engine = BookEngine()
-    return _engine
+    from deeptutor.services.path_service import get_path_service
+
+    key = str(get_path_service().get_book_dir().resolve())
+    engine = _engines.get(key)
+    if engine is None:
+        engine = BookEngine()
+        _engines[key] = engine
+    return engine
 
 
 __all__ = ["BookEngine", "get_book_engine"]

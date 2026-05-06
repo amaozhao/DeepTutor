@@ -1090,14 +1090,21 @@ class TurnRuntimeManager:
             logger.debug("Failed to mirror turn event to workspace", exc_info=True)
 
 
-_runtime_instance: TurnRuntimeManager | None = None
+_runtime_instances: dict[str, TurnRuntimeManager] = {}
 
 
 def get_turn_runtime_manager() -> TurnRuntimeManager:
-    global _runtime_instance
-    if _runtime_instance is None:
-        _runtime_instance = TurnRuntimeManager()
-    return _runtime_instance
+    store = get_sqlite_session_store()
+    key = str(store.db_path.resolve())
+    runtime = _runtime_instances.get(key)
+    if runtime is None:
+        runtime = TurnRuntimeManager(store)
+        _runtime_instances[key] = runtime
+    return runtime
 
 
-__all__ = ["TurnRuntimeManager", "get_turn_runtime_manager"]
+def reset_turn_runtime_managers() -> None:
+    _runtime_instances.clear()
+
+
+__all__ = ["TurnRuntimeManager", "get_turn_runtime_manager", "reset_turn_runtime_managers"]

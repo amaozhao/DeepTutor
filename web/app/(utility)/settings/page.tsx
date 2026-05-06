@@ -24,7 +24,7 @@ import {
 import { useTranslation } from "react-i18next";
 
 import { writeStoredLanguage } from "@/context/app-shell-storage";
-import { apiUrl } from "@/lib/api";
+import { apiFetch, apiUrl } from "@/lib/api";
 import { setTheme as applyThemePreference } from "@/lib/theme";
 
 type ServiceName = "llm" | "embedding" | "search";
@@ -614,7 +614,7 @@ function SettingsPageContent() {
 
   useEffect(() => {
     const load = async () => {
-      const settingsResponse = await fetch(apiUrl("/api/v1/settings"));
+      const settingsResponse = await apiFetch(apiUrl("/api/v1/settings"));
       const settingsPayload =
         (await settingsResponse.json()) as SettingsPayload;
       setCatalog(settingsPayload.catalog);
@@ -623,7 +623,7 @@ function SettingsPageContent() {
       setLanguage(settingsPayload.ui.language);
       if (settingsPayload.providers) setProviders(settingsPayload.providers);
 
-      const statusResponse = await fetch(apiUrl("/api/v1/system/status"));
+      const statusResponse = await apiFetch(apiUrl("/api/v1/system/status"));
       const statusPayload = (await statusResponse.json()) as SystemStatus;
       setStatus(statusPayload);
     };
@@ -705,7 +705,7 @@ function SettingsPageContent() {
     nextTheme: "light" | "dark" | "glass" | "snow",
     nextLanguage: "en" | "zh",
   ) => {
-    await fetch(apiUrl("/api/v1/settings/ui"), {
+    await apiFetch(apiUrl("/api/v1/settings/ui"), {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ theme: nextTheme, language: nextLanguage }),
@@ -879,7 +879,7 @@ function SettingsPageContent() {
   const saveCatalog = async () => {
     setSaving(true);
     try {
-      const response = await fetch(apiUrl("/api/v1/settings/catalog"), {
+      const response = await apiFetch(apiUrl("/api/v1/settings/catalog"), {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ catalog: draft }),
@@ -896,7 +896,7 @@ function SettingsPageContent() {
   const applyCatalog = async () => {
     setApplying(true);
     try {
-      const response = await fetch(apiUrl("/api/v1/settings/apply"), {
+      const response = await apiFetch(apiUrl("/api/v1/settings/apply"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ catalog: draft }),
@@ -905,7 +905,7 @@ function SettingsPageContent() {
       setCatalog(payload.catalog);
       setDraft(cloneCatalog(payload.catalog));
       setToast(t("Applied to .env"));
-      const statusResponse = await fetch(apiUrl("/api/v1/system/status"));
+      const statusResponse = await apiFetch(apiUrl("/api/v1/system/status"));
       setStatus((await statusResponse.json()) as SystemStatus);
     } finally {
       setApplying(false);
@@ -925,8 +925,7 @@ function SettingsPageContent() {
       setEmbeddingCapabilities(null);
     }
     try {
-      const response = await fetch(
-        apiUrl(`/api/v1/settings/tests/${activeService}/start`),
+      const response = await apiFetch(apiUrl(`/api/v1/settings/tests/${activeService}/start`),
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -944,6 +943,7 @@ function SettingsPageContent() {
         apiUrl(
           `/api/v1/settings/tests/${activeService}/${payload.run_id}/events`,
         ),
+        { withCredentials: true },
       );
       eventSourceRef.current = source;
       source.onmessage = (event) => {

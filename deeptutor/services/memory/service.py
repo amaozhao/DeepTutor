@@ -464,14 +464,21 @@ def _clean_memory_content(content: str) -> str:
     return clean_thinking_tags(_strip_code_fence(content)).strip()
 
 
-_memory_service: MemoryService | None = None
+_memory_services: dict[Path, MemoryService] = {}
 
 
 def get_memory_service() -> MemoryService:
-    global _memory_service
-    if _memory_service is None:
-        _memory_service = MemoryService()
-    return _memory_service
+    path_service = get_path_service()
+    memory_dir = path_service.get_memory_dir().resolve()
+    service = _memory_services.get(memory_dir)
+    if service is None:
+        service = MemoryService(path_service=path_service, store=get_sqlite_session_store())
+        _memory_services[memory_dir] = service
+    return service
+
+
+def reset_memory_services() -> None:
+    _memory_services.clear()
 
 
 __all__ = [
@@ -480,4 +487,5 @@ __all__ = [
     "MemorySnapshot",
     "MemoryUpdateResult",
     "get_memory_service",
+    "reset_memory_services",
 ]

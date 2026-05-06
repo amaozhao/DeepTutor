@@ -7,16 +7,14 @@ from pathlib import Path
 
 import typer
 
-from deeptutor.app import DeepTutorApp
-
-from .common import console, print_notebook_table
+from .common import console, get_cli_app, print_notebook_table
 
 
 def register(app: typer.Typer) -> None:
     @app.command("list")
     def list_notebooks() -> None:
         """List notebooks."""
-        client = DeepTutorApp()
+        client = get_cli_app()
         print_notebook_table(client.list_notebooks())
 
     @app.command("create")
@@ -25,7 +23,7 @@ def register(app: typer.Typer) -> None:
         description: str = typer.Option("", "--description", help="Notebook description."),
     ) -> None:
         """Create a notebook."""
-        client = DeepTutorApp()
+        client = get_cli_app()
         notebook = client.create_notebook(name=name, description=description)
         console.print(json.dumps(notebook, ensure_ascii=False, indent=2, default=str))
 
@@ -35,7 +33,7 @@ def register(app: typer.Typer) -> None:
         fmt: str = typer.Option("rich", "--format", help="Output format: rich | json."),
     ) -> None:
         """Show a notebook and its records."""
-        client = DeepTutorApp()
+        client = get_cli_app()
         notebook = client.get_notebook(notebook_id)
         if notebook is None:
             console.print(f"[red]Notebook not found:[/] {notebook_id}")
@@ -58,7 +56,7 @@ def register(app: typer.Typer) -> None:
         record_id: str = typer.Argument(..., help="Record id."),
     ) -> None:
         """Delete a notebook record."""
-        client = DeepTutorApp()
+        client = get_cli_app()
         success = client.remove_record(notebook_id, record_id)
         if not success:
             console.print(f"[red]Record not found:[/] {record_id}")
@@ -85,7 +83,7 @@ def register(app: typer.Typer) -> None:
         content = path.read_text(encoding="utf-8")
         record_title = title or path.stem
 
-        client = DeepTutorApp()
+        client = get_cli_app()
         result = client.add_record(
             notebook_ids=[notebook_id],
             record_type=record_type,
@@ -113,7 +111,7 @@ def register(app: typer.Typer) -> None:
 
         content = path.read_text(encoding="utf-8")
 
-        client = DeepTutorApp()
+        client = get_cli_app()
         updated = client.update_record(notebook_id, record_id, output=content)
         if updated is None:
             console.print(f"[red]Record not found:[/] {record_id}")

@@ -48,8 +48,11 @@ class BaseSessionManager(ABC):
         """
         self.module_name = module_name
         self.path_service = get_path_service()
-        self.sessions_file = self.path_service.get_session_file(module_name)
         self._ensure_file()
+
+    @property
+    def sessions_file(self):
+        return self.path_service.get_session_file(self.module_name)
 
     # =========================================================================
     # Abstract Methods - Must be implemented by subclasses
@@ -129,6 +132,7 @@ class BaseSessionManager(ABC):
 
     def _save_data(self, data: dict[str, Any]) -> None:
         """Save sessions data to file."""
+        self.sessions_file.parent.mkdir(parents=True, exist_ok=True)
         with open(self.sessions_file, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2, ensure_ascii=False)
 

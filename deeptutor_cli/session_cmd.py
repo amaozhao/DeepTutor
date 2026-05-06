@@ -6,10 +6,8 @@ import json
 
 import typer
 
-from deeptutor.app import DeepTutorApp
-
 from .chat import ChatState, _chat_repl
-from .common import console, maybe_run, print_session_table
+from .common import console, get_cli_app, maybe_run, print_session_table
 
 
 def register(app: typer.Typer) -> None:
@@ -52,13 +50,13 @@ def register(app: typer.Typer) -> None:
 
 
 async def _list_sessions(limit: int) -> None:
-    client = DeepTutorApp()
+    client = get_cli_app()
     sessions = await client.list_sessions(limit=limit)
     print_session_table(sessions)
 
 
 async def _show_session(session_id: str, fmt: str) -> None:
-    client = DeepTutorApp()
+    client = get_cli_app()
     session = await client.get_session(session_id)
     if session is None:
         console.print(f"[red]Session not found:[/] {session_id}")
@@ -84,7 +82,7 @@ async def _show_session(session_id: str, fmt: str) -> None:
 
 
 async def _delete_session(session_id: str) -> None:
-    client = DeepTutorApp()
+    client = get_cli_app()
     success = await client.delete_session(session_id)
     if not success:
         console.print(f"[red]Session not found:[/] {session_id}")
@@ -93,7 +91,7 @@ async def _delete_session(session_id: str) -> None:
 
 
 async def _rename_session(session_id: str, title: str) -> None:
-    client = DeepTutorApp()
+    client = get_cli_app()
     success = await client.rename_session(session_id, title)
     if not success:
         console.print(f"[red]Session not found:[/] {session_id}")

@@ -13,7 +13,6 @@ from pydantic import BaseModel
 
 from deeptutor.agents.chat.agentic_pipeline import AgenticChatPipeline
 from deeptutor.co_writer.edit_agent import (
-    TOOL_CALLS_DIR,
     EditAgent,
     load_history,
     print_stats,
@@ -29,6 +28,7 @@ from deeptutor.core.context import UnifiedContext
 from deeptutor.core.stream_bus import StreamBus
 from deeptutor.services.config import PROJECT_ROOT, load_config_with_main
 from deeptutor.services.llm import clean_thinking_tags
+from deeptutor.services.path_service import get_path_service
 from deeptutor.services.settings.interface_settings import get_ui_language
 
 router = APIRouter()
@@ -497,7 +497,8 @@ async def get_tool_call(operation_id: str):
     """Get tool call details"""
     try:
         # Find matching file
-        for filepath in TOOL_CALLS_DIR.glob(f"{operation_id}_*.json"):
+        tool_calls_dir = get_path_service().get_co_writer_tool_calls_dir()
+        for filepath in tool_calls_dir.glob(f"{operation_id}_*.json"):
             with open(filepath, encoding="utf-8") as f:
                 return json.load(f)
         raise HTTPException(status_code=404, detail="Tool call not found")

@@ -14,6 +14,7 @@ import time
 from typing import Any
 import uuid
 
+from deeptutor.auth.context import current_user_id
 from deeptutor.services.path_service import get_path_service
 
 
@@ -70,6 +71,8 @@ class SQLiteSessionStore:
 
     def _migrate_legacy_db(self, path_service) -> None:
         """Move the legacy ``data/chat_history.db`` into ``data/user/`` once."""
+        if current_user_id():
+            return
         legacy_path = path_service.project_root / "data" / "chat_history.db"
         if self.db_path.exists() or not legacy_path.exists() or legacy_path == self.db_path:
             return
@@ -197,7 +200,7 @@ class SQLiteSessionStore:
 
     async def _run(self, fn, *args):
         async with self._lock:
-            return await asyncio.to_thread(fn, *args)
+            return fn(*args)
 
     def _connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self.db_path)
@@ -1157,14 +1160,20 @@ class SQLiteSessionStore:
         return await self._run(self._get_entry_categories_sync, entry_id)
 
 
-_instance: SQLiteSessionStore | None = None
+_instances: dict[Path, SQLiteSessionStore] = {}
 
 
 def get_sqlite_session_store() -> SQLiteSessionStore:
-    global _instance
-    if _instance is None:
-        _instance = SQLiteSessionStore()
-    return _instance
+    db_path = get_path_service().get_chat_history_db().resolve()
+    store = _instances.get(db_path)
+    if store is None:
+        store = SQLiteSessionStore(db_path=db_path)
+        _instances[db_path] = store
+    return store
 
 
-__all__ = ["SQLiteSessionStore", "get_sqlite_session_store"]
+def reset_sqlite_session_stores() -> None:
+    _instances.clear()
+
+
+__all__ = ["SQLiteSessionStore", "get_sqlite_session_store", "reset_sqlite_session_stores"]

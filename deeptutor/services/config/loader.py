@@ -7,12 +7,12 @@ Unified configuration loading for all DeepTutor modules.
 Provides YAML configuration loading, path resolution, and language parsing.
 """
 
-import asyncio
 from pathlib import Path
 from typing import Any
 
 import yaml
 
+from deeptutor.auth.context import current_user_id
 from deeptutor.services.path_service import get_path_service
 
 # PROJECT_ROOT points to the actual project root directory (DeepTutor/)
@@ -24,10 +24,50 @@ from deeptutor.services.path_service import get_path_service
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 
 
+def _runtime_settings_candidates(project_root: Path) -> list[Path]:
+    """Return runtime settings lookup candidates in priority order."""
+    if project_root == PROJECT_ROOT:
+        path_service = get_path_service()
+        candidates: list[Path] = []
+        scoped_user_id = current_user_id()
+        if scoped_user_id:
+            candidates.append(path_service.get_settings_dir())
+        candidates.append(path_service.get_system_settings_dir())
+        candidates.append(path_service.get_data_root() / "user" / "settings")
+        if not scoped_user_id:
+            users_root = path_service.get_users_root()
+            if users_root.exists():
+                candidates.extend(user_dir / "settings" for user_dir in sorted(users_root.iterdir()))
+    else:
+        candidates = [
+            project_root / "data" / "user" / "settings",
+            project_root / "data" / "system" / "settings",
+        ]
+
+    deduped: list[Path] = []
+    seen: set[Path] = set()
+    for candidate in candidates:
+        resolved = candidate.resolve()
+        if resolved in seen:
+            continue
+        seen.add(resolved)
+        deduped.append(candidate)
+    return deduped
+
+
 def get_runtime_settings_dir(project_root: Path | None = None) -> Path:
-    """Return the canonical runtime settings directory under ``data/user/settings``."""
+    """Return the best available runtime settings directory."""
     root = project_root or PROJECT_ROOT
-    return root / "data" / "user" / "settings"
+    candidates = _runtime_settings_candidates(root)
+    for candidate in candidates:
+        if candidate.exists() and (
+            (candidate / "main.yaml").exists() or (candidate / "agents.yaml").exists()
+        ):
+            return candidate
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    return candidates[0]
 
 
 def _deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
@@ -71,7 +111,7 @@ def _inject_runtime_paths(config: dict[str, Any]) -> dict[str, Any]:
     normalized["tools"] = tools
     normalized["paths"] = {
         "user_data_dir": str(path_service.get_user_root()),
-        "knowledge_bases_dir": str(path_service.project_root / "data" / "knowledge_bases"),
+        "knowledge_bases_dir": str(path_service.get_user_root() / "knowledge_bases"),
         "user_log_dir": str(path_service.get_logs_dir()),
         "performance_log_dir": str(path_service.get_logs_dir() / "performance"),
         "question_output_dir": str(path_service.get_chat_feature_dir("deep_question")),
@@ -84,7 +124,7 @@ def _inject_runtime_paths(config: dict[str, Any]) -> dict[str, Any]:
 
 async def _load_yaml_file_async(file_path: Path) -> dict[str, Any]:
     """Async version of _load_yaml_file."""
-    return await asyncio.to_thread(_load_yaml_file, file_path)
+    return _load_yaml_file(file_path)
 
 
 def resolve_config_path(
@@ -103,12 +143,15 @@ def resolve_config_path(
     if project_root is None:
         project_root = PROJECT_ROOT
 
-    settings_dir = get_runtime_settings_dir(project_root)
-    config_path = settings_dir / config_file
-    if config_path.exists():
-        return config_path, False
+    searched: list[Path] = []
+    for settings_dir in _runtime_settings_candidates(project_root):
+        config_path = settings_dir / config_file
+        searched.append(settings_dir)
+        if config_path.exists():
+            return config_path, False
     raise FileNotFoundError(
-        f"Configuration file not found: {config_file} (expected under {settings_dir})"
+        f"Configuration file not found: {config_file} "
+        f"(searched: {', '.join(str(path) for path in searched)})"
     )
 
 

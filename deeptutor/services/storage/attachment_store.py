@@ -28,7 +28,6 @@ uploaded twice in the same session.
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import os
 from pathlib import Path
@@ -154,8 +153,7 @@ class LocalDiskAttachmentStore:
         if target is None:
             raise ValueError(f"refusing to write attachment outside storage root: {stored!r}")
 
-        loop = asyncio.get_running_loop()
-        await loop.run_in_executor(None, self._write_sync, target, data)
+        self._write_sync(target, data)
 
         # The router uses the same _coerce_filename rules to look up the file,
         # so the public URL must use the sanitised pieces. Each path segment
@@ -187,8 +185,7 @@ class LocalDiskAttachmentStore:
         session_dir = self._session_dir(session_id)
         if not session_dir.exists():
             return
-        loop = asyncio.get_running_loop()
-        await loop.run_in_executor(None, self._rmtree_sync, session_dir)
+        self._rmtree_sync(session_dir)
 
     @staticmethod
     def _rmtree_sync(path: Path) -> None:
@@ -207,22 +204,28 @@ class LocalDiskAttachmentStore:
         return target
 
 
-_singleton: AttachmentStore | None = None
+_stores: dict[Path, AttachmentStore] = {}
 
 
 def get_attachment_store() -> AttachmentStore:
-    """Return the process-wide :class:`AttachmentStore`.
+    """Return the current user's :class:`AttachmentStore`.
 
     Today this is always a :class:`LocalDiskAttachmentStore`; future S3/MinIO
     backends can be selected here based on an env var.
     """
-    global _singleton
-    if _singleton is None:
-        _singleton = LocalDiskAttachmentStore()
-    return _singleton
+    override = os.environ.get(_ATTACHMENT_DIR_ENV, "").strip()
+    root = (
+        Path(override).expanduser().resolve()
+        if override
+        else get_path_service().get_user_root().joinpath(*_DEFAULT_SUBPATH).resolve()
+    )
+    store = _stores.get(root)
+    if store is None:
+        store = LocalDiskAttachmentStore(root=root)
+        _stores[root] = store
+    return store
 
 
 def reset_attachment_store() -> None:
     """Reset the singleton — only meant for tests."""
-    global _singleton
-    _singleton = None
+    _stores.clear()

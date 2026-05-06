@@ -11,7 +11,7 @@ from deeptutor.services.path_service import get_path_service
 from .embedding_endpoint import normalize_embedding_endpoint_for_display
 from .env_store import get_env_store
 
-CATALOG_PATH = get_path_service().get_settings_file("model_catalog")
+CATALOG_PATH = get_path_service().get_system_settings_file("model_catalog")
 
 
 def _service_shell() -> dict[str, Any]:

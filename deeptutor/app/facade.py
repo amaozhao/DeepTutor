@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+from contextlib import nullcontext
 from dataclasses import dataclass, field
 import importlib.util
 import json
 from typing import Any, AsyncIterator
 
+from deeptutor.auth.context import user_scope
 from deeptutor.runtime.registry.capability_registry import get_capability_registry
 from deeptutor.services.notebook import get_notebook_manager
 from deeptutor.services.session import get_sqlite_session_store, get_turn_runtime_manager
@@ -56,23 +58,31 @@ class CapabilityAvailability:
 class DeepTutorApp:
     """Facade around runtime, session, notebook, and capability contracts."""
 
-    def __init__(self) -> None:
-        self.runtime = get_turn_runtime_manager()
-        self.store = get_sqlite_session_store()
-        self.notebooks = get_notebook_manager()
-        self.capabilities = get_capability_registry()
+    def __init__(self, user_id: str | None = None) -> None:
+        self.user_id = user_id
+        with self._scope():
+            self.runtime = get_turn_runtime_manager()
+            self.store = get_sqlite_session_store()
+            self.notebooks = get_notebook_manager()
+            self.capabilities = get_capability_registry()
+
+    def _scope(self):
+        if self.user_id:
+            return user_scope(self.user_id)
+        return nullcontext()
 
     def resolve_capability(self, value: str | None) -> str:
-        requested = str(value or "chat").strip() or "chat"
-        manifests = self.capabilities.get_manifests()
-        for manifest in manifests:
-            if manifest["name"] == requested:
-                return requested
-            aliases = {str(alias).strip() for alias in manifest.get("cli_aliases", [])}
-            if requested in aliases:
-                return str(manifest["name"])
-        available = ", ".join(sorted(manifest["name"] for manifest in manifests))
-        raise ValueError(f"Unknown capability `{requested}`. Available: {available}")
+        with self._scope():
+            requested = str(value or "chat").strip() or "chat"
+            manifests = self.capabilities.get_manifests()
+            for manifest in manifests:
+                if manifest["name"] == requested:
+                    return requested
+                aliases = {str(alias).strip() for alias in manifest.get("cli_aliases", [])}
+                if requested in aliases:
+                    return str(manifest["name"])
+            available = ", ".join(sorted(manifest["name"] for manifest in manifests))
+            raise ValueError(f"Unknown capability `{requested}`. Available: {available}")
 
     def get_capability_contracts(self) -> list[dict[str, Any]]:
         contracts = []
@@ -114,56 +124,66 @@ class DeepTutorApp:
     async def start_turn(
         self, request: TurnRequest | dict[str, Any]
     ) -> tuple[dict[str, Any], dict[str, Any]]:
-        if isinstance(request, dict):
-            request = TurnRequest(**request)
-        resolved_capability = self.resolve_capability(request.capability)
-        session, turn = await self.runtime.start_turn(
-            {
-                **request.to_payload(),
-                "capability": resolved_capability,
-            }
-        )
-        await self.store.update_session_preferences(
-            session["id"],
-            {
-                "language": request.language,
-                "notebook_references": request.notebook_references,
-                "history_references": request.history_references,
-            },
-        )
-        return session, turn
+        with self._scope():
+            if isinstance(request, dict):
+                request = TurnRequest(**request)
+            resolved_capability = self.resolve_capability(request.capability)
+            session, turn = await self.runtime.start_turn(
+                {
+                    **request.to_payload(),
+                    "capability": resolved_capability,
+                }
+            )
+            await self.store.update_session_preferences(
+                session["id"],
+                {
+                    "language": request.language,
+                    "notebook_references": request.notebook_references,
+                    "history_references": request.history_references,
+                },
+            )
+            return session, turn
 
     async def stream_turn(self, turn_id: str, after_seq: int = 0) -> AsyncIterator[dict[str, Any]]:
-        async for item in self.runtime.subscribe_turn(turn_id, after_seq=after_seq):
-            yield item
+        with self._scope():
+            async for item in self.runtime.subscribe_turn(turn_id, after_seq=after_seq):
+                yield item
 
     async def cancel_turn(self, turn_id: str) -> bool:
-        return await self.runtime.cancel_turn(turn_id)
+        with self._scope():
+            return await self.runtime.cancel_turn(turn_id)
 
     async def regenerate_last_turn(
         self,
         session_id: str,
         overrides: dict[str, Any] | None = None,
     ) -> tuple[dict[str, Any], dict[str, Any]]:
-        return await self.runtime.regenerate_last_turn(session_id, overrides=overrides)
+        with self._scope():
+            return await self.runtime.regenerate_last_turn(session_id, overrides=overrides)
 
     async def list_sessions(self, limit: int = 50, offset: int = 0) -> list[dict[str, Any]]:
-        return await self.store.list_sessions(limit=limit, offset=offset)
+        with self._scope():
+            return await self.store.list_sessions(limit=limit, offset=offset)
 
     async def get_session(self, session_id: str) -> dict[str, Any] | None:
-        return await self.store.get_session_with_messages(session_id)
+        with self._scope():
+            return await self.store.get_session_with_messages(session_id)
 
     async def rename_session(self, session_id: str, title: str) -> bool:
-        return await self.store.update_session_title(session_id, title)
+        with self._scope():
+            return await self.store.update_session_title(session_id, title)
 
     async def delete_session(self, session_id: str) -> bool:
-        return await self.store.delete_session(session_id)
+        with self._scope():
+            return await self.store.delete_session(session_id)
 
     async def get_active_turn(self, session_id: str) -> dict[str, Any] | None:
-        return await self.store.get_active_turn(session_id)
+        with self._scope():
+            return await self.store.get_active_turn(session_id)
 
     def list_notebooks(self) -> list[dict[str, Any]]:
-        return self.notebooks.list_notebooks()
+        with self._scope():
+            return self.notebooks.list_notebooks()
 
     def create_notebook(
         self,
@@ -173,31 +193,37 @@ class DeepTutorApp:
         color: str = "#3B82F6",
         icon: str = "book",
     ) -> dict[str, Any]:
-        return self.notebooks.create_notebook(
-            name=name,
-            description=description,
-            color=color,
-            icon=icon,
-        )
+        with self._scope():
+            return self.notebooks.create_notebook(
+                name=name,
+                description=description,
+                color=color,
+                icon=icon,
+            )
 
     def get_notebook(self, notebook_id: str) -> dict[str, Any] | None:
-        return self.notebooks.get_notebook(notebook_id)
+        with self._scope():
+            return self.notebooks.get_notebook(notebook_id)
 
     def add_record(self, **kwargs: Any) -> dict[str, Any]:
-        return self.notebooks.add_record(**kwargs)
+        with self._scope():
+            return self.notebooks.add_record(**kwargs)
 
     def update_record(
         self, notebook_id: str, record_id: str, **kwargs: Any
     ) -> dict[str, Any] | None:
-        return self.notebooks.update_record(notebook_id, record_id, **kwargs)
+        with self._scope():
+            return self.notebooks.update_record(notebook_id, record_id, **kwargs)
 
     def remove_record(self, notebook_id: str, record_id: str) -> bool:
-        return self.notebooks.remove_record(notebook_id, record_id)
+        with self._scope():
+            return self.notebooks.remove_record(notebook_id, record_id)
 
     def get_records_by_references(
         self, notebook_references: list[dict[str, Any]]
     ) -> list[dict[str, Any]]:
-        return self.notebooks.get_records_by_references(notebook_references)
+        with self._scope():
+            return self.notebooks.get_records_by_references(notebook_references)
 
 
 def dumps_json(value: Any) -> str:

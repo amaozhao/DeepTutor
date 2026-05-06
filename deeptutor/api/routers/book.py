@@ -15,6 +15,8 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, Field
 
+from deeptutor.auth.context import user_scope
+from deeptutor.auth.dependencies import authenticate_websocket_user
 from deeptutor.book import (
     BlockType,
     BookProposal,
@@ -489,6 +491,15 @@ def _serialize_event(event) -> dict[str, Any]:
 
 @router.websocket("/ws")
 async def book_websocket(ws: WebSocket) -> None:
+    user = authenticate_websocket_user(ws)
+    if user is None:
+        await ws.close(code=1008)
+        return
+    with user_scope(user.id):
+        await _authenticated_book_websocket(ws)
+
+
+async def _authenticated_book_websocket(ws: WebSocket) -> None:
     """Streaming endpoint.
 
     Client message protocol::

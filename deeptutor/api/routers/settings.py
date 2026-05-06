@@ -26,7 +26,6 @@ from deeptutor.services.path_service import get_path_service
 router = APIRouter()
 
 _path_service = get_path_service()
-SETTINGS_FILE = _path_service.get_settings_file("interface")
 
 DEFAULT_SIDEBAR_NAV_ORDER = {
     "start": ["/", "/history", "/knowledge", "/notebook"],
@@ -81,9 +80,10 @@ def _invalidate_runtime_caches() -> None:
 
 
 def load_ui_settings() -> dict[str, Any]:
-    if SETTINGS_FILE.exists():
+    settings_file = _path_service.get_settings_file("interface")
+    if settings_file.exists():
         try:
-            with open(SETTINGS_FILE, encoding="utf-8") as handle:
+            with open(settings_file, encoding="utf-8") as handle:
                 saved = json.load(handle)
                 return {**DEFAULT_UI_SETTINGS, **saved}
         except Exception:
@@ -92,8 +92,9 @@ def load_ui_settings() -> dict[str, Any]:
 
 
 def save_ui_settings(settings: dict[str, Any]) -> None:
-    SETTINGS_FILE.parent.mkdir(parents=True, exist_ok=True)
-    with open(SETTINGS_FILE, "w", encoding="utf-8") as handle:
+    settings_file = _path_service.get_settings_file("interface")
+    settings_file.parent.mkdir(parents=True, exist_ok=True)
+    with open(settings_file, "w", encoding="utf-8") as handle:
         json.dump(settings, handle, ensure_ascii=False, indent=2)
 
 

@@ -25,6 +25,8 @@ data/user/
 from pathlib import Path
 from typing import Literal, cast
 
+from deeptutor.auth.context import current_user_id, validate_user_id
+
 AgentModule = Literal[
     "solve",
     "chat",
@@ -102,14 +104,34 @@ class PathService:
     def user_data_dir(self) -> Path:
         return self._user_data_dir
 
+    def get_data_root(self) -> Path:
+        return self.project_root / "data"
+
+    def get_users_root(self) -> Path:
+        return self.get_data_root() / "users"
+
+    def get_auth_db(self) -> Path:
+        return self.get_data_root() / "auth.db"
+
+    def get_system_settings_dir(self) -> Path:
+        return self.get_data_root() / "system" / "settings"
+
+    def get_system_settings_file(self, name: str) -> Path:
+        if "." not in name:
+            name = f"{name}.json"
+        return self.get_system_settings_dir() / name
+
     def get_user_root(self) -> Path:
+        scoped_user_id = current_user_id()
+        if scoped_user_id:
+            return self.get_users_root() / validate_user_id(scoped_user_id)
         return self._user_data_dir
 
     def get_chat_history_db(self) -> Path:
-        return self._user_data_dir / "chat_history.db"
+        return self.get_user_root() / "chat_history.db"
 
     def get_public_outputs_root(self) -> Path:
-        return self._user_data_dir
+        return self.get_user_root()
 
     def is_public_output_path(self, path: str | Path) -> bool:
         candidate = Path(path)
@@ -156,10 +178,10 @@ class PathService:
         return False
 
     def get_workspace_dir(self) -> Path:
-        return self._user_data_dir / "workspace"
+        return self.get_user_root() / "workspace"
 
     def get_settings_dir(self) -> Path:
-        return self._user_data_dir / "settings"
+        return self.get_user_root() / "settings"
 
     def get_settings_file(self, name: str) -> Path:
         if "." not in name:
@@ -228,6 +250,9 @@ class PathService:
         return self.get_notebook_dir() / "notebooks_index.json"
 
     def get_memory_dir(self) -> Path:
+        if current_user_id():
+            return self.get_workspace_feature_dir("memory")
+
         new_dir = self.project_root / "data" / "memory"
         old_dir = self.get_workspace_feature_dir("memory")
         if old_dir.exists():

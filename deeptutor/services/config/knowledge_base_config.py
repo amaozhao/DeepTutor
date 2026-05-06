@@ -11,9 +11,8 @@ from deeptutor.services.rag.index_versioning import list_kb_versions
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_CONFIG_PATH = (
-    get_path_service().project_root / "data" / "knowledge_bases" / "kb_config.json"
-)
+def _default_config_path() -> Path:
+    return get_path_service().get_user_root() / "knowledge_bases" / "kb_config.json"
 
 
 def _default_payload() -> dict[str, Any]:
@@ -28,17 +27,20 @@ def _default_payload() -> dict[str, Any]:
 
 
 class KnowledgeBaseConfigService:
-    _instance: "KnowledgeBaseConfigService | None" = None
+    _instances: dict[Path, "KnowledgeBaseConfigService"] = {}
 
     def __init__(self, config_path: Path | None = None):
-        self.config_path = config_path or DEFAULT_CONFIG_PATH
+        self.config_path = config_path or _default_config_path()
         self._config = self._load_config()
 
     @classmethod
     def get_instance(cls, config_path: Path | None = None) -> "KnowledgeBaseConfigService":
-        if cls._instance is None:
-            cls._instance = cls(config_path)
-        return cls._instance
+        path = (config_path or _default_config_path()).resolve()
+        instance = cls._instances.get(path)
+        if instance is None:
+            instance = cls(path)
+            cls._instances[path] = instance
+        return instance
 
     def _load_config(self) -> dict[str, Any]:
         payload = _default_payload()

@@ -10,10 +10,24 @@ from typing import Any
 from rich.console import Console
 from rich.markdown import Markdown
 from rich.table import Table
+import typer
 
 from deeptutor.app import DeepTutorApp, TurnRequest
+from deeptutor.auth.cli_session import require_cli_user
+from deeptutor.auth.store import get_auth_store
 
 console = Console()
+
+
+def get_cli_app() -> DeepTutorApp:
+    if get_auth_store().count_users() == 0:
+        return DeepTutorApp()
+    try:
+        user = require_cli_user()
+    except RuntimeError as exc:
+        console.print(f"[red]{exc}[/]")
+        raise typer.Exit(code=1) from exc
+    return DeepTutorApp(user_id=user.id)
 
 
 def parse_config_items(items: list[str]) -> dict[str, Any]:

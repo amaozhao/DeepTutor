@@ -8,9 +8,11 @@ import asyncio
 import json
 import logging
 
-from fastapi import APIRouter, HTTPException, Query, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, ValidationError
 
+from deeptutor.auth.context import user_scope
+from deeptutor.auth.dependencies import authenticate_websocket_user, require_user_scope
 from deeptutor.services.tutorbot import get_tutorbot_manager
 from deeptutor.services.tutorbot.manager import (
     BotConfig,
@@ -77,12 +79,12 @@ class SoulUpdateRequest(BaseModel):
 # ── Soul template library (must be before /{bot_id} routes) ───
 
 
-@router.get("/souls")
+@router.get("/souls", dependencies=[Depends(require_user_scope)])
 async def list_souls():
     return get_tutorbot_manager().list_souls()
 
 
-@router.post("/souls")
+@router.post("/souls", dependencies=[Depends(require_user_scope)])
 async def create_soul(payload: SoulCreateRequest):
     mgr = get_tutorbot_manager()
     if mgr.get_soul(payload.id):
@@ -90,7 +92,7 @@ async def create_soul(payload: SoulCreateRequest):
     return mgr.create_soul(payload.id, payload.name, payload.content)
 
 
-@router.get("/souls/{soul_id}")
+@router.get("/souls/{soul_id}", dependencies=[Depends(require_user_scope)])
 async def get_soul(soul_id: str):
     soul = get_tutorbot_manager().get_soul(soul_id)
     if not soul:
@@ -98,7 +100,7 @@ async def get_soul(soul_id: str):
     return soul
 
 
-@router.put("/souls/{soul_id}")
+@router.put("/souls/{soul_id}", dependencies=[Depends(require_user_scope)])
 async def update_soul(soul_id: str, payload: SoulUpdateRequest):
     result = get_tutorbot_manager().update_soul(soul_id, payload.name, payload.content)
     if not result:
@@ -106,7 +108,7 @@ async def update_soul(soul_id: str, payload: SoulUpdateRequest):
     return result
 
 
-@router.delete("/souls/{soul_id}")
+@router.delete("/souls/{soul_id}", dependencies=[Depends(require_user_scope)])
 async def delete_soul(soul_id: str):
     if not get_tutorbot_manager().delete_soul(soul_id):
         raise HTTPException(status_code=404, detail="Soul not found")
@@ -116,18 +118,18 @@ async def delete_soul(soul_id: str):
 # ── Bot management (static paths before /{bot_id} parameterized routes) ──
 
 
-@router.get("")
+@router.get("", dependencies=[Depends(require_user_scope)])
 async def list_bots():
     return get_tutorbot_manager().list_bots()
 
 
-@router.get("/recent")
+@router.get("/recent", dependencies=[Depends(require_user_scope)])
 async def recent_bots(limit: int = 3):
     """Return the most recently active bots with their last message preview."""
     return get_tutorbot_manager().get_recent_active_bots(limit=limit)
 
 
-@router.get("/channels/schema")
+@router.get("/channels/schema", dependencies=[Depends(require_user_scope)])
 async def list_channel_schemas():
     """Return JSON-Schema metadata for every available channel.
 
@@ -162,7 +164,7 @@ async def list_channel_schemas():
     }
 
 
-@router.post("")
+@router.post("", dependencies=[Depends(require_user_scope)])
 async def create_and_start_bot(payload: CreateBotRequest):
     mgr = get_tutorbot_manager()
     # Only fields the client actually sent are forwarded as overrides; this lets
@@ -207,7 +209,7 @@ def _stopped_bot_dict(
     }
 
 
-@router.get("/{bot_id}")
+@router.get("/{bot_id}", dependencies=[Depends(require_user_scope)])
 async def get_bot(
     bot_id: str,
     include_secrets: bool = Query(
@@ -231,7 +233,7 @@ async def get_bot(
     raise HTTPException(status_code=404, detail="Bot not found")
 
 
-@router.delete("/{bot_id}")
+@router.delete("/{bot_id}", dependencies=[Depends(require_user_scope)])
 async def stop_bot(bot_id: str):
     stopped = await get_tutorbot_manager().stop_bot(bot_id)
     if not stopped:
@@ -239,7 +241,7 @@ async def stop_bot(bot_id: str):
     return {"bot_id": bot_id, "stopped": True}
 
 
-@router.delete("/{bot_id}/destroy")
+@router.delete("/{bot_id}/destroy", dependencies=[Depends(require_user_scope)])
 async def destroy_bot(bot_id: str):
     destroyed = await get_tutorbot_manager().destroy_bot(bot_id)
     if not destroyed:
@@ -304,7 +306,7 @@ def _apply_payload(target: BotConfig | TutorBotInstance, payload: UpdateBotReque
         cfg.llm_selection = _validate_llm_selection_payload(payload.llm_selection)
 
 
-@router.patch("/{bot_id}")
+@router.patch("/{bot_id}", dependencies=[Depends(require_user_scope)])
 async def update_bot(bot_id: str, payload: UpdateBotRequest):
     if payload.channels is not None:
         _validate_channels_payload(payload.channels)
@@ -359,12 +361,12 @@ async def update_bot(bot_id: str, payload: UpdateBotRequest):
 # ── Workspace file endpoints ──────────────────────────────────
 
 
-@router.get("/{bot_id}/files")
+@router.get("/{bot_id}/files", dependencies=[Depends(require_user_scope)])
 async def list_bot_files(bot_id: str):
     return get_tutorbot_manager().read_all_bot_files(bot_id)
 
 
-@router.get("/{bot_id}/files/{filename}")
+@router.get("/{bot_id}/files/{filename}", dependencies=[Depends(require_user_scope)])
 async def read_bot_file(bot_id: str, filename: str):
     content = get_tutorbot_manager().read_bot_file(bot_id, filename)
     if content is None:
@@ -372,7 +374,7 @@ async def read_bot_file(bot_id: str, filename: str):
     return {"filename": filename, "content": content}
 
 
-@router.put("/{bot_id}/files/{filename}")
+@router.put("/{bot_id}/files/{filename}", dependencies=[Depends(require_user_scope)])
 async def write_bot_file(bot_id: str, filename: str, payload: FileUpdateRequest):
     ok = get_tutorbot_manager().write_bot_file(bot_id, filename, payload.content)
     if not ok:
@@ -383,7 +385,7 @@ async def write_bot_file(bot_id: str, filename: str, payload: FileUpdateRequest)
 # ── Chat history & WebSocket ──────────────────────────────────
 
 
-@router.get("/{bot_id}/history")
+@router.get("/{bot_id}/history", dependencies=[Depends(require_user_scope)])
 async def get_bot_history(bot_id: str, limit: int = 100):
     """Read chat history from the bot's per-bot JSONL session files."""
     return get_tutorbot_manager().get_bot_history(bot_id, limit=limit)
@@ -391,6 +393,15 @@ async def get_bot_history(bot_id: str, limit: int = 100):
 
 @router.websocket("/{bot_id}/ws")
 async def bot_chat_ws(ws: WebSocket, bot_id: str):
+    user = authenticate_websocket_user(ws)
+    if user is None:
+        await ws.close(code=1008)
+        return
+    with user_scope(user.id):
+        await _authenticated_bot_chat_ws(ws, bot_id)
+
+
+async def _authenticated_bot_chat_ws(ws: WebSocket, bot_id: str):
     # `disconnected` is the single source of truth for "client is gone".
     # Both task loops watch it so they can exit cooperatively without
     # raising exceptions back into manager code (which has broad

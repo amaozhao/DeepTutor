@@ -31,12 +31,15 @@ from pydantic import BaseModel
 from deeptutor.api.utils.progress_broadcaster import ProgressBroadcaster
 from deeptutor.api.utils.task_id_manager import TaskIDManager
 from deeptutor.api.utils.task_log_stream import capture_task_logs, get_task_stream_manager
+from deeptutor.auth.context import current_user_id, user_scope
+from deeptutor.auth.dependencies import authenticate_websocket_user
 from deeptutor.knowledge.add_documents import DocumentAdder
 from deeptutor.knowledge.initializer import KnowledgeBaseInitializer
 from deeptutor.knowledge.manager import KnowledgeBaseManager
 from deeptutor.knowledge.naming import validate_knowledge_base_name
 from deeptutor.knowledge.progress_tracker import ProgressStage, ProgressTracker
 from deeptutor.services.config import PROJECT_ROOT, load_config_with_main
+from deeptutor.services.path_service import get_path_service
 from deeptutor.services.rag.factory import DEFAULT_PROVIDER
 from deeptutor.services.rag.file_routing import FileTypeRouter
 from deeptutor.utils.document_validator import DocumentValidator
@@ -68,15 +71,23 @@ _kb_base_dir = PROJECT_ROOT / "data" / "knowledge_bases"
 DEFAULT_KB_ALIASES = {"", "default", "current", "selected", "默认", "默认知识库", "当前知识库"}
 
 # Lazy initialization
-kb_manager = None
+_kb_managers: dict[Path, KnowledgeBaseManager] = {}
+
+
+def _get_kb_base_dir() -> Path:
+    if current_user_id():
+        return get_path_service().get_user_root() / "knowledge_bases"
+    return _kb_base_dir
 
 
 def get_kb_manager():
     """Get KnowledgeBaseManager instance (lazy init)"""
-    global kb_manager
-    if kb_manager is None:
-        kb_manager = KnowledgeBaseManager(base_dir=str(_kb_base_dir))
-    return kb_manager
+    base_dir = _get_kb_base_dir().resolve()
+    manager = _kb_managers.get(base_dir)
+    if manager is None:
+        manager = KnowledgeBaseManager(base_dir=str(base_dir))
+        _kb_managers[base_dir] = manager
+    return manager
 
 
 class KnowledgeBaseInfo(BaseModel):
@@ -315,8 +326,14 @@ def _matching_index_is_valid(kb_name: str, matching_version: dict | None) -> boo
         return False
 
 
-async def run_initialization_task(initializer: KnowledgeBaseInitializer, task_id: str):
+async def run_initialization_task(
+    initializer: KnowledgeBaseInitializer, task_id: str, user_id: str | None = None
+):
     """Background task for knowledge base initialization"""
+    if user_id and current_user_id() != user_id:
+        with user_scope(user_id):
+            return await run_initialization_task(initializer, task_id)
+
     task_manager = TaskIDManager.get_instance()
     task_stream_manager = get_task_stream_manager()
     task_stream_manager.ensure_task(task_id)
@@ -412,6 +429,7 @@ async def run_upload_processing_task(
     task_id: str,
     rag_provider: str = None,
     folder_id: str = None,
+    user_id: str | None = None,
 ):
     """Background task for processing uploaded files.
 
@@ -422,6 +440,17 @@ async def run_upload_processing_task(
         rag_provider: RAG provider (ignored - we use the one from KB metadata)
         folder_id: Optional folder ID for sync state update
     """
+    if user_id and current_user_id() != user_id:
+        with user_scope(user_id):
+            return await run_upload_processing_task(
+                kb_name=kb_name,
+                base_dir=base_dir,
+                uploaded_file_paths=uploaded_file_paths,
+                task_id=task_id,
+                rag_provider=rag_provider,
+                folder_id=folder_id,
+            )
+
     task_manager = TaskIDManager.get_instance()
     task_stream_manager = get_task_stream_manager()
     task_stream_manager.ensure_task(task_id)
@@ -620,7 +649,7 @@ async def sync_configs_from_metadata():
         from deeptutor.services.config import get_kb_config_service
 
         service = get_kb_config_service()
-        service.sync_all_from_metadata(_kb_base_dir)
+        service.sync_all_from_metadata(_get_kb_base_dir())
         return {"status": "success", "message": "Configurations synced from metadata files"}
     except Exception as e:
         logger.error(f"Error syncing configs: {e}")
@@ -885,10 +914,11 @@ async def upload_files(
         background_tasks.add_task(
             run_upload_processing_task,
             kb_name=kb_name,
-            base_dir=str(_kb_base_dir),
+            base_dir=str(_get_kb_base_dir()),
             uploaded_file_paths=uploaded_file_paths,
             task_id=task_id,
             rag_provider=kb_provider,
+            user_id=current_user_id(),
         )
 
         return {
@@ -953,11 +983,12 @@ async def create_knowledge_base(
             manager.config["knowledge_bases"][name]["needs_reindex"] = False
             manager._save_config()
 
-        progress_tracker = ProgressTracker(name, _kb_base_dir)
+        kb_base_dir = _get_kb_base_dir()
+        progress_tracker = ProgressTracker(name, kb_base_dir)
 
         initializer = KnowledgeBaseInitializer(
             kb_name=name,
-            base_dir=str(_kb_base_dir),
+            base_dir=str(kb_base_dir),
             progress_tracker=progress_tracker,
             rag_provider=rag_provider,
         )
@@ -981,7 +1012,12 @@ async def create_knowledge_base(
             total=len(uploaded_files),
         )
 
-        background_tasks.add_task(run_initialization_task, initializer, task_id)
+        background_tasks.add_task(
+            run_initialization_task,
+            initializer,
+            task_id,
+            current_user_id(),
+        )
 
         logger.info(f"KB '{name}' created, processing {len(uploaded_files)} files in background")
 
@@ -1000,7 +1036,13 @@ async def create_knowledge_base(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-async def run_reindex_task(kb_name: str, base_dir: str, task_id: str, signature_hash: str) -> None:
+async def run_reindex_task(
+    kb_name: str,
+    base_dir: str,
+    task_id: str,
+    signature_hash: str,
+    user_id: str | None = None,
+) -> None:
     """Re-index a KB's raw documents against the currently-active embedding config.
 
     Each ``(profile, model, dimension, base_url)`` combination gets its own
@@ -1008,6 +1050,10 @@ async def run_reindex_task(kb_name: str, base_dir: str, task_id: str, signature_
     untouched so switching the active embedding model back to a
     previously-indexed one reuses the existing version with no extra work.
     """
+    if user_id and current_user_id() != user_id:
+        with user_scope(user_id):
+            return await run_reindex_task(kb_name, base_dir, task_id, signature_hash)
+
     task_manager = TaskIDManager.get_instance()
     task_stream_manager = get_task_stream_manager()
     task_stream_manager.ensure_task(task_id)
@@ -1168,7 +1214,7 @@ async def reindex_knowledge_base(
                 ),
             )
 
-        kb_dir = _kb_base_dir / kb_name
+        kb_dir = _get_kb_base_dir() / kb_name
         matching_version = find_matching_version(kb_dir, signature)
         matching_valid = _matching_index_is_valid(kb_name, matching_version)
         if (
@@ -1205,9 +1251,10 @@ async def reindex_knowledge_base(
         background_tasks.add_task(
             run_reindex_task,
             kb_name=kb_name,
-            base_dir=str(_kb_base_dir),
+            base_dir=str(_get_kb_base_dir()),
             task_id=task_id,
             signature_hash=signature.hash(),
+            user_id=current_user_id(),
         )
 
         return {
@@ -1227,7 +1274,7 @@ async def reindex_knowledge_base(
 async def get_progress(kb_name: str):
     """Get initialization progress for a knowledge base"""
     try:
-        progress_tracker = ProgressTracker(kb_name, _kb_base_dir)
+        progress_tracker = ProgressTracker(kb_name, _get_kb_base_dir())
         progress = progress_tracker.get_progress()
 
         if progress is None:
@@ -1242,7 +1289,7 @@ async def get_progress(kb_name: str):
 async def clear_progress(kb_name: str):
     """Clear progress file for a knowledge base (useful for stuck states)"""
     try:
-        progress_tracker = ProgressTracker(kb_name, _kb_base_dir)
+        progress_tracker = ProgressTracker(kb_name, _get_kb_base_dir())
         progress_tracker.clear()
         return {"status": "success", "message": f"Progress cleared for {kb_name}"}
     except Exception as e:
@@ -1251,6 +1298,15 @@ async def clear_progress(kb_name: str):
 
 @router.websocket("/{kb_name}/progress/ws")
 async def websocket_progress(websocket: WebSocket, kb_name: str):
+    user = authenticate_websocket_user(websocket)
+    if user is None:
+        await websocket.close(code=1008)
+        return
+    with user_scope(user.id):
+        await _authenticated_websocket_progress(websocket, kb_name)
+
+
+async def _authenticated_websocket_progress(websocket: WebSocket, kb_name: str):
     """WebSocket endpoint for real-time progress updates"""
     await websocket.accept()
 
@@ -1259,11 +1315,11 @@ async def websocket_progress(websocket: WebSocket, kb_name: str):
     try:
         await broadcaster.connect(kb_name, websocket)
 
-        progress_tracker = ProgressTracker(kb_name, _kb_base_dir)
+        progress_tracker = ProgressTracker(kb_name, _get_kb_base_dir())
         initial_progress = progress_tracker.get_progress()
         expected_task_id = websocket.query_params.get("task_id")
 
-        kb_dir = _kb_base_dir / kb_name
+        kb_dir = _get_kb_base_dir() / kb_name
         from deeptutor.services.rag.index_versioning import list_kb_versions
 
         kb_is_ready = any(bool(version.get("ready")) for version in list_kb_versions(kb_dir))
@@ -1483,11 +1539,12 @@ async def sync_folder(kb_name: str, folder_id: str, background_tasks: Background
         background_tasks.add_task(
             run_upload_processing_task,
             kb_name=kb_name,
-            base_dir=str(_kb_base_dir),
+            base_dir=str(_get_kb_base_dir()),
             uploaded_file_paths=files_to_process,
             task_id=task_id,
             rag_provider=kb_provider,
             folder_id=folder_id,  # Pass folder_id to update state on success
+            user_id=current_user_id(),
         )
 
         return {

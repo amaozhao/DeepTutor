@@ -23,7 +23,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { apiUrl } from "@/lib/api";
+import { apiFetch, apiUrl } from "@/lib/api";
 import AssistantResponse from "@/components/common/AssistantResponse";
 import MarkdownRenderer from "@/components/common/MarkdownRenderer";
 import ProcessLogs from "@/components/common/ProcessLogs";
@@ -399,8 +399,7 @@ function ToolExecutor({
         else coerced[p.name] = raw;
       }
 
-      const res = await fetch(
-        apiUrl(`/api/v1/plugins/tools/${tool.name}/execute-stream`),
+      const res = await apiFetch(apiUrl(`/api/v1/plugins/tools/${tool.name}/execute-stream`),
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -837,8 +836,7 @@ function DeepQuestionTester({
               max_questions: config.max_questions,
             };
 
-      const res = await fetch(
-        apiUrl(
+      const res = await apiFetch(apiUrl(
           `/api/v1/plugins/capabilities/${capability.name}/execute-stream`,
         ),
         {
@@ -1235,8 +1233,7 @@ function DeepResearchTester({
     setStreaming(true);
 
     try {
-      const res = await fetch(
-        apiUrl(
+      const res = await apiFetch(apiUrl(
           `/api/v1/plugins/capabilities/${capability.name}/execute-stream`,
         ),
         {
@@ -1522,8 +1519,7 @@ function CapabilityTester({
     setStreaming(true);
 
     try {
-      const res = await fetch(
-        apiUrl(
+      const res = await apiFetch(apiUrl(
           `/api/v1/plugins/capabilities/${capability.name}/execute-stream`,
         ),
         {
@@ -1718,7 +1714,7 @@ export default function PlaygroundPage() {
       setLoading(true);
       try {
         const [pluginRes, knowledgeBaseList] = await Promise.all([
-          fetch(apiUrl("/api/v1/plugins/list")),
+          apiFetch(apiUrl("/api/v1/plugins/list")),
           listKnowledgeBases(),
         ]);
         const data = await pluginRes.json();

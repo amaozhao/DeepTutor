@@ -9,9 +9,9 @@ from typing import Any
 from rich.panel import Panel
 import typer
 
-from deeptutor.app import DeepTutorApp, TurnRequest
+from deeptutor.app import TurnRequest
 
-from .common import console, maybe_run, regenerate_and_render, run_turn_and_render
+from .common import console, get_cli_app, maybe_run, regenerate_and_render, run_turn_and_render
 
 
 @dataclass
@@ -55,7 +55,7 @@ def register(app: typer.Typer) -> None:
 
 
 async def _chat_repl(state: ChatState) -> None:
-    client = DeepTutorApp()
+    client = get_cli_app()
     if state.session_id:
         existing = await client.get_session(state.session_id)
         if existing is None:

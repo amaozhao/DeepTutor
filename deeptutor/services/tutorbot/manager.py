@@ -22,6 +22,7 @@ from typing import Any
 
 import yaml
 
+from deeptutor.auth.context import user_scope
 from deeptutor.services.path_service import get_path_service
 
 logger = logging.getLogger(__name__)
@@ -199,11 +200,19 @@ class TutorBotManager:
 
     @property
     def _tutorbot_dir(self) -> Path:
-        return self._path_service.project_root / "data" / "tutorbot"
+        captured = getattr(self, "_tutorbot_root", None)
+        if captured is not None:
+            return captured
+        if hasattr(self._path_service, "get_user_root"):
+            return self._path_service.get_user_root() / "workspace" / "tutorbot"
+        return Path(self._path_service.project_root) / "data" / "tutorbot"
 
     @property
     def _shared_memory_dir(self) -> Path:
         """Public memory shared by DeepTutor and all bots."""
+        captured = getattr(self, "_memory_root", None)
+        if captured is not None:
+            return captured
         return self._path_service.get_memory_dir()
 
     def _bot_dir(self, bot_id: str) -> Path:
@@ -1112,11 +1121,36 @@ class TutorBotManager:
         return True
 
 
-_manager: TutorBotManager | None = None
+_managers: dict[Path, TutorBotManager] = {}
 
 
 def get_tutorbot_manager() -> TutorBotManager:
-    global _manager
-    if _manager is None:
-        _manager = TutorBotManager()
-    return _manager
+    root = (get_path_service().get_user_root() / "workspace" / "tutorbot").resolve()
+    manager = _managers.get(root)
+    if manager is None:
+        manager = TutorBotManager()
+        manager._tutorbot_root = root  # type: ignore[attr-defined]
+        manager._memory_root = get_path_service().get_memory_dir().resolve()  # type: ignore[attr-defined]
+        _managers[root] = manager
+    return manager
+
+
+def reset_tutorbot_managers() -> None:
+    _managers.clear()
+
+
+async def auto_start_all_user_bots() -> None:
+    path_service = get_path_service()
+    users_root = path_service.get_users_root()
+    if not users_root.exists():
+        return
+    for user_root in users_root.iterdir():
+        if not user_root.is_dir():
+            continue
+        with user_scope(user_root.name):
+            await get_tutorbot_manager().auto_start_bots()
+
+
+async def stop_all_tutorbot_managers(*, preserve_auto_start: bool = True) -> None:
+    for manager in list(_managers.values()):
+        await manager.stop_all(preserve_auto_start=preserve_auto_start)
