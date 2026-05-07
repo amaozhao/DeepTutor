@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useMemo } from "react";
+import Image from "next/image";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { normalizeMarkdownForDisplay } from "@/lib/markdown-display";
@@ -406,9 +407,12 @@ export default function SimpleMarkdownRenderer({
       );
     },
     img: ({ node, src, alt, ...props }: any) => (
-      <img
-        src={src}
+      <Image
+        unoptimized
+        src={String(src || "")}
         alt={alt || ""}
+        width={1200}
+        height={800}
         loading="lazy"
         className={`${gap} inline-block max-w-full rounded-lg border border-[var(--border)]`}
         {...props}

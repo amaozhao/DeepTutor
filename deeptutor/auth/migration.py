@@ -89,6 +89,13 @@ def migrate_legacy_data_to_user(user_id: str) -> LegacyMigrationResult:
         skipped=skipped,
     )
 
+    _merge_dir(
+        data_root / "knowledge_bases",
+        user_root / "knowledge_bases",
+        moved=moved,
+        skipped=skipped,
+    )
+
     legacy_user_root = data_root / "user"
     if legacy_user_root.exists() and legacy_user_root.resolve() != user_root.resolve():
         _merge_dir(legacy_user_root, user_root, moved=moved, skipped=skipped)

@@ -27,7 +27,12 @@ def register(app: typer.Typer) -> None:
             typer.echo("Email already registered.")
             raise typer.Exit(code=1) from exc
         if is_first_user:
-            migrate_legacy_data_to_user(user.id)
+            try:
+                migrate_legacy_data_to_user(user.id)
+            except Exception as exc:
+                store.delete_user(user.id)
+                typer.echo(f"Failed to migrate legacy data: {exc}")
+                raise typer.Exit(code=1) from exc
         session = store.create_session(user.id, user_agent="deeptutor-cli")
         save_cli_session(token=session.token, user=user)
         typer.echo(f"Registered and logged in as {user.email}.")

@@ -45,7 +45,11 @@ class LlamaIndexPipeline:
         document_loader: LlamaIndexDocumentLoader | None = None,
     ):
         self.logger = logging.getLogger(__name__)
-        self.kb_base_dir = kb_base_dir or DEFAULT_KB_BASE_DIR
+        if kb_base_dir is None:
+            from deeptutor.services.path_service import get_path_service
+
+            kb_base_dir = str(get_path_service().get_user_root() / "knowledge_bases")
+        self.kb_base_dir = kb_base_dir
         self._signature_provider = signature_provider or signature_from_embedding_config
         self.document_loader = document_loader or LlamaIndexDocumentLoader(self.logger)
         self._configure_settings()

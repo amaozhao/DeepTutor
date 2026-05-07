@@ -17,6 +17,8 @@ import stat
 import sys
 from typing import Any
 
+from deeptutor.auth.context import current_user_id
+from deeptutor.services.path_service import get_path_service
 from deeptutor.services.rag.factory import DEFAULT_PROVIDER
 from deeptutor.services.rag.file_routing import FileTypeRouter
 
@@ -848,7 +850,11 @@ class KnowledgeBaseManager:
                 # leaving the KB stuck in the list is worse than orphan files on
                 # disk (issue #370).
                 try:
-                    os.chmod(path, stat.S_IWRITE)
+                    current_mode = os.stat(path).st_mode
+                    retry_mode = current_mode | stat.S_IWRITE
+                    if os.path.isdir(path):
+                        retry_mode |= stat.S_IREAD | stat.S_IEXEC
+                    os.chmod(path, retry_mode)
                     func(path)
                 except Exception as retry_exc:
                     logger.warning(
@@ -957,6 +963,14 @@ class KnowledgeBaseManager:
             raise ValueError(f"Folder does not exist: {folder}")
         if not folder.is_dir():
             raise ValueError(f"Path is not a directory: {folder}")
+        if current_user_id():
+            user_root = get_path_service().get_user_root().resolve()
+            try:
+                folder.relative_to(user_root)
+            except ValueError as exc:
+                raise ValueError(
+                    f"Linked folder must be inside the private user root: {user_root}"
+                ) from exc
 
         files = FileTypeRouter.collect_supported_files(folder, recursive=True)
 

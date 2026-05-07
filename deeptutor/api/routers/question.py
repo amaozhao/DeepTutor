@@ -33,8 +33,12 @@ log_dir = config.get("paths", {}).get("user_log_dir") or config.get("logging", {
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+MIMIC_OUTPUT_DIR: Path | None = None
+
 
 def _mimic_output_dir() -> Path:
+    if MIMIC_OUTPUT_DIR is not None:
+        return MIMIC_OUTPUT_DIR
     return get_path_service().get_question_dir() / "mimic_papers"
 
 

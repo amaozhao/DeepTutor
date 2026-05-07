@@ -74,6 +74,8 @@ export function SidebarShell({
   const pathname = usePathname();
   const router = useRouter();
   const { t } = useTranslation();
+  const brandLabel = t("DeepTutor") as string;
+  const githubLabel = t("GitHub") as string;
   const { sidebarCollapsed: collapsed, setSidebarCollapsed: setCollapsed } =
     useAppShell();
 
@@ -93,12 +95,12 @@ export function SidebarShell({
         <div className="relative mb-2 flex h-9 w-9 items-center justify-center">
           <Link
             href="/"
-            aria-label="DeepTutor"
+            aria-label={brandLabel}
             className="flex items-center justify-center transition-opacity duration-150 group-hover/sb:opacity-0"
           >
             <Image
               src="/logo-ver2.png"
-              alt="DeepTutor"
+              alt={brandLabel}
               width={22}
               height={22}
               className="h-[22px] w-[22px] rounded-md"
@@ -180,8 +182,8 @@ export function SidebarShell({
             href={GITHUB_REPO_URL}
             target="_blank"
             rel="noreferrer noopener"
-            title="GitHub"
-            aria-label="GitHub"
+            title={githubLabel}
+            aria-label={githubLabel}
             className="mt-1 flex h-9 w-9 items-center justify-center rounded-xl text-[var(--muted-foreground)]/70 transition-colors hover:bg-[var(--background)]/50 hover:text-[var(--foreground)]"
           >
             <Github size={15} strokeWidth={1.6} />
@@ -200,13 +202,13 @@ export function SidebarShell({
         <Link href="/" className="group flex items-center gap-2">
           <Image
             src="/logo-ver2.png"
-            alt="DeepTutor"
+            alt={brandLabel}
             width={22}
             height={22}
             className="h-[22px] w-[22px] transition-transform duration-200 group-hover:scale-105"
           />
           <span className="text-[16px] font-semibold leading-none tracking-[-0.02em] text-[var(--foreground)]">
-            DeepTutor
+            {brandLabel}
           </span>
         </Link>
         <button
@@ -303,8 +305,8 @@ export function SidebarShell({
             href={GITHUB_REPO_URL}
             target="_blank"
             rel="noreferrer noopener"
-            title="GitHub"
-            aria-label="GitHub"
+            title={githubLabel}
+            aria-label={githubLabel}
             className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-[var(--muted-foreground)]/55 transition-colors hover:bg-[var(--background)]/50 hover:text-[var(--muted-foreground)]"
           >
             <Github size={13} strokeWidth={1.7} />

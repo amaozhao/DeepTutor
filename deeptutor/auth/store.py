@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import closing
 from dataclasses import dataclass
 import hashlib
 from pathlib import Path
@@ -50,6 +51,7 @@ def _user_from_row(row: sqlite3.Row | None) -> AuthUser | None:
         display_name=row["display_name"] or "",
         created_at=float(row["created_at"]),
         updated_at=float(row["updated_at"]),
+        role=(row["role"] or "user") if "role" in row.keys() else "user",
         disabled_at=row["disabled_at"],
     )
 
@@ -66,7 +68,7 @@ class AuthStore:
         return conn
 
     def _initialize(self) -> None:
-        with self._connect() as conn:
+        with closing(self._connect()) as conn, conn:
             conn.executescript(
                 """
                 CREATE TABLE IF NOT EXISTS users (
@@ -76,6 +78,7 @@ class AuthStore:
                     display_name TEXT DEFAULT '',
                     created_at REAL NOT NULL,
                     updated_at REAL NOT NULL,
+                    role TEXT NOT NULL DEFAULT 'user',
                     disabled_at REAL
                 );
 
@@ -94,6 +97,19 @@ class AuthStore:
                     ON sessions(user_id, created_at DESC);
                 """
             )
+            user_columns = {row[1] for row in conn.execute("PRAGMA table_info(users)").fetchall()}
+            if "role" not in user_columns:
+                conn.execute("ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'user'")
+            conn.execute("UPDATE users SET role = 'user' WHERE role IS NULL OR role = ''")
+            has_admin = conn.execute(
+                "SELECT 1 FROM users WHERE role = 'admin' LIMIT 1"
+            ).fetchone()
+            if has_admin is None:
+                first_user = conn.execute(
+                    "SELECT id FROM users ORDER BY created_at ASC, id ASC LIMIT 1"
+                ).fetchone()
+                if first_user is not None:
+                    conn.execute("UPDATE users SET role = 'admin' WHERE id = ?", (first_user["id"],))
             conn.commit()
 
     def create_user(
@@ -103,17 +119,21 @@ class AuthStore:
         password_hash: str,
         display_name: str = "",
         user_id: str | None = None,
+        role: str | None = None,
     ) -> AuthUser:
         now = time.time()
         normalized_email = _normalize_email(email)
         resolved_id = user_id or f"user_{uuid.uuid4().hex}"
+        resolved_role = role or ("admin" if self.count_users() == 0 else "user")
+        if resolved_role not in {"admin", "user"}:
+            raise ValueError("role must be 'admin' or 'user'")
         try:
-            with self._connect() as conn:
+            with closing(self._connect()) as conn, conn:
                 conn.execute(
                     """
                     INSERT INTO users (
-                        id, email, password_hash, display_name, created_at, updated_at, disabled_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, NULL)
+                        id, email, password_hash, display_name, created_at, updated_at, role, disabled_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, NULL)
                     """,
                     (
                         resolved_id,
@@ -122,6 +142,7 @@ class AuthStore:
                         str(display_name or "").strip(),
                         now,
                         now,
+                        resolved_role,
                     ),
                 )
                 conn.commit()
@@ -133,18 +154,18 @@ class AuthStore:
         return user
 
     def count_users(self) -> int:
-        with self._connect() as conn:
+        with closing(self._connect()) as conn, conn:
             row = conn.execute("SELECT COUNT(*) AS total FROM users").fetchone()
         return int(row["total"] if row else 0)
 
     def get_user(self, user_id: str) -> AuthUser | None:
-        with self._connect() as conn:
+        with closing(self._connect()) as conn, conn:
             row = conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
         return _user_from_row(row)
 
     def get_user_by_email(self, email: str) -> AuthUser | None:
         normalized_email = _normalize_email(email)
-        with self._connect() as conn:
+        with closing(self._connect()) as conn, conn:
             row = conn.execute(
                 "SELECT * FROM users WHERE email = ?",
                 (normalized_email,),
@@ -163,7 +184,7 @@ class AuthStore:
         token = _new_session_token()
         session_id = f"sess_{uuid.uuid4().hex}"
         resolved_expires_at = expires_at if expires_at is not None else now + SESSION_TTL_SECONDS
-        with self._connect() as conn:
+        with closing(self._connect()) as conn, conn:
             user = conn.execute(
                 "SELECT id FROM users WHERE id = ? AND disabled_at IS NULL",
                 (user_id,),
@@ -201,7 +222,7 @@ class AuthStore:
     def get_user_by_session_token(self, token: str) -> AuthUser | None:
         token_hash = _token_hash(str(token or ""))
         now = time.time()
-        with self._connect() as conn:
+        with closing(self._connect()) as conn, conn:
             row = conn.execute(
                 """
                 SELECT u.*
@@ -218,7 +239,7 @@ class AuthStore:
 
     def revoke_session(self, token: str) -> bool:
         token_hash = _token_hash(str(token or ""))
-        with self._connect() as conn:
+        with closing(self._connect()) as conn, conn:
             cur = conn.execute(
                 """
                 UPDATE sessions
@@ -232,7 +253,7 @@ class AuthStore:
 
     def disable_user(self, user_id: str) -> bool:
         now = time.time()
-        with self._connect() as conn:
+        with closing(self._connect()) as conn, conn:
             cur = conn.execute(
                 """
                 UPDATE users
@@ -243,6 +264,16 @@ class AuthStore:
             )
             conn.commit()
         return cur.rowcount > 0
+
+    def delete_user(self, user_id: str) -> bool:
+        with closing(self._connect()) as conn, conn:
+            cur = conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
+            conn.commit()
+        return cur.rowcount > 0
+
+    def is_user_admin(self, user_id: str) -> bool:
+        user = self.get_user(user_id)
+        return bool(user and user.role == "admin")
 
 
 _store_cache: dict[Path, AuthStore] = {}

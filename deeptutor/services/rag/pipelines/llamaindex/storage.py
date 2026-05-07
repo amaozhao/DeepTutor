@@ -11,9 +11,9 @@ from typing import Any
 from llama_index.core import StorageContext, VectorStoreIndex, load_index_from_storage
 
 from deeptutor.services.embedding.validation import validate_embedding_batch
+from deeptutor.services.rag import index_versioning
 from deeptutor.services.rag.index_versioning import (
     EmbeddingSignature,
-    find_matching_version,
     resolve_storage_dir_for_read,
     resolve_storage_dir_for_write,
 )
@@ -39,7 +39,9 @@ def cleanup_failed_version_dir(storage_dir: Path) -> bool:
 
 def resolve_add_storage_plan(kb_dir: Path, signature: EmbeddingSignature | None) -> AddStoragePlan:
     """Choose existing/new storage dirs for incremental adds."""
-    matching_version = find_matching_version(kb_dir, signature) if signature is not None else None
+    matching_version = (
+        index_versioning.find_matching_version(kb_dir, signature) if signature is not None else None
+    )
     existing_storage = Path(str(matching_version["storage_path"])) if matching_version else None
 
     if matching_version and matching_version.get("layout") == "flat":

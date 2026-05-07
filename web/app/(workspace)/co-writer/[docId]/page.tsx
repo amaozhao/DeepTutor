@@ -1843,10 +1843,14 @@ export default function CoWriterPage() {
             className="mx-0.5 h-3 w-px bg-[var(--border)]"
             aria-hidden="true"
           />
-          <span className="rounded bg-[var(--muted)] px-1.5 py-0.5">GFM</span>
-          <span className="rounded bg-[var(--muted)] px-1.5 py-0.5">KaTeX</span>
           <span className="rounded bg-[var(--muted)] px-1.5 py-0.5">
-            Mermaid
+            {t("GFM")}
+          </span>
+          <span className="rounded bg-[var(--muted)] px-1.5 py-0.5">
+            {t("KaTeX")}
+          </span>
+          <span className="rounded bg-[var(--muted)] px-1.5 py-0.5">
+            {t("Mermaid")}
           </span>
         </div>
       </div>

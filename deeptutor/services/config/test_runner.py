@@ -8,7 +8,7 @@ import os
 import threading
 from threading import Lock
 import time
-from typing import Any
+from typing import Any, ClassVar
 from uuid import uuid4
 
 from deeptutor.services.llm.client import reset_llm_client
@@ -49,6 +49,8 @@ def temporary_env(values: dict[str, str]):
 
 @dataclass
 class TestRun:
+    __test__: ClassVar[bool] = False
+
     id: str
     service: str
     status: str = "running"

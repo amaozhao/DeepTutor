@@ -9,7 +9,7 @@ import time
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
-from deeptutor.auth.dependencies import require_user_scope
+from deeptutor.auth.dependencies import require_admin_scope
 from deeptutor.services.config import resolve_search_runtime_config
 from deeptutor.services.embedding import get_embedding_client, get_embedding_config
 from deeptutor.services.llm import complete as llm_complete
@@ -137,7 +137,7 @@ async def get_system_status():
 @router.post(
     "/test/llm",
     response_model=TestResponse,
-    dependencies=[Depends(require_user_scope)],
+    dependencies=[Depends(require_admin_scope)],
 )
 async def test_llm_connection():
     """
@@ -209,7 +209,7 @@ async def test_llm_connection():
 @router.post(
     "/test/embeddings",
     response_model=TestResponse,
-    dependencies=[Depends(require_user_scope)],
+    dependencies=[Depends(require_admin_scope)],
 )
 async def test_embeddings_connection():
     """
@@ -270,7 +270,7 @@ async def test_embeddings_connection():
 @router.post(
     "/test/search",
     response_model=TestResponse,
-    dependencies=[Depends(require_user_scope)],
+    dependencies=[Depends(require_admin_scope)],
 )
 async def test_search_connection():
     start_time = time.time()

@@ -130,3 +130,39 @@ def test_login_rejects_wrong_password_and_logout_revokes_cookie(tmp_path: Path) 
         service._project_root = original_root
         service._user_data_dir = original_user_dir
         reset_auth_store()
+
+
+def test_first_user_registration_rolls_back_if_legacy_migration_fails(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    service = PathService.get_instance()
+    original_root = service._project_root
+    original_user_dir = service._user_data_dir
+    try:
+        service._project_root = tmp_path
+        service._user_data_dir = tmp_path / "data" / "user"
+        reset_auth_store()
+
+        def fail_migration(_user_id: str):
+            raise RuntimeError("migration failed")
+
+        monkeypatch.setattr("deeptutor.auth.router.migrate_legacy_data_to_user", fail_migration)
+
+        with pytest.raises(HTTPException) as exc:
+            asyncio.run(
+                register(
+                    RegisterRequest(email="first@example.com", password="secret-password"),
+                    Response(),
+                    _fake_request(),
+                )
+            )
+
+        assert exc.value.status_code == 500
+        from deeptutor.auth.store import get_auth_store
+
+        assert get_auth_store().count_users() == 0
+    finally:
+        service._project_root = original_root
+        service._user_data_dir = original_user_dir
+        reset_auth_store()

@@ -153,7 +153,8 @@ class TestEndpoint:
 
         app = FastAPI()
         app.include_router(tutorbot_router.router, prefix="/api/v1/tutorbot")
-        return TestClient(app)
+        with TestClient(app) as client:
+            yield client
 
     def test_returns_channels_and_global(self, client: TestClient) -> None:
         res = client.get("/api/v1/tutorbot/channels/schema")

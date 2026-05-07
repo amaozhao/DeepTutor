@@ -11,6 +11,7 @@ class AuthUser:
     display_name: str
     created_at: float
     updated_at: float
+    role: str = "user"
     disabled_at: float | None = None
 
 

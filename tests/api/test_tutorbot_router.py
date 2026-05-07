@@ -21,6 +21,21 @@ pytestmark = pytest.mark.skipif(
     FastAPI is None or TestClient is None, reason="fastapi not installed"
 )
 
+_OPEN_TEST_CLIENTS: list[Any] = []
+
+
+def _new_test_client(app):  # noqa: ANN001
+    client = TestClient(app)
+    _OPEN_TEST_CLIENTS.append(client)
+    return client
+
+
+@pytest.fixture(autouse=True)
+def _close_open_test_clients():
+    yield
+    while _OPEN_TEST_CLIENTS:
+        _OPEN_TEST_CLIENTS.pop().close()
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -99,7 +114,7 @@ def _make_client(monkeypatch, existing: dict | None = None):
 
     app = FastAPI()
     app.include_router(tutorbot_router_mod.router, prefix="/api/v1/tutorbot")
-    return TestClient(app), saved
+    return _new_test_client(app), saved
 
 
 def _catalog_with_llm_options() -> dict[str, Any]:
@@ -372,7 +387,7 @@ class TestGetBotStoppedSecretHandling:
 
         app = FastAPI()
         app.include_router(tutorbot_router_mod.router, prefix="/api/v1/tutorbot")
-        return TestClient(app)
+        return _new_test_client(app)
 
     def test_default_get_masks_token(self, monkeypatch):
         client = self._client(monkeypatch)
@@ -424,7 +439,7 @@ class TestPatchBotStoppedAndRunning:
 
         app = FastAPI()
         app.include_router(tutorbot_router_mod.router, prefix="/api/v1/tutorbot")
-        client = TestClient(app)
+        client = _new_test_client(app)
 
         new_ch = {"telegram": {"enabled": True, "token": "1:2"}}
         resp = client.patch("/api/v1/tutorbot/b", json={"channels": new_ch})
@@ -462,7 +477,7 @@ class TestPatchBotStoppedAndRunning:
 
         app = FastAPI()
         app.include_router(tutorbot_router_mod.router, prefix="/api/v1/tutorbot")
-        client = TestClient(app)
+        client = _new_test_client(app)
 
         resp = client.patch("/api/v1/tutorbot/b", json={"llm_selection": None})
 
@@ -515,7 +530,7 @@ class TestPatchBotStoppedAndRunning:
 
         app = FastAPI()
         app.include_router(tutorbot_router_mod.router, prefix="/api/v1/tutorbot")
-        client = TestClient(app)
+        client = _new_test_client(app)
 
         resp = client.patch(
             "/api/v1/tutorbot/b", json={"channels": {"telegram": {"enabled": False}}}
@@ -567,7 +582,7 @@ class TestPatchBotStoppedAndRunning:
 
         app = FastAPI()
         app.include_router(tutorbot_router_mod.router, prefix="/api/v1/tutorbot")
-        client = TestClient(app)
+        client = _new_test_client(app)
 
         resp = client.patch("/api/v1/tutorbot/b", json={"llm_selection": selection})
 
@@ -599,7 +614,7 @@ class TestPatchBotStoppedAndRunning:
 
         app = FastAPI()
         app.include_router(tutorbot_router_mod.router, prefix="/api/v1/tutorbot")
-        client = TestClient(app)
+        client = _new_test_client(app)
 
         # send_progress should be a bool, not an int-string-list garbage value;
         # unknown extras are allowed (extra="allow" on ChannelsConfig), so we
@@ -645,7 +660,7 @@ class TestPatchBotStoppedAndRunning:
 
         app = FastAPI()
         app.include_router(tutorbot_router_mod.router, prefix="/api/v1/tutorbot")
-        client = TestClient(app)
+        client = _new_test_client(app)
 
         resp = client.patch(
             "/api/v1/tutorbot/b",
@@ -689,7 +704,7 @@ class TestBotChatWebSocketStartup:
 
         app = FastAPI()
         app.include_router(tutorbot_router_mod.router, prefix="/api/v1/tutorbot")
-        client = TestClient(app)
+        client = _new_test_client(app)
 
         with client.websocket_connect("/api/v1/tutorbot/ielts-tutor/ws") as ws:
             ws.close()
@@ -709,7 +724,7 @@ class TestBotChatWebSocketStartup:
 
         app = FastAPI()
         app.include_router(tutorbot_router_mod.router, prefix="/api/v1/tutorbot")
-        client = TestClient(app)
+        client = _new_test_client(app)
 
         with client.websocket_connect("/api/v1/tutorbot/missing/ws") as ws:
             payload = ws.receive_json()
@@ -750,7 +765,7 @@ class TestBotChatWebSocketStartup:
 
         app = FastAPI()
         app.include_router(tutorbot_router_mod.router, prefix="/api/v1/tutorbot")
-        client = TestClient(app)
+        client = _new_test_client(app)
 
         with client.websocket_connect("/api/v1/tutorbot/dedup-bot/ws") as ws:
             ws.close()
@@ -826,7 +841,7 @@ class TestBotChatWebSocketResilience:
 
         app = FastAPI()
         app.include_router(tutorbot_router_mod.router, prefix="/api/v1/tutorbot")
-        client = TestClient(app)
+        client = _new_test_client(app)
 
         # Open and immediately close without sending any payload. Both task
         # loops should observe the disconnect and exit cleanly without a

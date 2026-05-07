@@ -5,6 +5,7 @@ SQLite-backed unified chat session store.
 from __future__ import annotations
 
 import asyncio
+from contextlib import closing
 from dataclasses import dataclass
 import json
 import os
@@ -84,7 +85,7 @@ class SQLiteSessionStore:
             pass
 
     def _initialize(self) -> None:
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn, conn:
             conn.execute("PRAGMA foreign_keys = ON")
             conn.executescript(
                 """
@@ -214,7 +215,7 @@ class SQLiteSessionStore:
         now = time.time()
         resolved_id = session_id or f"unified_{int(now * 1000)}_{uuid.uuid4().hex[:8]}"
         resolved_title = (title or "New conversation").strip() or "New conversation"
-        with self._connect() as conn:
+        with closing(self._connect()) as conn, conn:
             conn.execute(
                 """
                 INSERT INTO sessions (id, title, created_at, updated_at, compressed_summary, summary_up_to_msg_id)
@@ -239,7 +240,7 @@ class SQLiteSessionStore:
         return await self._run(self._create_session_sync, title, session_id)
 
     def _get_session_sync(self, session_id: str) -> dict[str, Any] | None:
-        with self._connect() as conn:
+        with closing(self._connect()) as conn, conn:
             row = conn.execute(
                 """
                 SELECT
@@ -320,7 +321,7 @@ class SQLiteSessionStore:
     def _create_turn_sync(self, session_id: str, capability: str = "") -> dict[str, Any]:
         now = time.time()
         turn_id = f"turn_{int(now * 1000)}_{uuid.uuid4().hex[:10]}"
-        with self._connect() as conn:
+        with closing(self._connect()) as conn, conn:
             session = conn.execute("SELECT id FROM sessions WHERE id = ?", (session_id,)).fetchone()
             if session is None:
                 raise ValueError(f"Session not found: {session_id}")
@@ -361,7 +362,7 @@ class SQLiteSessionStore:
         return await self._run(self._create_turn_sync, session_id, capability)
 
     def _get_turn_sync(self, turn_id: str) -> dict[str, Any] | None:
-        with self._connect() as conn:
+        with closing(self._connect()) as conn, conn:
             row = conn.execute(
                 """
                 SELECT
@@ -380,7 +381,7 @@ class SQLiteSessionStore:
         return await self._run(self._get_turn_sync, turn_id)
 
     def _get_active_turn_sync(self, session_id: str) -> dict[str, Any] | None:
-        with self._connect() as conn:
+        with closing(self._connect()) as conn, conn:
             row = conn.execute(
                 """
                 SELECT
@@ -401,7 +402,7 @@ class SQLiteSessionStore:
         return await self._run(self._get_active_turn_sync, session_id)
 
     def _list_active_turns_sync(self, session_id: str) -> list[dict[str, Any]]:
-        with self._connect() as conn:
+        with closing(self._connect()) as conn, conn:
             rows = conn.execute(
                 """
                 SELECT
@@ -421,7 +422,7 @@ class SQLiteSessionStore:
     def _update_turn_status_sync(self, turn_id: str, status: str, error: str = "") -> bool:
         now = time.time()
         finished_at = now if status in {"completed", "failed", "cancelled"} else None
-        with self._connect() as conn:
+        with closing(self._connect()) as conn, conn:
             cur = conn.execute(
                 """
                 UPDATE turns
@@ -438,7 +439,7 @@ class SQLiteSessionStore:
 
     def _append_turn_event_sync(self, turn_id: str, event: dict[str, Any]) -> dict[str, Any]:
         now = time.time()
-        with self._connect() as conn:
+        with closing(self._connect()) as conn, conn:
             turn = conn.execute(
                 "SELECT id, session_id FROM turns WHERE id = ?", (turn_id,)
             ).fetchone()
@@ -486,7 +487,7 @@ class SQLiteSessionStore:
         return await self._run(self._append_turn_event_sync, turn_id, event)
 
     def _get_turn_events_sync(self, turn_id: str, after_seq: int = 0) -> list[dict[str, Any]]:
-        with self._connect() as conn:
+        with closing(self._connect()) as conn, conn:
             rows = conn.execute(
                 """
                 SELECT turn_id, seq, type, source, stage, content, metadata_json, timestamp
@@ -517,7 +518,7 @@ class SQLiteSessionStore:
         return await self._run(self._get_turn_events_sync, turn_id, after_seq)
 
     def _update_session_title_sync(self, session_id: str, title: str) -> bool:
-        with self._connect() as conn:
+        with closing(self._connect()) as conn, conn:
             cur = conn.execute(
                 """
                 UPDATE sessions
@@ -533,7 +534,7 @@ class SQLiteSessionStore:
         return await self._run(self._update_session_title_sync, session_id, title)
 
     def _delete_session_sync(self, session_id: str) -> bool:
-        with self._connect() as conn:
+        with closing(self._connect()) as conn, conn:
             cur = conn.execute("DELETE FROM sessions WHERE id = ?", (session_id,))
             conn.commit()
         return cur.rowcount > 0
@@ -552,7 +553,7 @@ class SQLiteSessionStore:
         metadata: dict[str, Any] | None = None,
     ) -> int:
         now = time.time()
-        with self._connect() as conn:
+        with closing(self._connect()) as conn, conn:
             session = conn.execute(
                 "SELECT id, title FROM sessions WHERE id = ?", (session_id,)
             ).fetchone()
@@ -618,7 +619,7 @@ class SQLiteSessionStore:
         )
 
     def _delete_message_sync(self, message_id: int) -> bool:
-        with self._connect() as conn:
+        with closing(self._connect()) as conn, conn:
             cur = conn.execute("DELETE FROM messages WHERE id = ?", (int(message_id),))
             conn.commit()
         return cur.rowcount > 0
@@ -629,7 +630,7 @@ class SQLiteSessionStore:
     def _get_last_message_sync(
         self, session_id: str, role: str | None = None
     ) -> dict[str, Any] | None:
-        with self._connect() as conn:
+        with closing(self._connect()) as conn, conn:
             if role is None:
                 row = conn.execute(
                     """
@@ -677,7 +678,7 @@ class SQLiteSessionStore:
         }
 
     def _get_messages_sync(self, session_id: str) -> list[dict[str, Any]]:
-        with self._connect() as conn:
+        with closing(self._connect()) as conn, conn:
             rows = conn.execute(
                 """
                 SELECT id, session_id, role, content, capability, events_json,
@@ -694,7 +695,7 @@ class SQLiteSessionStore:
         return await self._run(self._get_messages_sync, session_id)
 
     def _get_messages_for_context_sync(self, session_id: str) -> list[dict[str, Any]]:
-        with self._connect() as conn:
+        with closing(self._connect()) as conn, conn:
             rows = conn.execute(
                 """
                 SELECT id, role, content
@@ -713,7 +714,7 @@ class SQLiteSessionStore:
         return await self._run(self._get_messages_for_context_sync, session_id)
 
     def _list_sessions_sync(self, limit: int = 50, offset: int = 0) -> list[dict[str, Any]]:
-        with self._connect() as conn:
+        with closing(self._connect()) as conn, conn:
             rows = conn.execute(
                 """
                 SELECT
@@ -786,7 +787,7 @@ class SQLiteSessionStore:
         return await self._run(self._list_sessions_sync, limit, offset)
 
     def _update_summary_sync(self, session_id: str, summary: str, up_to_msg_id: int) -> bool:
-        with self._connect() as conn:
+        with closing(self._connect()) as conn, conn:
             cur = conn.execute(
                 """
                 UPDATE sessions
@@ -804,7 +805,7 @@ class SQLiteSessionStore:
     def _update_session_preferences_sync(
         self, session_id: str, preferences: dict[str, Any]
     ) -> bool:
-        with self._connect() as conn:
+        with closing(self._connect()) as conn, conn:
             current = conn.execute(
                 "SELECT preferences_json FROM sessions WHERE id = ?",
                 (session_id,),
@@ -845,7 +846,7 @@ class SQLiteSessionStore:
         if not items:
             return 0
         now = time.time()
-        with self._connect() as conn:
+        with closing(self._connect()) as conn, conn:
             if (
                 conn.execute("SELECT id FROM sessions WHERE id = ?", (session_id,)).fetchone()
                 is None
@@ -947,7 +948,7 @@ class SQLiteSessionStore:
             conditions.append("n.is_correct = ?")
             params.append(1 if is_correct else 0)
         where = (" WHERE " + " AND ".join(conditions)) if conditions else ""
-        with self._connect() as conn:
+        with closing(self._connect()) as conn, conn:
             total_row = conn.execute(count_base + where, tuple(params)).fetchone()
             total = int(total_row["cnt"]) if total_row else 0
             rows = conn.execute(
@@ -975,7 +976,7 @@ class SQLiteSessionStore:
         )
 
     def _get_notebook_entry_sync(self, entry_id: int) -> dict[str, Any] | None:
-        with self._connect() as conn:
+        with closing(self._connect()) as conn, conn:
             row = conn.execute(
                 """
                 SELECT
@@ -1006,7 +1007,7 @@ class SQLiteSessionStore:
         return await self._run(self._get_notebook_entry_sync, entry_id)
 
     def _find_notebook_entry_sync(self, session_id: str, question_id: str) -> dict[str, Any] | None:
-        with self._connect() as conn:
+        with closing(self._connect()) as conn, conn:
             row = conn.execute(
                 """
                 SELECT n.*, COALESCE(s.title, '') AS session_title
@@ -1035,7 +1036,7 @@ class SQLiteSessionStore:
             fields["is_correct"] = 1 if fields["is_correct"] else 0
         set_clause = ", ".join(f"{k} = ?" for k in fields)
         values = list(fields.values()) + [entry_id]
-        with self._connect() as conn:
+        with closing(self._connect()) as conn, conn:
             cur = conn.execute(
                 f"UPDATE notebook_entries SET {set_clause} WHERE id = ?",  # nosec B608
                 tuple(values),
@@ -1047,7 +1048,7 @@ class SQLiteSessionStore:
         return await self._run(self._update_notebook_entry_sync, entry_id, updates)
 
     def _delete_notebook_entry_sync(self, entry_id: int) -> bool:
-        with self._connect() as conn:
+        with closing(self._connect()) as conn, conn:
             cur = conn.execute("DELETE FROM notebook_entries WHERE id = ?", (entry_id,))
             conn.commit()
         return cur.rowcount > 0
@@ -1059,7 +1060,7 @@ class SQLiteSessionStore:
 
     def _create_category_sync(self, name: str) -> dict[str, Any]:
         now = time.time()
-        with self._connect() as conn:
+        with closing(self._connect()) as conn, conn:
             cur = conn.execute(
                 "INSERT INTO notebook_categories (name, created_at) VALUES (?, ?)",
                 (name.strip(), now),
@@ -1071,7 +1072,7 @@ class SQLiteSessionStore:
         return await self._run(self._create_category_sync, name)
 
     def _list_categories_sync(self) -> list[dict[str, Any]]:
-        with self._connect() as conn:
+        with closing(self._connect()) as conn, conn:
             rows = conn.execute(
                 """
                 SELECT c.id, c.name, c.created_at,
@@ -1096,7 +1097,7 @@ class SQLiteSessionStore:
         return await self._run(self._list_categories_sync)
 
     def _rename_category_sync(self, category_id: int, name: str) -> bool:
-        with self._connect() as conn:
+        with closing(self._connect()) as conn, conn:
             cur = conn.execute(
                 "UPDATE notebook_categories SET name = ? WHERE id = ?",
                 (name.strip(), category_id),
@@ -1108,7 +1109,7 @@ class SQLiteSessionStore:
         return await self._run(self._rename_category_sync, category_id, name)
 
     def _delete_category_sync(self, category_id: int) -> bool:
-        with self._connect() as conn:
+        with closing(self._connect()) as conn, conn:
             cur = conn.execute("DELETE FROM notebook_categories WHERE id = ?", (category_id,))
             conn.commit()
         return cur.rowcount > 0
@@ -1117,7 +1118,7 @@ class SQLiteSessionStore:
         return await self._run(self._delete_category_sync, category_id)
 
     def _add_entry_to_category_sync(self, entry_id: int, category_id: int) -> bool:
-        with self._connect() as conn:
+        with closing(self._connect()) as conn, conn:
             try:
                 conn.execute(
                     "INSERT OR IGNORE INTO notebook_entry_categories (entry_id, category_id) VALUES (?, ?)",
@@ -1132,7 +1133,7 @@ class SQLiteSessionStore:
         return await self._run(self._add_entry_to_category_sync, entry_id, category_id)
 
     def _remove_entry_from_category_sync(self, entry_id: int, category_id: int) -> bool:
-        with self._connect() as conn:
+        with closing(self._connect()) as conn, conn:
             cur = conn.execute(
                 "DELETE FROM notebook_entry_categories WHERE entry_id = ? AND category_id = ?",
                 (entry_id, category_id),
@@ -1144,7 +1145,7 @@ class SQLiteSessionStore:
         return await self._run(self._remove_entry_from_category_sync, entry_id, category_id)
 
     def _get_entry_categories_sync(self, entry_id: int) -> list[dict[str, Any]]:
-        with self._connect() as conn:
+        with closing(self._connect()) as conn, conn:
             rows = conn.execute(
                 """
                 SELECT c.id, c.name FROM notebook_categories c

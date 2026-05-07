@@ -33,6 +33,14 @@ def test_legacy_migration_merges_data_memory_before_user_workspace(tmp_path: Pat
         )
         (legacy_user / "chat_history.db").write_text("sqlite bytes", encoding="utf-8")
 
+        legacy_kbs = tmp_path / "data" / "knowledge_bases"
+        (legacy_kbs / "kb_config.json").parent.mkdir(parents=True)
+        (legacy_kbs / "kb_config.json").write_text(
+            '{"knowledge_bases":{"legacy":{"path":"legacy"}}}', encoding="utf-8"
+        )
+        (legacy_kbs / "legacy" / "raw").mkdir(parents=True)
+        (legacy_kbs / "legacy" / "raw" / "doc.txt").write_text("legacy kb", encoding="utf-8")
+
         result = migrate_legacy_data_to_user("user_first")
 
         user_root = tmp_path / "data" / "users" / "user_first"
@@ -48,8 +56,13 @@ def test_legacy_migration_merges_data_memory_before_user_workspace(tmp_path: Pat
         assert (tmp_path / "data" / "system" / "settings" / "main.yaml").exists()
         assert (tmp_path / "data" / "system" / "settings" / "agents.yaml").exists()
         assert (user_root / "chat_history.db").read_text(encoding="utf-8") == "sqlite bytes"
+        assert (user_root / "knowledge_bases" / "kb_config.json").exists()
+        assert (
+            user_root / "knowledge_bases" / "legacy" / "raw" / "doc.txt"
+        ).read_text(encoding="utf-8") == "legacy kb"
         assert (user_root / ".legacy_migration_complete").exists()
         assert not global_memory.exists()
+        assert not legacy_kbs.exists()
     finally:
         service._project_root = original_root
         service._user_data_dir = original_user_dir

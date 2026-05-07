@@ -15,6 +15,13 @@ DEFAULT_KB_BASE_DIR = str(
 )
 
 
+def default_kb_base_dir() -> str:
+    """Return the active user's private knowledge-base root."""
+    from deeptutor.services.path_service import get_path_service
+
+    return str(get_path_service().get_user_root() / "knowledge_bases")
+
+
 class RAGService:
     """Unified RAG service backed by the LlamaIndex pipeline."""
 
@@ -24,7 +31,7 @@ class RAGService:
         provider: Optional[str] = None,  # accepted for backward compatibility
     ):
         self.logger = logging.getLogger(__name__)
-        self.kb_base_dir = kb_base_dir or DEFAULT_KB_BASE_DIR
+        self.kb_base_dir = kb_base_dir or default_kb_base_dir()
         self.provider = DEFAULT_PROVIDER
         self._pipeline = None
 

@@ -12,10 +12,12 @@ import json
 import time
 from typing import Any, List, Literal, Optional
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
+from deeptutor.auth.dependencies import require_admin_scope, require_user_scope
+from deeptutor.auth.models import AuthUser
 from deeptutor.services.config import get_config_test_runner, get_model_catalog_service
 from deeptutor.services.embedding.client import reset_embedding_client
 from deeptutor.services.llm.client import reset_llm_client
@@ -70,6 +72,48 @@ class SidebarNavOrderUpdate(BaseModel):
 
 class CatalogPayload(BaseModel):
     catalog: dict[str, Any]
+
+
+def _is_admin_user(user: Any) -> bool:
+    return isinstance(user, AuthUser) and user.role == "admin"
+
+
+def _assert_admin_user(user: Any) -> None:
+    if isinstance(user, AuthUser) and user.role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin privileges required",
+        )
+
+
+def _redact_secret_value(value: Any) -> Any:
+    return "" if value else value
+
+
+def redact_catalog_for_user(catalog: dict[str, Any]) -> dict[str, Any]:
+    """Return catalog metadata without server-wide credentials."""
+    redacted = json.loads(json.dumps(catalog))
+    services = redacted.get("services", {})
+    for service in services.values():
+        profiles = service.get("profiles", []) if isinstance(service, dict) else []
+        for profile in profiles:
+            if not isinstance(profile, dict):
+                continue
+            if "api_key" in profile:
+                profile["api_key"] = _redact_secret_value(profile.get("api_key"))
+            if "proxy" in profile:
+                profile["proxy"] = _redact_secret_value(profile.get("proxy"))
+            extra_headers = profile.get("extra_headers")
+            if isinstance(extra_headers, dict):
+                profile["extra_headers"] = {
+                    key: _redact_secret_value(value) for key, value in extra_headers.items()
+                }
+    return redacted
+
+
+def _catalog_for_user(user: Any) -> dict[str, Any]:
+    catalog = get_model_catalog_service().load()
+    return catalog if _is_admin_user(user) else redact_catalog_for_user(catalog)
 
 
 def _invalidate_runtime_caches() -> None:
@@ -145,33 +189,41 @@ def _provider_choices() -> dict[str, list[dict[str, str]]]:
 
 
 @router.get("")
-async def get_settings():
+async def get_settings(user: AuthUser = Depends(require_user_scope)):
     return {
         "ui": load_ui_settings(),
-        "catalog": get_model_catalog_service().load(),
+        "catalog": _catalog_for_user(user),
         "providers": _provider_choices(),
     }
 
 
 @router.get("/catalog")
-async def get_catalog():
-    return {"catalog": get_model_catalog_service().load()}
+async def get_catalog(user: AuthUser = Depends(require_user_scope)):
+    return {"catalog": _catalog_for_user(user)}
 
 
 @router.get("/llm-options")
-async def get_llm_options():
-    return list_llm_options(get_model_catalog_service().load())
+async def get_llm_options(user: AuthUser = Depends(require_user_scope)):
+    return list_llm_options(_catalog_for_user(user))
 
 
 @router.put("/catalog")
-async def update_catalog(payload: CatalogPayload):
+async def update_catalog(
+    payload: CatalogPayload,
+    user: AuthUser = Depends(require_admin_scope),
+):
+    _assert_admin_user(user)
     catalog = get_model_catalog_service().save(payload.catalog)
     _invalidate_runtime_caches()
     return {"catalog": catalog}
 
 
 @router.post("/apply")
-async def apply_catalog(payload: CatalogPayload | None = None):
+async def apply_catalog(
+    payload: CatalogPayload | None = None,
+    user: AuthUser = Depends(require_admin_scope),
+):
+    _assert_admin_user(user)
     catalog = payload.catalog if payload is not None else get_model_catalog_service().load()
     rendered = get_model_catalog_service().apply(catalog)
     _invalidate_runtime_caches()
@@ -252,13 +304,24 @@ async def update_sidebar_nav_order(update: SidebarNavOrderUpdate):
 
 
 @router.post("/tests/{service}/start")
-async def start_service_test(service: str, payload: CatalogPayload | None = None):
+async def start_service_test(
+    service: str,
+    payload: CatalogPayload | None = None,
+    user: AuthUser = Depends(require_admin_scope),
+):
+    _assert_admin_user(user)
     run = get_config_test_runner().start(service, payload.catalog if payload else None)
     return {"run_id": run.id}
 
 
 @router.get("/tests/{service}/{run_id}/events")
-async def stream_service_test_events(service: str, run_id: str, request: Request):
+async def stream_service_test_events(
+    service: str,
+    run_id: str,
+    request: Request,
+    user: AuthUser = Depends(require_admin_scope),
+):
+    _assert_admin_user(user)
     runner = get_config_test_runner()
     run = runner.get(run_id)
 
@@ -282,19 +345,29 @@ async def stream_service_test_events(service: str, run_id: str, request: Request
 
 
 @router.post("/tests/{service}/{run_id}/cancel")
-async def cancel_service_test(service: str, run_id: str):
+async def cancel_service_test(
+    service: str,
+    run_id: str,
+    user: AuthUser = Depends(require_admin_scope),
+):
+    _assert_admin_user(user)
     get_config_test_runner().cancel(run_id)
     return {"message": "Cancelled"}
 
 
-TOUR_CACHE = _path_service.get_settings_dir() / ".tour_cache.json"
+TOUR_CACHE: Any = None
+
+
+def _tour_cache_path() -> Any:
+    return TOUR_CACHE or (_path_service.get_settings_dir() / ".tour_cache.json")
 
 
 @router.get("/tour/status")
 async def tour_status():
-    if TOUR_CACHE.exists():
+    cache_path = _tour_cache_path()
+    if cache_path.exists():
         try:
-            cache = json.loads(TOUR_CACHE.read_text(encoding="utf-8"))
+            cache = json.loads(cache_path.read_text(encoding="utf-8"))
             return {
                 "active": True,
                 "status": cache.get("status", "unknown"),
@@ -312,7 +385,11 @@ class TourCompletePayload(BaseModel):
 
 
 @router.post("/tour/complete")
-async def complete_tour(payload: TourCompletePayload | None = None):
+async def complete_tour(
+    payload: TourCompletePayload | None = None,
+    user: AuthUser = Depends(require_admin_scope),
+):
+    _assert_admin_user(user)
     catalog = payload.catalog if payload and payload.catalog else get_model_catalog_service().load()
     rendered = get_model_catalog_service().apply(catalog)
     _invalidate_runtime_caches()
@@ -320,9 +397,10 @@ async def complete_tour(payload: TourCompletePayload | None = None):
     launch_at = now + 3
     redirect_at = now + 5
 
-    if TOUR_CACHE.exists():
+    cache_path = _tour_cache_path()
+    if cache_path.exists():
         try:
-            cache = json.loads(TOUR_CACHE.read_text(encoding="utf-8"))
+            cache = json.loads(cache_path.read_text(encoding="utf-8"))
         except Exception:
             cache = {}
         cache["status"] = "completed"
@@ -330,7 +408,7 @@ async def complete_tour(payload: TourCompletePayload | None = None):
         cache["redirect_at"] = redirect_at
         if payload and payload.test_results:
             cache["test_results"] = payload.test_results
-        TOUR_CACHE.write_text(json.dumps(cache, indent=2), encoding="utf-8")
+        cache_path.write_text(json.dumps(cache, indent=2), encoding="utf-8")
 
     return {
         "status": "completed",

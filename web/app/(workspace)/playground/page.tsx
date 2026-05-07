@@ -682,7 +682,7 @@ function CapabilityResultPanel({
         )}
         {typeof result.elapsedMs === "number" && (
           <span className="text-[11px] text-[var(--muted-foreground)]">
-            {result.elapsedMs} ms
+            {result.elapsedMs} {t("ms")}
           </span>
         )}
       </div>

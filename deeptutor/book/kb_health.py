@@ -20,6 +20,7 @@ from pathlib import Path
 import re
 
 from deeptutor.knowledge.manager import KnowledgeBaseManager
+from deeptutor.services.rag.service import default_kb_base_dir
 
 from .models import Book
 from .storage import BookStorage, get_book_storage
@@ -46,7 +47,7 @@ def fingerprint_kb(kb_name: str, manager: KnowledgeBaseManager | None = None) ->
 
     Returns ``""`` when the KB does not exist (so callers can detect deletion).
     """
-    mgr = manager or KnowledgeBaseManager()
+    mgr = manager or KnowledgeBaseManager(base_dir=default_kb_base_dir())
     if kb_name not in mgr.list_knowledge_bases():
         return ""
     base_dir: Path = mgr.base_dir / kb_name / "raw"
@@ -68,7 +69,7 @@ def fingerprint_kb(kb_name: str, manager: KnowledgeBaseManager | None = None) ->
 def fingerprint_kbs(
     kb_names: list[str], manager: KnowledgeBaseManager | None = None
 ) -> dict[str, str]:
-    mgr = manager or KnowledgeBaseManager()
+    mgr = manager or KnowledgeBaseManager(base_dir=default_kb_base_dir())
     return {name: fingerprint_kb(name, manager=mgr) for name in kb_names}
 
 

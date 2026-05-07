@@ -15,18 +15,19 @@ import yaml
 from deeptutor.auth.context import current_user_id
 from deeptutor.services.path_service import get_path_service
 
-# PROJECT_ROOT points to the actual project root directory (DeepTutor/)
+# PACKAGE_PROJECT_ROOT points to the actual project root directory (DeepTutor/)
 # Path(__file__) = deeptutor/services/config/loader.py
 # .parent = deeptutor/services/config/
 # .parent.parent = deeptutor/services/
 # .parent.parent.parent = deeptutor/
 # .parent.parent.parent.parent = DeepTutor/ (project root)
-PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
+PACKAGE_PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
+PROJECT_ROOT = PACKAGE_PROJECT_ROOT
 
 
 def _runtime_settings_candidates(project_root: Path) -> list[Path]:
     """Return runtime settings lookup candidates in priority order."""
-    if project_root == PROJECT_ROOT:
+    if project_root == PACKAGE_PROJECT_ROOT:
         path_service = get_path_service()
         candidates: list[Path] = []
         scoped_user_id = current_user_id()

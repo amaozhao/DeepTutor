@@ -1,6 +1,7 @@
 "use client";
 
 import { Download, ExternalLink } from "lucide-react";
+import Image from "next/image";
 import { useTranslation } from "react-i18next";
 
 import MarkdownRenderer from "@/components/common/MarkdownRenderer";
@@ -62,9 +63,12 @@ export default function AnimationBlock({ block }: AnimationBlockProps) {
             className="aspect-video h-auto w-full object-contain"
           />
         ) : (
-          <img
+          <Image
+            unoptimized
             src={primary}
             alt={description || t("Animation frame")}
+            width={1600}
+            height={900}
             className="h-auto w-full"
           />
         )}

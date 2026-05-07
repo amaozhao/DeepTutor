@@ -87,8 +87,9 @@ export default function ResearchOutlineEditor({
         </div>
         {!locked && (
           <p className="mt-0.5 text-[11px] text-[var(--muted-foreground)]/60">
-            Review and edit the sub-topics below, then start the research. You
-            can also type in the chat to regenerate the outline.
+            {t(
+              "Review and edit the sub-topics below, then start the research. You can also type in the chat to regenerate the outline.",
+            )}
           </p>
         )}
       </div>

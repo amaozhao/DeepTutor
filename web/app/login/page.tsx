@@ -2,10 +2,12 @@
 
 import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useTranslation } from "react-i18next";
 import { useAuth } from "@/context/AuthContext";
 
 export default function LoginPage() {
   const router = useRouter();
+  const { t } = useTranslation();
   const { login, register } = useAuth();
   const [mode, setMode] = useState<"login" | "register">("login");
   const [email, setEmail] = useState("");
@@ -32,7 +34,7 @@ export default function LoginPage() {
       }
       router.replace(nextPath);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Authentication failed");
+      setError(err instanceof Error ? err.message : t("Authentication failed"));
     } finally {
       setSubmitting(false);
     }
@@ -46,16 +48,16 @@ export default function LoginPage() {
       >
         <div>
           <h1 className="text-xl font-semibold text-[var(--foreground)]">
-            {mode === "register" ? "Create account" : "Sign in"}
+            {mode === "register" ? t("Create account") : t("Sign in")}
           </h1>
           <p className="mt-1 text-sm text-[var(--muted-foreground)]">
-            DeepTutor private workspace
+            {t("DeepTutor private workspace")}
           </p>
         </div>
 
         {mode === "register" ? (
           <label className="block text-sm">
-            <span className="text-[var(--muted-foreground)]">Name</span>
+            <span className="text-[var(--muted-foreground)]">{t("Name")}</span>
             <input
               value={displayName}
               onChange={(event) => setDisplayName(event.target.value)}
@@ -66,7 +68,7 @@ export default function LoginPage() {
         ) : null}
 
         <label className="block text-sm">
-          <span className="text-[var(--muted-foreground)]">Email</span>
+          <span className="text-[var(--muted-foreground)]">{t("Email")}</span>
           <input
             value={email}
             onChange={(event) => setEmail(event.target.value)}
@@ -78,7 +80,7 @@ export default function LoginPage() {
         </label>
 
         <label className="block text-sm">
-          <span className="text-[var(--muted-foreground)]">Password</span>
+          <span className="text-[var(--muted-foreground)]">{t("Password")}</span>
           <input
             value={password}
             onChange={(event) => setPassword(event.target.value)}
@@ -102,10 +104,10 @@ export default function LoginPage() {
           className="w-full rounded-md bg-[var(--primary)] px-3 py-2 text-sm font-medium text-[var(--primary-foreground)] disabled:opacity-60"
         >
           {submitting
-            ? "Working..."
+            ? t("Working...")
             : mode === "register"
-              ? "Create account"
-              : "Sign in"}
+              ? t("Create account")
+              : t("Sign in")}
         </button>
 
         <button
@@ -117,8 +119,8 @@ export default function LoginPage() {
           className="w-full text-sm text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
         >
           {mode === "register"
-            ? "Already have an account? Sign in"
-            : "Need an account? Register"}
+            ? t("Already have an account? Sign in")
+            : t("Need an account? Register")}
         </button>
       </form>
     </main>

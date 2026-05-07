@@ -36,11 +36,15 @@ def get_pipeline(
     """
     from .pipelines.llamaindex.pipeline import LlamaIndexPipeline
 
+    if kb_base_dir is None:
+        from deeptutor.services.path_service import get_path_service
+
+        kb_base_dir = str(get_path_service().get_user_root() / "knowledge_bases")
+
     if kwargs:
         # When custom kwargs are provided, build a fresh instance and skip
         # the cache to honour overrides.
-        if kb_base_dir is not None:
-            kwargs.setdefault("kb_base_dir", kb_base_dir)
+        kwargs.setdefault("kb_base_dir", kb_base_dir)
         return LlamaIndexPipeline(**kwargs)
 
     if kb_base_dir not in _PIPELINE_CACHE:

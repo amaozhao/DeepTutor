@@ -46,6 +46,7 @@ def _user_payload(user: AuthUser) -> dict[str, str | float | None]:
         "id": user.id,
         "email": user.email,
         "display_name": user.display_name,
+        "role": user.role,
         "created_at": user.created_at,
         "updated_at": user.updated_at,
         "disabled_at": user.disabled_at,
@@ -81,7 +82,14 @@ async def register(payload: RegisterRequest, response: Response, request: Reques
             detail="Email already registered",
         ) from exc
     if is_first_user:
-        migrate_legacy_data_to_user(user.id)
+        try:
+            migrate_legacy_data_to_user(user.id)
+        except Exception as exc:
+            store.delete_user(user.id)
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to migrate legacy data for first user",
+            ) from exc
 
     session = store.create_session(
         user.id,

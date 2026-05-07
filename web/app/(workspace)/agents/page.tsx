@@ -1104,7 +1104,7 @@ function BotsTab({
               />
               {botId && (
                 <p className="mt-1 text-[11px] text-[var(--muted-foreground)]">
-                  ID: {botId}
+                  {t("ID")}: {botId}
                 </p>
               )}
             </div>
@@ -2038,7 +2038,7 @@ function SoulsTab({
               />
               {newName.trim() && (
                 <p className="mt-1 text-[11px] text-[var(--muted-foreground)]">
-                  ID:{" "}
+                  {t("ID")}:{" "}
                   {newName
                     .trim()
                     .toLowerCase()

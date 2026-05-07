@@ -10,7 +10,7 @@ from deeptutor.tutorbot.utils.helpers import ensure_dir
 def _base_dir() -> Path:
     from deeptutor.services.path_service import get_path_service
 
-    return ensure_dir(get_path_service().project_root / "data" / "tutorbot")
+    return ensure_dir(get_path_service().get_user_root() / "workspace" / "tutorbot")
 
 
 def get_data_dir() -> Path:
@@ -45,10 +45,10 @@ def get_legacy_sessions_dir() -> Path:
 
 
 def get_shared_memory_dir() -> Path:
-    """Public memory shared by DeepTutor and all bots: data/memory/."""
+    """Public memory shared by DeepTutor and all bots for the active user."""
     from deeptutor.services.path_service import get_path_service
 
-    return ensure_dir(get_path_service().project_root / "data" / "memory")
+    return ensure_dir(get_path_service().get_memory_dir())
 
 
 # ── Per-bot path helpers ──────────────────────────────────────────

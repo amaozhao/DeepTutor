@@ -5,6 +5,8 @@
 @layer base {
   :root {
     color-scheme: light;
+    --font-sans: "Aptos", "Avenir Next", "Trebuchet MS", "Helvetica Neue", sans-serif;
+    --font-serif: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, serif;
     --background: #faf9f6;
     --foreground: #1f1d1b;
     --card: #ffffff;

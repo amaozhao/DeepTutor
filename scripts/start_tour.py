@@ -47,19 +47,12 @@ _PYTHON: str = _resolve_python()
 
 
 def _resolve_pip_cmd() -> tuple[list[str], list[str]]:
-    """Return ``(prefix, python_args)`` for the best pip invocation.
+    """Return ``(prefix, python_args)`` for the pip invocation.
 
-    Prefer ``uv pip`` when uv is on PATH (uv-managed venvs may have pip
-    disabled).  When using uv, also bind ``--python _PYTHON`` so packages land
-    in the same interpreter that's running this script — without it ``uv pip``
-    falls back to its own venv discovery (``$VIRTUAL_ENV`` / ``./.venv``) and
-    may install into a different environment.
-
-    Falls back to ``python -m pip`` (with no extra args) when uv is absent.
+    The setup tour installs into the interpreter that is running the script.
+    Avoiding ``uv pip`` here prevents an existing ``uv`` binary from silently
+    selecting a different virtual environment.
     """
-    uv = shutil.which("uv")
-    if uv:
-        return [uv, "pip"], ["--python", _PYTHON]
     return [_PYTHON, "-m", "pip"], []
 
 

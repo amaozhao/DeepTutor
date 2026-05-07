@@ -29,6 +29,20 @@ async def require_user_scope(request: Request) -> AsyncIterator[AuthUser]:
         yield user
 
 
+async def require_admin_scope(request: Request) -> AsyncIterator[AuthUser]:
+    dep = require_user_scope(request)
+    user = await anext(dep)
+    try:
+        if user.role != "admin":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Admin privileges required",
+            )
+        yield user
+    finally:
+        await dep.aclose()
+
+
 def authenticate_websocket_user(ws: WebSocket) -> AuthUser | None:
     token = ws.cookies.get(SESSION_COOKIE, "")
     return get_auth_store().get_user_by_session_token(token) if token else None

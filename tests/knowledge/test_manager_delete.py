@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -49,18 +50,17 @@ def test_delete_knowledge_base_clears_config_when_rmtree_fails(
     manager = KnowledgeBaseManager(base_dir=str(tmp_path))
     _create_kb(manager, "broken")
 
-    import shutil as _shutil
-
     def _rmtree_always_errors(path, onerror=None, **_kwargs):
         # Simulate a persistent OSError that chmod-retry cannot recover from.
         if onerror is not None:
-            onerror(_shutil.rmtree, str(path), (OSError, OSError("busy"), None))
+            def _retry_failure(_path):
+                raise OSError("busy")
 
-    monkeypatch.setattr(_shutil, "rmtree", _rmtree_always_errors)
-    # The manager imports shutil at module level, so patch there too.
+            onerror(_retry_failure, str(path), (OSError, OSError("busy"), None))
+
     from deeptutor.knowledge import manager as manager_mod
 
-    monkeypatch.setattr(manager_mod.shutil, "rmtree", _rmtree_always_errors)
+    monkeypatch.setattr(manager_mod, "shutil", SimpleNamespace(rmtree=_rmtree_always_errors))
 
     assert manager.delete_knowledge_base("broken", confirm=True) is True
     assert "broken" not in _read_config(manager.config_file).get("knowledge_bases", {})

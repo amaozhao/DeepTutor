@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from contextlib import closing
 from pathlib import Path
 import sqlite3
 
@@ -38,7 +39,7 @@ def test_sqlite_store_migrates_legacy_chat_history_db(tmp_path: Path) -> None:
         service._user_data_dir = tmp_path / "data" / "user"
         legacy_db = tmp_path / "data" / "chat_history.db"
         legacy_db.parent.mkdir(parents=True, exist_ok=True)
-        with sqlite3.connect(legacy_db) as conn:
+        with closing(sqlite3.connect(legacy_db)) as conn, conn:
             conn.execute("CREATE TABLE legacy (id INTEGER PRIMARY KEY)")
             conn.commit()
 

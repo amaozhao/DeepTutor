@@ -10,7 +10,7 @@ import asyncio
 from typing import Dict, List, Optional
 
 # Import RAGService as the single entry point
-from deeptutor.services.rag.service import DEFAULT_KB_BASE_DIR, RAGService
+from deeptutor.services.rag.service import RAGService, default_kb_base_dir
 
 DEFAULT_KB_ALIASES = {"", "default", "current", "selected", "默认", "默认知识库", "当前知识库"}
 
@@ -21,7 +21,7 @@ def _resolve_kb_name(kb_name: Optional[str], kb_base_dir: Optional[str] = None) 
     try:
         from deeptutor.knowledge.manager import KnowledgeBaseManager
 
-        manager = KnowledgeBaseManager(base_dir=kb_base_dir or DEFAULT_KB_BASE_DIR)
+        manager = KnowledgeBaseManager(base_dir=kb_base_dir or default_kb_base_dir())
         kb_names = manager.list_knowledge_bases()
         if requested and requested in kb_names:
             return requested

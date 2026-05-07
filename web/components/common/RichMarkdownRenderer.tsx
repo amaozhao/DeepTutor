@@ -2,6 +2,7 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import dynamic from "next/dynamic";
+import Image from "next/image";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { useTranslation } from "react-i18next";
@@ -550,9 +551,12 @@ export default function RichMarkdownRenderer({
       );
     },
     img: ({ node, src, alt, ...props }: any) => (
-      <img
-        src={src}
+      <Image
+        unoptimized
+        src={String(src || "")}
         alt={alt || ""}
+        width={1200}
+        height={800}
         loading="lazy"
         className={`${gap} inline-block max-w-full rounded-lg border border-[var(--border)]`}
         {...lineAttr(node)}
