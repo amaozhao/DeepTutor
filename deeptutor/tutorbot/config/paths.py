@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from deeptutor.auth.resource_ids import validate_resource_id
 from deeptutor.tutorbot.utils.helpers import ensure_dir
 
 
@@ -18,12 +19,12 @@ def get_data_dir() -> Path:
 
 
 def get_runtime_subdir(name: str) -> Path:
-    return ensure_dir(_base_dir() / name)
+    return ensure_dir(_base_dir() / validate_resource_id(name, "runtime directory id"))
 
 
 def get_media_dir(channel: str | None = None) -> Path:
     base = get_runtime_subdir("media")
-    return ensure_dir(base / channel) if channel else base
+    return ensure_dir(base / validate_resource_id(channel, "channel id")) if channel else base
 
 
 def get_cron_dir() -> Path:
@@ -56,7 +57,7 @@ def get_shared_memory_dir() -> Path:
 
 def get_bot_dir(bot_id: str) -> Path:
     """data/tutorbot/{bot_id}/ — flat layout, no bots/ sub-directory."""
-    return ensure_dir(_base_dir() / bot_id)
+    return ensure_dir(_base_dir() / validate_resource_id(bot_id, "bot id"))
 
 
 def get_bot_workspace(bot_id: str) -> Path:
@@ -73,4 +74,4 @@ def get_bot_logs_dir(bot_id: str) -> Path:
 
 def get_bot_media_dir(bot_id: str, channel: str | None = None) -> Path:
     base = ensure_dir(get_bot_dir(bot_id) / "media")
-    return ensure_dir(base / channel) if channel else base
+    return ensure_dir(base / validate_resource_id(channel, "channel id")) if channel else base

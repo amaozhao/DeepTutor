@@ -23,6 +23,7 @@ from typing import Any
 import yaml
 
 from deeptutor.auth.context import user_scope
+from deeptutor.auth.resource_ids import validate_resource_id
 from deeptutor.services.path_service import get_path_service
 
 logger = logging.getLogger(__name__)
@@ -216,7 +217,7 @@ class TutorBotManager:
         return self._path_service.get_memory_dir()
 
     def _bot_dir(self, bot_id: str) -> Path:
-        return self._tutorbot_dir / bot_id
+        return self._tutorbot_dir / validate_resource_id(bot_id, "bot id")
 
     def _bot_workspace(self, bot_id: str) -> Path:
         return self._bot_dir(bot_id) / "workspace"
@@ -1086,12 +1087,14 @@ class TutorBotManager:
         return self._load_souls()
 
     def get_soul(self, soul_id: str) -> dict[str, str] | None:
+        soul_id = validate_resource_id(soul_id, "soul id")
         for s in self._load_souls():
             if s.get("id") == soul_id:
                 return s
         return None
 
     def create_soul(self, soul_id: str, name: str, content: str) -> dict[str, str]:
+        soul_id = validate_resource_id(soul_id, "soul id")
         souls = self._load_souls()
         entry = {"id": soul_id, "name": name, "content": content}
         souls.append(entry)
@@ -1101,6 +1104,7 @@ class TutorBotManager:
     def update_soul(
         self, soul_id: str, name: str | None, content: str | None
     ) -> dict[str, str] | None:
+        soul_id = validate_resource_id(soul_id, "soul id")
         souls = self._load_souls()
         for s in souls:
             if s.get("id") == soul_id:
@@ -1113,6 +1117,7 @@ class TutorBotManager:
         return None
 
     def delete_soul(self, soul_id: str) -> bool:
+        soul_id = validate_resource_id(soul_id, "soul id")
         souls = self._load_souls()
         new = [s for s in souls if s.get("id") != soul_id]
         if len(new) == len(souls):

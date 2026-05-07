@@ -9,6 +9,8 @@ from pathlib import Path
 import traceback
 from typing import Any, Callable, Dict, List, Optional
 
+from deeptutor.auth.resource_ids import safe_resolve_under
+from deeptutor.knowledge.naming import validate_knowledge_base_name
 from deeptutor.services.embedding import get_embedding_config
 from deeptutor.services.rag.embedding_signature import signature_from_embedding_config
 from deeptutor.services.rag.index_versioning import (
@@ -54,6 +56,10 @@ class LlamaIndexPipeline:
         self.document_loader = document_loader or LlamaIndexDocumentLoader(self.logger)
         self._configure_settings()
 
+    def _kb_dir(self, kb_name: str) -> Path:
+        safe_name = validate_knowledge_base_name(kb_name)
+        return safe_resolve_under(self.kb_base_dir, safe_name)
+
     def _configure_settings(self) -> None:
         configure_llamaindex_settings(self.logger)
 
@@ -83,7 +89,7 @@ class LlamaIndexPipeline:
             f"Initializing KB '{kb_name}' with {len(file_paths)} files using LlamaIndex"
         )
 
-        kb_dir = Path(self.kb_base_dir) / kb_name
+        kb_dir = self._kb_dir(kb_name)
         signature = self._current_signature()
         storage_dir = resolve_storage_dir_for_rebuild(kb_dir, signature)
 
@@ -133,7 +139,7 @@ class LlamaIndexPipeline:
         self._configure_settings()
         self.logger.info(f"Searching KB '{kb_name}' with query: {query[:50]}...")
 
-        kb_dir = Path(self.kb_base_dir) / kb_name
+        kb_dir = self._kb_dir(kb_name)
         signature = self._current_signature()
         storage_dir = resolve_storage_dir_for_read(kb_dir, signature)
 
@@ -231,7 +237,7 @@ class LlamaIndexPipeline:
 
         self.logger.info(f"Adding {len(file_paths)} documents to KB '{kb_name}' using LlamaIndex")
 
-        kb_dir = Path(self.kb_base_dir) / kb_name
+        kb_dir = self._kb_dir(kb_name)
         signature = self._current_signature()
         plan = storage.resolve_add_storage_plan(kb_dir, signature)
 
@@ -282,7 +288,7 @@ class LlamaIndexPipeline:
             set_progress_callback(None)
 
     async def delete(self, kb_name: str) -> bool:
-        kb_dir = Path(self.kb_base_dir) / kb_name
+        kb_dir = self._kb_dir(kb_name)
         deleted = storage.delete_kb_dir(kb_dir)
         if deleted:
             self.logger.info(f"Deleted KB '{kb_name}'")

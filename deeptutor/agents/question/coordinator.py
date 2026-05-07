@@ -361,7 +361,16 @@ class AgentCoordinator:
         output_base.mkdir(parents=True, exist_ok=True)
 
         if paper_mode == "parsed":
-            working_dir = paper_path
+            allowed_root = get_path_service().get_question_dir().resolve()
+            working_dir = paper_path.expanduser().resolve()
+            try:
+                working_dir.relative_to(allowed_root)
+            except ValueError as exc:
+                raise RuntimeError(
+                    "Parsed exam directory must be inside the current user's question workspace."
+                ) from exc
+            if not working_dir.is_dir():
+                raise RuntimeError("Parsed exam directory does not exist")
         else:
             parse_success = parse_pdf_with_mineru(str(paper_path), str(output_base))
             if not parse_success:

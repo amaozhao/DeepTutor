@@ -33,8 +33,9 @@ def close_stale_event_loop():
     """Close default loops that pytest-asyncio may create for sync tests."""
     yield
     with suppress(RuntimeError):
-        loop = asyncio.get_event_loop()
-        if not loop.is_running() and not loop.is_closed():
+        policy = asyncio.get_event_loop_policy()
+        loop = getattr(getattr(policy, "_local", None), "_loop", None)
+        if loop is not None and not loop.is_running() and not loop.is_closed():
             loop.close()
         asyncio.set_event_loop(None)
 

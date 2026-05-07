@@ -311,6 +311,17 @@ async def run_code(
 
     if workspace_dir is not None:
         custom_workspace = Path(workspace_dir).expanduser().resolve()
+        try:
+            from deeptutor.auth.context import current_user_id
+            from deeptutor.auth.resource_ids import safe_resolve_under
+            from deeptutor.services.path_service import get_path_service
+
+            if current_user_id():
+                safe_resolve_under(get_path_service().get_user_root(), custom_workspace)
+        except ValueError:
+            raise
+        except Exception:
+            pass
         custom_workspace.mkdir(parents=True, exist_ok=True)
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
         execution_dir = custom_workspace / f"exec_{timestamp}"

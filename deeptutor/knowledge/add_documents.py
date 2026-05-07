@@ -16,6 +16,8 @@ from typing import List, Optional
 
 from dotenv import load_dotenv
 
+from deeptutor.auth.resource_ids import safe_resolve_under
+from deeptutor.knowledge.naming import validate_knowledge_base_name
 from deeptutor.services.rag.factory import DEFAULT_PROVIDER
 from deeptutor.services.rag.file_routing import FileTypeRouter
 from deeptutor.services.rag.index_versioning import list_kb_versions
@@ -38,12 +40,12 @@ class DocumentAdder:
         progress_tracker=None,
         rag_provider: str | None = None,
     ):
-        self.kb_name = kb_name
+        self.kb_name = validate_knowledge_base_name(kb_name)
         self.base_dir = Path(base_dir)
-        self.kb_dir = self.base_dir / kb_name
+        self.kb_dir = safe_resolve_under(self.base_dir, self.kb_name)
 
         if not self.kb_dir.exists():
-            raise ValueError(f"Knowledge base does not exist: {kb_name}")
+            raise ValueError(f"Knowledge base does not exist: {self.kb_name}")
 
         self.raw_dir = self.kb_dir / "raw"
         self.llamaindex_storage_dir = self.kb_dir / "llamaindex_storage"

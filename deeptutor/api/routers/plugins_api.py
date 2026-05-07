@@ -27,6 +27,7 @@ from deeptutor.logging import (
 )
 from deeptutor.runtime.registry.capability_registry import get_capability_registry
 from deeptutor.runtime.registry.tool_registry import get_tool_registry
+from deeptutor.services.path_service import get_path_service
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +55,26 @@ class CapabilityExecuteRequest(BaseModel):
     language: str = "en"
     config: dict[str, Any] = {}
     attachments: list[dict[str, Any]] = []
+
+
+_DIRECT_TOOL_FILESYSTEM_PARAMS = {
+    "workspace_dir",
+    "output_dir",
+    "kb_base_dir",
+    "base_dir",
+    "file_path",
+    "path",
+}
+
+
+def _sanitize_direct_tool_params(tool_name: str, params: dict[str, Any]) -> dict[str, Any]:
+    """Remove caller-controlled filesystem overrides from playground tool calls."""
+    sanitized = {
+        key: value for key, value in dict(params or {}).items() if key not in _DIRECT_TOOL_FILESYSTEM_PARAMS
+    }
+    if tool_name == "code_execution":
+        sanitized["workspace_dir"] = str(get_path_service().get_run_code_workspace_dir())
+    return sanitized
 
 
 @router.get("/list")
@@ -111,7 +132,7 @@ async def execute_tool(tool_name: str, body: ToolExecuteRequest):
         raise HTTPException(status_code=404, detail=f"Tool '{tool_name}' not found")
 
     try:
-        result = await tool.execute(**body.params)
+        result = await tool.execute(**_sanitize_direct_tool_params(tool_name, body.params))
         return {
             "success": result.success,
             "content": result.content,
@@ -202,6 +223,7 @@ async def _execute_stream(tool_name: str, params: dict[str, Any]) -> AsyncGenera
     if not tool:
         yield _sse("error", {"detail": f"Tool {tool_name!r} not found"})
         return
+    params = _sanitize_direct_tool_params(tool_name, params)
 
     event_queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
     loop = asyncio.get_running_loop()

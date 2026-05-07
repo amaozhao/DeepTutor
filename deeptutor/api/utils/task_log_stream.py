@@ -7,6 +7,8 @@ import threading
 import time
 from typing import Any
 
+from deeptutor.auth.context import current_user_id
+from deeptutor.auth.resource_ids import validate_task_id
 from deeptutor.logging import ProcessLogEvent, bind_log_context, capture_process_logs
 
 
@@ -20,8 +22,10 @@ class KnowledgeTaskStreamManager:
 
     def __init__(self):
         self._lock = threading.Lock()
-        self._buffers: dict[str, deque[dict[str, Any]]] = {}
-        self._subscribers: dict[str, list[tuple[asyncio.Queue, asyncio.AbstractEventLoop]]] = {}
+        self._buffers: dict[tuple[str | None, str], deque[dict[str, Any]]] = {}
+        self._subscribers: dict[
+            tuple[str | None, str], list[tuple[asyncio.Queue, asyncio.AbstractEventLoop]]
+        ] = {}
 
     @classmethod
     def get_instance(cls) -> "KnowledgeTaskStreamManager":
@@ -31,16 +35,25 @@ class KnowledgeTaskStreamManager:
                     cls._instance = cls()
         return cls._instance
 
-    def ensure_task(self, task_id: str):
-        with self._lock:
-            self._buffers.setdefault(task_id, deque(maxlen=500))
-            self._subscribers.setdefault(task_id, [])
+    def _key(self, task_id: str, user_id: str | None = None) -> tuple[str | None, str]:
+        safe_task_id = validate_task_id(task_id)
+        owner = str(user_id or current_user_id() or "").strip() or None
+        return owner, safe_task_id
 
-    def emit(self, task_id: str, event: str, payload: dict[str, Any]):
+    def ensure_task(self, task_id: str, user_id: str | None = None):
+        key = self._key(task_id, user_id)
+        with self._lock:
+            self._buffers.setdefault(key, deque(maxlen=500))
+            self._subscribers.setdefault(key, [])
+
+    def emit(
+        self, task_id: str, event: str, payload: dict[str, Any], user_id: str | None = None
+    ):
+        key = self._key(task_id, user_id)
         event_payload = {"event": event, "payload": payload}
         with self._lock:
-            self._buffers.setdefault(task_id, deque(maxlen=500)).append(event_payload)
-            subscribers = list(self._subscribers.get(task_id, []))
+            self._buffers.setdefault(key, deque(maxlen=500)).append(event_payload)
+            subscribers = list(self._subscribers.get(key, []))
 
         for queue, loop in subscribers:
             try:
@@ -48,12 +61,14 @@ class KnowledgeTaskStreamManager:
             except RuntimeError:
                 continue
 
-    def emit_process_log(self, task_id: str, event: ProcessLogEvent):
+    def emit_process_log(
+        self, task_id: str, event: ProcessLogEvent, user_id: str | None = None
+    ):
         payload = event.to_dict()
         payload.setdefault("context", {})["task_id"] = task_id
-        self.emit(task_id, "process_log", payload)
+        self.emit(task_id, "process_log", payload, user_id=user_id)
 
-    def emit_log(self, task_id: str, line: str):
+    def emit_log(self, task_id: str, line: str, user_id: str | None = None):
         event = ProcessLogEvent(
             level="INFO",
             message=line,
@@ -61,41 +76,51 @@ class KnowledgeTaskStreamManager:
             timestamp=time.time(),
             context={"task_id": task_id, "capability": "knowledge", "sink": "ui"},
         )
-        self.emit_process_log(task_id, event)
+        self.emit_process_log(task_id, event, user_id=user_id)
 
-    def emit_complete(self, task_id: str, detail: str = "Task completed"):
-        self.emit(task_id, "complete", {"detail": detail, "task_id": task_id})
+    def emit_complete(
+        self, task_id: str, detail: str = "Task completed", user_id: str | None = None
+    ):
+        self.emit(task_id, "complete", {"detail": detail, "task_id": task_id}, user_id=user_id)
 
-    def emit_failed(self, task_id: str, detail: str, *, details: str | None = None):
+    def emit_failed(
+        self, task_id: str, detail: str, *, details: str | None = None, user_id: str | None = None
+    ):
         payload: dict[str, Any] = {"detail": detail, "task_id": task_id}
         if details:
             payload["details"] = details
-        self.emit(task_id, "failed", payload)
+        self.emit(task_id, "failed", payload, user_id=user_id)
 
     def subscribe(
-        self, task_id: str
+        self, task_id: str, user_id: str | None = None
     ) -> tuple[asyncio.Queue[dict[str, Any]], list[dict[str, Any]], asyncio.AbstractEventLoop]:
+        key = self._key(task_id, user_id)
         queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue(maxsize=200)
         loop = asyncio.get_running_loop()
         with self._lock:
-            self._buffers.setdefault(task_id, deque(maxlen=500))
-            self._subscribers.setdefault(task_id, []).append((queue, loop))
-            backlog = list(self._buffers[task_id])
+            self._buffers.setdefault(key, deque(maxlen=500))
+            self._subscribers.setdefault(key, []).append((queue, loop))
+            backlog = list(self._buffers[key])
         return queue, backlog, loop
 
     def unsubscribe(
-        self, task_id: str, queue: asyncio.Queue[dict[str, Any]], loop: asyncio.AbstractEventLoop
+        self,
+        task_id: str,
+        queue: asyncio.Queue[dict[str, Any]],
+        loop: asyncio.AbstractEventLoop,
+        user_id: str | None = None,
     ):
+        key = self._key(task_id, user_id)
         with self._lock:
-            subscribers = self._subscribers.get(task_id, [])
-            self._subscribers[task_id] = [
+            subscribers = self._subscribers.get(key, [])
+            self._subscribers[key] = [
                 (subscriber_queue, subscriber_loop)
                 for subscriber_queue, subscriber_loop in subscribers
                 if subscriber_queue is not queue or subscriber_loop is not loop
             ]
 
-    async def stream(self, task_id: str) -> AsyncGenerator[str, None]:
-        queue, backlog, loop = self.subscribe(task_id)
+    async def stream(self, task_id: str, user_id: str | None = None) -> AsyncGenerator[str, None]:
+        queue, backlog, loop = self.subscribe(task_id, user_id=user_id)
         try:
             for item in backlog:
                 yield _format_sse(item["event"], item["payload"])
@@ -109,7 +134,7 @@ class KnowledgeTaskStreamManager:
                 if item["event"] in {"complete", "failed"}:
                     break
         finally:
-            self.unsubscribe(task_id, queue, loop)
+            self.unsubscribe(task_id, queue, loop, user_id=user_id)
 
     @staticmethod
     def _queue_event(queue: asyncio.Queue[dict[str, Any]], payload: dict[str, Any]):

@@ -8,6 +8,9 @@ from pathlib import Path
 import shutil
 from typing import Any, Dict, List, Optional
 
+from deeptutor.auth.resource_ids import safe_resolve_under
+from deeptutor.knowledge.naming import validate_knowledge_base_name
+
 from .factory import DEFAULT_PROVIDER, get_pipeline, list_pipelines
 
 DEFAULT_KB_BASE_DIR = str(
@@ -35,17 +38,23 @@ class RAGService:
         self.provider = DEFAULT_PROVIDER
         self._pipeline = None
 
+    def _kb_dir(self, kb_name: str) -> Path:
+        safe_name = validate_knowledge_base_name(kb_name)
+        return safe_resolve_under(self.kb_base_dir, safe_name)
+
     def _get_pipeline(self):
         if self._pipeline is None:
             self._pipeline = get_pipeline(kb_base_dir=self.kb_base_dir)
         return self._pipeline
 
     async def initialize(self, kb_name: str, file_paths: List[str], **kwargs) -> bool:
+        kb_name = validate_knowledge_base_name(kb_name)
         self.logger.info(f"Initializing KB '{kb_name}'")
         pipeline = self._get_pipeline()
         return await pipeline.initialize(kb_name=kb_name, file_paths=file_paths, **kwargs)
 
     async def add_documents(self, kb_name: str, file_paths: List[str], **kwargs) -> bool:
+        kb_name = validate_knowledge_base_name(kb_name)
         self.logger.info(f"Adding {len(file_paths)} document(s) to KB '{kb_name}'")
         pipeline = self._get_pipeline()
         if not hasattr(pipeline, "add_documents"):
@@ -59,6 +68,8 @@ class RAGService:
         event_sink=None,
         **kwargs,
     ) -> Dict[str, Any]:
+        kb_name = validate_knowledge_base_name(kb_name)
+        self._kb_dir(kb_name)
         kwargs.pop("mode", None)
         with self._capture_raw_logs(event_sink):
             await self._emit_tool_event(
@@ -154,13 +165,14 @@ class RAGService:
         return capture_process_logs(emit, min_level=logging.INFO)
 
     async def delete(self, kb_name: str) -> bool:
+        kb_name = validate_knowledge_base_name(kb_name)
         self.logger.info(f"Deleting KB '{kb_name}'")
         pipeline = self._get_pipeline()
 
         if hasattr(pipeline, "delete"):
             return await pipeline.delete(kb_name=kb_name)
 
-        kb_dir = Path(self.kb_base_dir) / kb_name
+        kb_dir = self._kb_dir(kb_name)
         if kb_dir.exists():
             shutil.rmtree(kb_dir)
             self.logger.info(f"Deleted KB directory: {kb_dir}")

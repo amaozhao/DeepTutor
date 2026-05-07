@@ -5,6 +5,8 @@ import logging
 from pathlib import Path
 from typing import Any
 
+from deeptutor.auth.resource_ids import safe_resolve_under
+from deeptutor.knowledge.naming import validate_knowledge_base_name
 from deeptutor.services.path_service import get_path_service
 from deeptutor.services.rag.factory import DEFAULT_PROVIDER
 from deeptutor.services.rag.index_versioning import list_kb_versions
@@ -66,6 +68,11 @@ class KnowledgeBaseConfigService:
         for kb_name, config in knowledge_bases.items():
             if not isinstance(config, dict):
                 continue
+            try:
+                safe_kb_name = validate_knowledge_base_name(kb_name)
+            except ValueError:
+                logger.warning("Skipping invalid knowledge-base config entry: %r", kb_name)
+                continue
 
             raw_provider = config.get("rag_provider")
             config["rag_provider"] = DEFAULT_PROVIDER
@@ -76,7 +83,7 @@ class KnowledgeBaseConfigService:
             }:
                 config["needs_reindex"] = True
 
-            kb_dir = kb_base_dir / kb_name
+            kb_dir = safe_resolve_under(kb_base_dir, safe_kb_name)
             legacy_storage = kb_dir / "rag_storage"
             has_llamaindex_index = any(
                 bool(version.get("ready")) for version in list_kb_versions(kb_dir)
@@ -93,6 +100,7 @@ class KnowledgeBaseConfigService:
             json.dump(self._config, handle, indent=2, ensure_ascii=False)
 
     def _ensure_kb(self, kb_name: str) -> dict[str, Any]:
+        kb_name = validate_knowledge_base_name(kb_name)
         knowledge_bases = self._config.setdefault("knowledge_bases", {})
         if kb_name not in knowledge_bases:
             knowledge_bases[kb_name] = {
@@ -102,6 +110,7 @@ class KnowledgeBaseConfigService:
         return knowledge_bases[kb_name]
 
     def get_kb_config(self, kb_name: str) -> dict[str, Any]:
+        kb_name = validate_knowledge_base_name(kb_name)
         defaults = dict(self._config.get("defaults", {}))
         kb_config = dict(self._config.get("knowledge_bases", {}).get(kb_name, {}))
         merged = {
@@ -132,6 +141,7 @@ class KnowledgeBaseConfigService:
         self.set_kb_config(kb_name, {"search_mode": mode})
 
     def delete_kb_config(self, kb_name: str) -> None:
+        kb_name = validate_knowledge_base_name(kb_name)
         knowledge_bases = self._config.get("knowledge_bases", {})
         if kb_name in knowledge_bases:
             del knowledge_bases[kb_name]
@@ -146,6 +156,8 @@ class KnowledgeBaseConfigService:
         self._save()
 
     def set_default_kb(self, kb_name: str | None) -> None:
+        if kb_name is not None:
+            kb_name = validate_knowledge_base_name(kb_name)
         self._config.setdefault("defaults", _default_payload()["defaults"])["default_kb"] = kb_name
         self._save()
 
@@ -153,7 +165,8 @@ class KnowledgeBaseConfigService:
         return self._config.get("defaults", {}).get("default_kb")
 
     def sync_from_metadata(self, kb_name: str, kb_base_dir: Path) -> None:
-        metadata_file = kb_base_dir / kb_name / "metadata.json"
+        kb_name = validate_knowledge_base_name(kb_name)
+        metadata_file = safe_resolve_under(kb_base_dir, kb_name) / "metadata.json"
         if not metadata_file.exists():
             return
         try:

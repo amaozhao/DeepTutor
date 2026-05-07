@@ -15,6 +15,7 @@ import uuid
 
 from pydantic import BaseModel
 
+from deeptutor.auth.resource_ids import validate_resource_id
 from deeptutor.services.llm import clean_thinking_tags
 from deeptutor.services.path_service import get_path_service
 
@@ -97,7 +98,8 @@ class NotebookManager:
             json.dump(index, f, indent=2, ensure_ascii=False)
 
     def _get_notebook_file(self, notebook_id: str) -> Path:
-        return self.base_dir / f"{notebook_id}.json"
+        safe_id = validate_resource_id(notebook_id, "notebook id")
+        return self.base_dir / f"{safe_id}.json"
 
     def _load_notebook(self, notebook_id: str) -> dict | None:
         filepath = self._get_notebook_file(notebook_id)

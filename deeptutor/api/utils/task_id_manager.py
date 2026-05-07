@@ -7,6 +7,9 @@ import threading
 from typing import Optional
 import uuid
 
+from deeptutor.auth.context import current_user_id
+from deeptutor.auth.resource_ids import validate_task_id
+
 
 class TaskIDManager:
     """Singleton class for managing task IDs"""
@@ -25,7 +28,14 @@ class TaskIDManager:
                     cls._instance = cls()
         return cls._instance
 
-    def generate_task_id(self, task_type: str, task_key: str) -> str:
+    def _owner_id(self, user_id: str | None = None) -> str | None:
+        return str(user_id or current_user_id() or "").strip() or None
+
+    def _lookup_key(self, task_key: str, user_id: str | None = None) -> str:
+        owner = self._owner_id(user_id) or "_legacy"
+        return f"{owner}:{task_key}"
+
+    def generate_task_id(self, task_type: str, task_key: str, user_id: str | None = None) -> str:
         """
         Generate unique ID for task
 
@@ -37,30 +47,34 @@ class TaskIDManager:
             Task ID (format: {task_type}_{timestamp}_{uuid})
         """
         with self._lock:
+            lookup_key = self._lookup_key(task_key, user_id)
             # If task already exists, return existing ID
-            if task_key in self._task_ids:
-                return self._task_ids[task_key]
+            if lookup_key in self._task_ids:
+                return self._task_ids[lookup_key]
 
             # Generate new ID
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             unique_id = str(uuid.uuid4())[:8]
             task_id = f"{task_type}_{timestamp}_{unique_id}"
+            owner = self._owner_id(user_id)
 
             # Save mapping and metadata
-            self._task_ids[task_key] = task_id
+            self._task_ids[lookup_key] = task_id
             self._task_metadata[task_id] = {
                 "task_type": task_type,
                 "task_key": task_key,
                 "created_at": datetime.now().isoformat(),
                 "status": "running",
             }
+            if owner:
+                self._task_metadata[task_id]["user_id"] = owner
 
             return task_id
 
-    def get_task_id(self, task_key: str) -> str | None:
+    def get_task_id(self, task_key: str, user_id: str | None = None) -> str | None:
         """Get task ID"""
         with self._lock:
-            return self._task_ids.get(task_key)
+            return self._task_ids.get(self._lookup_key(task_key, user_id))
 
     def update_task_status(self, task_id: str, status: str, **kwargs):
         """Update task status"""
@@ -75,6 +89,18 @@ class TaskIDManager:
         """Get task metadata"""
         with self._lock:
             return self._task_metadata.get(task_id, {}).copy()
+
+    def is_task_owned_by(self, task_id: str, user_id: str | None) -> bool:
+        try:
+            safe_task_id = validate_task_id(task_id)
+        except ValueError:
+            return False
+        owner = self._owner_id(user_id)
+        with self._lock:
+            metadata = self._task_metadata.get(safe_task_id)
+            if not metadata or not owner:
+                return False
+            return metadata.get("user_id") == owner
 
     def cleanup_old_tasks(self, max_age_hours: int = 24):
         """Clean up old tasks (completed tasks older than specified hours)"""
@@ -97,4 +123,4 @@ class TaskIDManager:
                 metadata = self._task_metadata.pop(task_id, {})
                 task_key = metadata.get("task_key")
                 if task_key:
-                    self._task_ids.pop(task_key, None)
+                    self._task_ids.pop(self._lookup_key(task_key, metadata.get("user_id")), None)

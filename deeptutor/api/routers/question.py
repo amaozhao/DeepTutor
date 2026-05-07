@@ -42,6 +42,20 @@ def _mimic_output_dir() -> Path:
     return get_path_service().get_question_dir() / "mimic_papers"
 
 
+def _resolve_mimic_parsed_dir(paper_path: str) -> Path:
+    root = _mimic_output_dir().resolve()
+    candidate = Path(paper_path).expanduser().resolve()
+    try:
+        candidate.relative_to(root)
+    except ValueError as exc:
+        raise ValueError(
+            "Parsed paper path must be inside the current user's mimic output directory."
+        ) from exc
+    if not candidate.is_dir():
+        raise ValueError("Parsed paper directory does not exist.")
+    return candidate
+
+
 @router.websocket("/mimic")
 async def websocket_mimic_generate(websocket: WebSocket):
     user = authenticate_websocket_user(websocket)
@@ -241,11 +255,16 @@ async def _authenticated_websocket_mimic_generate(websocket: WebSocket):
                         {"type": "error", "content": "paper_path is required for parsed mode"}
                     )
                     return
-                paper_dir = paper_path
+                try:
+                    parsed_dir = _resolve_mimic_parsed_dir(paper_path)
+                except ValueError as exc:
+                    await websocket.send_json({"type": "error", "content": str(exc)})
+                    return
+                paper_dir = str(parsed_dir)
 
                 # Create batch directory for parsed mode too
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                batch_dir = _mimic_output_dir() / f"mimic_{timestamp}_{Path(paper_path).name}"
+                batch_dir = _mimic_output_dir() / f"mimic_{timestamp}_{parsed_dir.name}"
                 batch_dir.mkdir(parents=True, exist_ok=True)
                 output_dir = str(batch_dir)
 

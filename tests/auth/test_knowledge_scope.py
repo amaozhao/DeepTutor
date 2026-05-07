@@ -65,6 +65,21 @@ def test_authenticated_user_cannot_link_folder_outside_private_root(tmp_path: Pa
         service._user_data_dir = original_user_dir
 
 
+def test_knowledge_manager_rejects_traversal_kb_names(tmp_path: Path) -> None:
+    kb_root = tmp_path / "knowledge_bases"
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "raw").mkdir()
+
+    manager = KnowledgeBaseManager(base_dir=kb_root)
+
+    with pytest.raises(ValueError, match="Knowledge base name"):
+        manager.get_info("../outside")
+
+    with pytest.raises(ValueError, match="Knowledge base name"):
+        manager.register_knowledge_base("../outside")
+
+
 def test_authenticated_user_can_link_folder_under_private_root(tmp_path: Path) -> None:
     service = PathService.get_instance()
     original_root = service._project_root

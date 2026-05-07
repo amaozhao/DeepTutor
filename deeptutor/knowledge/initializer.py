@@ -13,6 +13,7 @@ from pathlib import Path
 import shutil
 from typing import Optional
 
+from deeptutor.auth.resource_ids import safe_resolve_under
 from deeptutor.knowledge.naming import validate_knowledge_base_name
 from deeptutor.knowledge.progress_tracker import ProgressStage, ProgressTracker
 from deeptutor.services.rag.factory import DEFAULT_PROVIDER
@@ -36,7 +37,7 @@ class KnowledgeBaseInitializer:
     ):
         self.kb_name = validate_knowledge_base_name(kb_name)
         self.base_dir = Path(base_dir)
-        self.kb_dir = self.base_dir / self.kb_name
+        self.kb_dir = safe_resolve_under(self.base_dir, self.kb_name)
 
         self.raw_dir = self.kb_dir / "raw"
         self.llamaindex_storage_dir = self.kb_dir / "llamaindex_storage"

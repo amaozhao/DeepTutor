@@ -18,6 +18,8 @@ import sys
 from typing import Any
 
 from deeptutor.auth.context import current_user_id
+from deeptutor.auth.resource_ids import safe_resolve_under
+from deeptutor.knowledge.naming import validate_knowledge_base_name
 from deeptutor.services.path_service import get_path_service
 from deeptutor.services.rag.factory import DEFAULT_PROVIDER
 from deeptutor.services.rag.file_routing import FileTypeRouter
@@ -112,7 +114,12 @@ def _reconcile_embedding_flags(knowledge_bases: dict, base_dir: Path | None = No
         if not isinstance(kb_entry, dict):
             continue
 
-        kb_dir = (base_dir / kb_name) if base_dir is not None else None
+        try:
+            safe_kb_name = validate_knowledge_base_name(kb_name)
+        except ValueError:
+            continue
+
+        kb_dir = safe_resolve_under(base_dir, safe_kb_name) if base_dir is not None else None
         matched = False
         if kb_dir is not None and signature is not None:
             matched = find_matching_version(kb_dir, signature) is not None
@@ -180,6 +187,12 @@ class KnowledgeBaseManager:
         self.config_file = self.base_dir / "kb_config.json"
         self.config = self._load_config()
 
+    def _normalize_kb_name(self, name: str) -> str:
+        return validate_knowledge_base_name(name)
+
+    def _kb_dir(self, name: str) -> Path:
+        return safe_resolve_under(self.base_dir, self._normalize_kb_name(name))
+
     def _load_config(self) -> dict:
         """Load knowledge base configuration from the canonical kb_config.json file."""
         if self.config_file.exists():
@@ -225,7 +238,13 @@ class KnowledgeBaseManager:
                             kb_entry["needs_reindex"] = True
                             config_changed = True
 
-                    kb_dir = self.base_dir / kb_name
+                    try:
+                        kb_dir = self._kb_dir(kb_name)
+                    except ValueError:
+                        logger.warning(
+                            "Skipping invalid knowledge-base config entry: %r", kb_name
+                        )
+                        continue
                     legacy_storage = kb_dir / "rag_storage"
                     has_llamaindex_index = any(
                         bool(version.get("ready")) for version in list_kb_versions(kb_dir)
@@ -288,6 +307,7 @@ class KnowledgeBaseManager:
                 - file_name: Current file being processed
                 - error: Error message (if status is "error")
         """
+        name = self._normalize_kb_name(name)
         # Reload config to get latest state
         self.config = self._load_config()
 
@@ -360,7 +380,7 @@ class KnowledgeBaseManager:
                 sig = signature_from_embedding_config()
                 if sig is not None:
                     kb_config["embedding_signature"] = sig.hash()
-                kb_dir = self.base_dir / name
+                kb_dir = self._kb_dir(name)
                 if kb_dir.is_dir():
                     kb_config["index_versions"] = list_kb_versions(kb_dir)
             except Exception:  # pragma: no cover - best-effort metadata
@@ -370,6 +390,7 @@ class KnowledgeBaseManager:
 
     def get_kb_status(self, name: str) -> dict | None:
         """Get status and progress for a knowledge base."""
+        name = self._normalize_kb_name(name)
         self.config = self._load_config()
         kb_config = self.config.get("knowledge_bases", {}).get(name)
         if not kb_config:
@@ -393,7 +414,12 @@ class KnowledgeBaseManager:
 
         # Read knowledge base list from config file
         config_kbs = self.config.get("knowledge_bases", {})
-        kb_list = set(config_kbs.keys())
+        kb_list = set()
+        for raw_name in config_kbs.keys():
+            try:
+                kb_list.add(self._normalize_kb_name(raw_name))
+            except ValueError:
+                logger.warning("Skipping invalid knowledge-base config entry: %r", raw_name)
 
         # Also scan directory for KBs that may not be registered yet
         # This ensures backward compatibility and auto-discovery
@@ -403,8 +429,14 @@ class KnowledgeBaseManager:
                 if not item.is_dir() or item.name.startswith(("__", ".")):
                     continue
 
+                try:
+                    item_name = self._normalize_kb_name(item.name)
+                except ValueError:
+                    logger.warning("Skipping invalid knowledge-base directory: %s", item.name)
+                    continue
+
                 # Skip if already in config
-                if item.name in kb_list:
+                if item_name in kb_list:
                     continue
 
                 # Check if this is a valid KB directory (flat versions or legacy stores)
@@ -417,8 +449,8 @@ class KnowledgeBaseManager:
 
                 if is_valid_kb:
                     # Auto-register this KB to kb_config.json
-                    kb_list.add(item.name)
-                    self._auto_register_kb(item.name)
+                    kb_list.add(item_name)
+                    self._auto_register_kb(item_name)
                     config_changed = True
 
             # Save config if we registered new KBs
@@ -432,7 +464,8 @@ class KnowledgeBaseManager:
 
         Reads info from metadata.json (if exists) for backward compatibility.
         """
-        kb_dir = self.base_dir / name
+        name = self._normalize_kb_name(name)
+        kb_dir = self._kb_dir(name)
 
         # Default values
         kb_entry: dict[str, Any] = {
@@ -491,7 +524,8 @@ class KnowledgeBaseManager:
 
     def register_knowledge_base(self, name: str, description: str = "", set_default: bool = False):
         """Register a knowledge base"""
-        kb_dir = self.base_dir / name
+        name = self._normalize_kb_name(name)
+        kb_dir = self._kb_dir(name)
         if not kb_dir.exists():
             raise ValueError(f"Knowledge base directory does not exist: {kb_dir}")
 
@@ -513,7 +547,8 @@ class KnowledgeBaseManager:
             if name is None:
                 raise ValueError("No default knowledge base set")
 
-        kb_dir = self.base_dir / name
+        name = self._normalize_kb_name(name)
+        kb_dir = self._kb_dir(name)
         if not kb_dir.exists():
             raise ValueError(f"Knowledge base not found: {name}")
 
@@ -552,6 +587,7 @@ class KnowledgeBaseManager:
 
     def set_default(self, name: str):
         """Set default knowledge base using centralized config service."""
+        name = self._normalize_kb_name(name)
         if name not in self.list_knowledge_bases():
             raise ValueError(f"Knowledge base not found: {name}")
 
@@ -653,9 +689,10 @@ class KnowledgeBaseManager:
         kb_name = name or self.get_default()
         if kb_name is None:
             raise ValueError("No knowledge base name provided and no default set")
+        kb_name = self._normalize_kb_name(kb_name)
 
         # Get knowledge base path
-        kb_dir = self.base_dir / kb_name
+        kb_dir = self._kb_dir(kb_name)
 
         # Get config from kb_config.json (authoritative source)
         kb_config = self.config.get("knowledge_bases", {}).get(kb_name, {})
@@ -780,7 +817,7 @@ class KnowledgeBaseManager:
             find_matching_version,
         )
 
-        kb_dir = self.base_dir / kb_name if dir_exists else None
+        kb_dir = self._kb_dir(kb_name) if dir_exists else None
         rag_initialized = has_ready_llamaindex
 
         active_signature = signature_from_embedding_config()
@@ -818,13 +855,14 @@ class KnowledgeBaseManager:
         Returns:
             True if deleted successfully
         """
+        name = self._normalize_kb_name(name)
         if name not in self.list_knowledge_bases():
             raise ValueError(f"Knowledge base not found: {name}")
 
         # Resolve the directory directly to stay idempotent: if the on-disk
         # folder was already removed (e.g. manually rm-rf'd) we still want to
         # purge the orphaned entry from kb_config.json instead of failing.
-        kb_dir = self.base_dir / name
+        kb_dir = self._kb_dir(name)
         dir_exists = kb_dir.exists()
 
         if not confirm:
@@ -953,6 +991,7 @@ class KnowledgeBaseManager:
         Raises:
             ValueError: If KB not found or folder doesn't exist
         """
+        kb_name = self._normalize_kb_name(kb_name)
         if kb_name not in self.list_knowledge_bases():
             raise ValueError(f"Knowledge base not found: {kb_name}")
 
@@ -981,7 +1020,7 @@ class KnowledgeBaseManager:
         ).hexdigest()[:8]
 
         # Load existing linked folders from metadata
-        kb_dir = self.base_dir / kb_name
+        kb_dir = self._kb_dir(kb_name)
         metadata_file = kb_dir / "metadata.json"
         metadata: dict = {}
 
@@ -1029,10 +1068,11 @@ class KnowledgeBaseManager:
         Returns:
             List of linked folder info dicts
         """
+        kb_name = self._normalize_kb_name(kb_name)
         if kb_name not in self.list_knowledge_bases():
             raise ValueError(f"Knowledge base not found: {kb_name}")
 
-        kb_dir = self.base_dir / kb_name
+        kb_dir = self._kb_dir(kb_name)
         metadata_file = kb_dir / "metadata.json"
 
         if not metadata_file.exists():
@@ -1056,10 +1096,11 @@ class KnowledgeBaseManager:
         Returns:
             True if unlinked successfully, False if not found
         """
+        kb_name = self._normalize_kb_name(kb_name)
         if kb_name not in self.list_knowledge_bases():
             raise ValueError(f"Knowledge base not found: {kb_name}")
 
-        kb_dir = self.base_dir / kb_name
+        kb_dir = self._kb_dir(kb_name)
         metadata_file = kb_dir / "metadata.json"
 
         if not metadata_file.exists():
@@ -1121,6 +1162,7 @@ class KnowledgeBaseManager:
         Returns:
             Dict with 'new_files', 'modified_files', and 'has_changes' keys
         """
+        kb_name = self._normalize_kb_name(kb_name)
         if kb_name not in self.list_knowledge_bases():
             raise ValueError(f"Knowledge base not found: {kb_name}")
 
@@ -1183,10 +1225,11 @@ class KnowledgeBaseManager:
             folder_id: Folder ID
             synced_files: List of file paths that were successfully synced
         """
+        kb_name = self._normalize_kb_name(kb_name)
         if kb_name not in self.list_knowledge_bases():
             raise ValueError(f"Knowledge base not found: {kb_name}")
 
-        kb_dir = self.base_dir / kb_name
+        kb_dir = self._kb_dir(kb_name)
         metadata_file = kb_dir / "metadata.json"
 
         if not metadata_file.exists():

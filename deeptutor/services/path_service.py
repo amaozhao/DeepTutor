@@ -26,6 +26,7 @@ from pathlib import Path
 from typing import Literal, cast
 
 from deeptutor.auth.context import current_user_id, validate_user_id
+from deeptutor.auth.resource_ids import validate_resource_id, validate_task_id
 
 AgentModule = Literal[
     "solve",
@@ -204,11 +205,11 @@ class PathService:
 
     def get_task_workspace(self, feature: str, task_id: str) -> Path:
         task_root = self._resolve_feature_root(feature)
-        return task_root / task_id
+        return task_root / validate_task_id(task_id)
 
     def get_session_workspace(self, feature: str, session_id: str) -> Path:
         session_root = self._resolve_feature_root(feature)
-        return session_root / session_id
+        return session_root / validate_resource_id(session_id, "session id", max_length=160)
 
     def _resolve_feature_root(self, feature: str) -> Path:
         if feature in {
@@ -238,13 +239,14 @@ class PathService:
         return self.get_agent_dir(module) / "sessions.json"
 
     def get_task_dir(self, module: str, task_id: str) -> Path:
-        return self.get_agent_dir(module) / task_id
+        return self.get_agent_dir(module) / validate_task_id(task_id)
 
     def get_notebook_dir(self) -> Path:
         return self.get_workspace_feature_dir("notebook")
 
     def get_notebook_file(self, notebook_id: str) -> Path:
-        return self.get_notebook_dir() / f"{notebook_id}.json"
+        safe_id = validate_resource_id(notebook_id, "notebook id")
+        return self.get_notebook_dir() / f"{safe_id}.json"
 
     def get_notebook_index_file(self) -> Path:
         return self.get_notebook_dir() / "notebooks_index.json"
@@ -311,7 +313,8 @@ class PathService:
 
     def get_co_writer_doc_root(self, doc_id: str) -> Path:
         """Per-document root directory."""
-        return self.get_co_writer_docs_dir() / f"doc_{doc_id}"
+        safe_id = validate_resource_id(doc_id, "document id")
+        return self.get_co_writer_docs_dir() / f"doc_{safe_id}"
 
     def get_co_writer_doc_manifest(self, doc_id: str) -> Path:
         return self.get_co_writer_doc_root(doc_id) / "manifest.json"
@@ -324,7 +327,8 @@ class PathService:
 
     def get_book_root(self, book_id: str) -> Path:
         """Per-book root directory."""
-        return self.get_book_dir() / f"book_{book_id}"
+        safe_id = validate_resource_id(book_id, "book id")
+        return self.get_book_dir() / f"book_{safe_id}"
 
     def get_book_manifest_file(self, book_id: str) -> Path:
         return self.get_book_root(book_id) / "manifest.json"
@@ -345,7 +349,8 @@ class PathService:
         return self.get_book_root(book_id) / "pages"
 
     def get_book_page_file(self, book_id: str, page_id: str) -> Path:
-        return self.get_book_pages_dir(book_id) / f"{page_id}.json"
+        safe_page_id = validate_resource_id(page_id, "page id")
+        return self.get_book_pages_dir(book_id) / f"{safe_page_id}.json"
 
     def get_book_assets_dir(self, book_id: str) -> Path:
         return self.get_book_root(book_id) / "assets"

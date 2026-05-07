@@ -101,19 +101,22 @@ def test_mimic_websocket_accepts_config_and_returns_messages(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     question_router_module = _load_question_router_module(monkeypatch)
+    mimic_root = tmp_path / "mimic_papers"
+    parsed_dir = mimic_root / "parsed_exam"
+    parsed_dir.mkdir(parents=True)
 
     async def _fake_mimic_exam_questions(*_args, **_kwargs):
         return {"success": False, "error": "stub mimic failure"}
 
     monkeypatch.setattr(question_router_module, "mimic_exam_questions", _fake_mimic_exam_questions)
-    monkeypatch.setattr(question_router_module, "MIMIC_OUTPUT_DIR", tmp_path / "mimic_papers")
+    monkeypatch.setattr(question_router_module, "MIMIC_OUTPUT_DIR", mimic_root)
 
     with TestClient(_build_app(question_router_module)) as client:
         with client.websocket_connect("/api/v1/question/mimic") as websocket:
             websocket.send_json(
                 {
                     "mode": "parsed",
-                    "paper_path": str(tmp_path / "paper"),
+                    "paper_path": str(parsed_dir),
                     "kb_name": "demo-kb",
                     "max_questions": 3,
                 }
@@ -124,3 +127,30 @@ def test_mimic_websocket_accepts_config_and_returns_messages(
     assert messages[0]["stage"] == "init"
     assert messages[1]["stage"] == "processing"
     assert messages[2]["content"] == "stub mimic failure"
+
+
+def test_mimic_websocket_rejects_parsed_path_outside_user_mimic_root(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    question_router_module = _load_question_router_module(monkeypatch)
+
+    async def _fake_mimic_exam_questions(*_args, **_kwargs):
+        return {"success": False, "error": "should not run"}
+
+    monkeypatch.setattr(question_router_module, "mimic_exam_questions", _fake_mimic_exam_questions)
+    monkeypatch.setattr(question_router_module, "MIMIC_OUTPUT_DIR", tmp_path / "mimic_papers")
+
+    with TestClient(_build_app(question_router_module)) as client:
+        with client.websocket_connect("/api/v1/question/mimic") as websocket:
+            websocket.send_json(
+                {
+                    "mode": "parsed",
+                    "paper_path": str(tmp_path / "outside_paper"),
+                    "kb_name": "demo-kb",
+                    "max_questions": 3,
+                }
+            )
+            messages = [websocket.receive_json() for _ in range(2)]
+
+    assert [message["type"] for message in messages] == ["status", "error"]
+    assert "current user's mimic output directory" in messages[1]["content"]

@@ -50,7 +50,10 @@ def fingerprint_kb(kb_name: str, manager: KnowledgeBaseManager | None = None) ->
     mgr = manager or KnowledgeBaseManager(base_dir=default_kb_base_dir())
     if kb_name not in mgr.list_knowledge_bases():
         return ""
-    base_dir: Path = mgr.base_dir / kb_name / "raw"
+    try:
+        base_dir: Path = mgr.get_raw_path(kb_name)
+    except ValueError:
+        return ""
     if not base_dir.exists():
         return ""
     parts: list[str] = []

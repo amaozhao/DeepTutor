@@ -127,7 +127,7 @@ class SupportedFileTypesInfo(BaseModel):
 def _build_unique_task_id(task_type: str, task_key_prefix: str) -> str:
     task_manager = TaskIDManager.get_instance()
     task_key = f"{task_key_prefix}_{datetime.now().isoformat()}_{uuid4().hex[:8]}"
-    return task_manager.generate_task_id(task_type, task_key)
+    return task_manager.generate_task_id(task_type, task_key, user_id=current_user_id())
 
 
 def _save_uploaded_files(
@@ -861,10 +861,14 @@ async def delete_knowledge_base(kb_name: str):
 @router.get("/tasks/{task_id}/stream")
 async def stream_task_logs(task_id: str):
     """Stream task-specific logs for knowledge-base operations."""
+    user_id = current_user_id()
+    task_manager = TaskIDManager.get_instance()
+    if not task_manager.is_task_owned_by(task_id, user_id):
+        raise HTTPException(status_code=404, detail="Task not found")
     manager = get_task_stream_manager()
-    manager.ensure_task(task_id)
+    manager.ensure_task(task_id, user_id=user_id)
     return StreamingResponse(
-        manager.stream(task_id),
+        manager.stream(task_id, user_id=user_id),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
@@ -1311,9 +1315,10 @@ async def _authenticated_websocket_progress(websocket: WebSocket, kb_name: str):
     await websocket.accept()
 
     broadcaster = ProgressBroadcaster.get_instance()
+    user_id = current_user_id()
 
     try:
-        await broadcaster.connect(kb_name, websocket)
+        await broadcaster.connect(kb_name, websocket, user_id=user_id)
 
         progress_tracker = ProgressTracker(kb_name, _get_kb_base_dir())
         initial_progress = progress_tracker.get_progress()
@@ -1430,7 +1435,7 @@ async def _authenticated_websocket_progress(websocket: WebSocket, kb_name: str):
         except Exception:
             pass
     finally:
-        await broadcaster.disconnect(kb_name, websocket)
+        await broadcaster.disconnect(kb_name, websocket, user_id=user_id)
         try:
             await websocket.close()
         except Exception:

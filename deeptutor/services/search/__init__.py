@@ -50,6 +50,17 @@ def _get_web_search_config() -> dict[str, Any]:
 
 def _save_results(result: dict[str, Any], output_dir: str, provider: str) -> str:
     output_path = Path(output_dir)
+    try:
+        from deeptutor.auth.context import current_user_id
+        from deeptutor.auth.resource_ids import safe_resolve_under
+        from deeptutor.services.path_service import get_path_service
+
+        if current_user_id():
+            output_path = safe_resolve_under(get_path_service().get_user_root(), output_path)
+    except ValueError:
+        raise
+    except Exception:
+        output_path = output_path.resolve()
     output_path.mkdir(parents=True, exist_ok=True)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     filename = f"search_{provider}_{timestamp}.json"

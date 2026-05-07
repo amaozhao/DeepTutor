@@ -10,6 +10,10 @@ import json
 import logging
 from pathlib import Path
 
+from deeptutor.auth.context import current_user_id
+from deeptutor.auth.resource_ids import safe_resolve_under
+from deeptutor.knowledge.naming import validate_knowledge_base_name
+
 # Use unified logging system
 
 _logger = logging.getLogger(__name__)
@@ -34,9 +38,9 @@ class ProgressTracker:
     """Progress tracker"""
 
     def __init__(self, kb_name: str, base_dir: Path):
-        self.kb_name = kb_name
+        self.kb_name = validate_knowledge_base_name(kb_name)
         self.base_dir = base_dir
-        self.kb_dir = base_dir / kb_name
+        self.kb_dir = safe_resolve_under(base_dir, self.kb_name)
         self.progress_file = self.kb_dir / ".progress.json"
         self._callbacks: list = []  # Support multiple callbacks
         self.task_id: str | None = None  # Task ID (for log identification)
@@ -63,12 +67,18 @@ class ProgressTracker:
 
                 try:
                     asyncio.get_running_loop()
-                    asyncio.create_task(broadcaster.broadcast(self.kb_name, progress))
+                    asyncio.create_task(
+                        broadcaster.broadcast(self.kb_name, progress, user_id=current_user_id())
+                    )
                 except RuntimeError:
                     try:
                         loop = asyncio.get_event_loop()
                         if loop.is_running():
-                            asyncio.create_task(broadcaster.broadcast(self.kb_name, progress))
+                            asyncio.create_task(
+                                broadcaster.broadcast(
+                                    self.kb_name, progress, user_id=current_user_id()
+                                )
+                            )
                     except RuntimeError:
                         pass
             except (ImportError, Exception):
