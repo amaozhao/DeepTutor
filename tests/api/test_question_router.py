@@ -88,7 +88,13 @@ def _load_question_router_module(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setitem(sys.modules, "deeptutor.tools", fake_tools)
     monkeypatch.setitem(sys.modules, "deeptutor.tools.question", fake_tools_question)
 
-    return importlib.import_module("deeptutor.api.routers.question")
+    module = importlib.import_module("deeptutor.api.routers.question")
+    monkeypatch.setattr(
+        module,
+        "authenticate_websocket_user",
+        lambda _websocket: types.SimpleNamespace(id="user_alpha"),
+    )
+    return module
 
 
 def _build_app(router_module) -> FastAPI:
@@ -127,6 +133,38 @@ def test_mimic_websocket_accepts_config_and_returns_messages(
     assert messages[0]["stage"] == "init"
     assert messages[1]["stage"] == "processing"
     assert messages[2]["content"] == "stub mimic failure"
+
+
+def test_mimic_websocket_resolves_relative_parsed_dir_under_mimic_root(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    question_router_module = _load_question_router_module(monkeypatch)
+    mimic_root = tmp_path / "mimic_papers"
+    parsed_dir = mimic_root / "2211asm1"
+    parsed_dir.mkdir(parents=True)
+    seen: dict[str, object] = {}
+
+    async def _fake_mimic_exam_questions(*_args, **kwargs):
+        seen.update(kwargs)
+        return {"success": False, "error": "stub mimic failure"}
+
+    monkeypatch.setattr(question_router_module, "mimic_exam_questions", _fake_mimic_exam_questions)
+    monkeypatch.setattr(question_router_module, "MIMIC_OUTPUT_DIR", mimic_root)
+
+    with TestClient(_build_app(question_router_module)) as client:
+        with client.websocket_connect("/api/v1/question/mimic") as websocket:
+            websocket.send_json(
+                {
+                    "mode": "parsed",
+                    "paper_path": "2211asm1",
+                    "kb_name": "demo-kb",
+                    "max_questions": 3,
+                }
+            )
+            messages = [websocket.receive_json() for _ in range(3)]
+
+    assert [message["type"] for message in messages] == ["status", "status", "error"]
+    assert seen["paper_dir"] == str(parsed_dir.resolve())
 
 
 def test_mimic_websocket_rejects_parsed_path_outside_user_mimic_root(

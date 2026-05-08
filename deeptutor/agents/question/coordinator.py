@@ -362,7 +362,12 @@ class AgentCoordinator:
 
         if paper_mode == "parsed":
             allowed_root = get_path_service().get_question_dir().resolve()
-            working_dir = paper_path.expanduser().resolve()
+            parsed_candidate = paper_path.expanduser()
+            working_dir = (
+                parsed_candidate.resolve()
+                if parsed_candidate.is_absolute()
+                else (allowed_root / parsed_candidate).resolve()
+            )
             try:
                 working_dir.relative_to(allowed_root)
             except ValueError as exc:

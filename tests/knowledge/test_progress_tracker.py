@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import json
+import threading
 
 import pytest
 
 from deeptutor.api.utils.progress_broadcaster import ProgressBroadcaster
+from deeptutor.api.utils.task_log_stream import KnowledgeTaskStreamManager
+from deeptutor.auth.context import user_scope
 from deeptutor.knowledge.manager import KnowledgeBaseManager
 from deeptutor.knowledge.progress_tracker import ProgressStage, ProgressTracker
 
@@ -72,6 +75,33 @@ def test_progress_tracker_get_progress_falls_back_to_config(tmp_path) -> None:
         "current": 3,
         "total": 5,
     }
+
+
+@pytest.mark.asyncio
+async def test_progress_tracker_emits_task_progress_to_captured_owner_from_thread(tmp_path):
+    stream_manager = KnowledgeTaskStreamManager.get_instance()
+    stream_manager._buffers.clear()
+    stream_manager._subscribers.clear()
+    with user_scope("user_alpha"):
+        tracker = ProgressTracker("demo-kb", tmp_path)
+        tracker.task_id = "kb_init_demo"
+        stream_manager.ensure_task("kb_init_demo", user_id="user_alpha")
+
+    thread = threading.Thread(
+        target=tracker.update,
+        args=(ProgressStage.PROCESSING_DOCUMENTS, "Embedding batches: 1/2 complete"),
+        kwargs={"current": 1, "total": 2},
+    )
+    thread.start()
+    thread.join()
+
+    queue, backlog, loop = stream_manager.subscribe("kb_init_demo", user_id="user_alpha")
+    stream_manager.unsubscribe("kb_init_demo", queue, loop, user_id="user_alpha")
+
+    assert backlog
+    assert backlog[-1]["event"] == "progress"
+    assert backlog[-1]["payload"]["message"] == "Embedding batches: 1/2 complete"
+    assert backlog[-1]["payload"]["stage"] == "processing_documents"
 
 
 @pytest.mark.asyncio

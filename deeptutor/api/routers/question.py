@@ -44,7 +44,12 @@ def _mimic_output_dir() -> Path:
 
 def _resolve_mimic_parsed_dir(paper_path: str) -> Path:
     root = _mimic_output_dir().resolve()
-    candidate = Path(paper_path).expanduser().resolve()
+    raw_candidate = Path(paper_path).expanduser()
+    candidate = (
+        raw_candidate.resolve()
+        if raw_candidate.is_absolute()
+        else (root / raw_candidate).resolve()
+    )
     try:
         candidate.relative_to(root)
     except ValueError as exc:

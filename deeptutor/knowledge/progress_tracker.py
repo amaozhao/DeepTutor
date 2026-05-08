@@ -10,7 +10,7 @@ import json
 import logging
 from pathlib import Path
 
-from deeptutor.auth.context import current_user_id
+from deeptutor.auth.context import current_user_id, validate_user_id
 from deeptutor.auth.resource_ids import safe_resolve_under
 from deeptutor.knowledge.naming import validate_knowledge_base_name
 
@@ -44,6 +44,18 @@ class ProgressTracker:
         self.progress_file = self.kb_dir / ".progress.json"
         self._callbacks: list = []  # Support multiple callbacks
         self.task_id: str | None = None  # Task ID (for log identification)
+        self.owner_user_id: str | None = current_user_id()
+
+    def set_owner_user_id(self, user_id: str | None) -> None:
+        self.owner_user_id = validate_user_id(user_id) if user_id else None
+
+    def _resolve_owner_user_id(self) -> str | None:
+        if self.owner_user_id:
+            return self.owner_user_id
+        owner = current_user_id()
+        if owner:
+            self.owner_user_id = owner
+        return self.owner_user_id
 
     def set_callback(self, callback: Callable[[dict], None]):
         """Set progress callback function (can be called multiple times to add multiple callbacks)"""
@@ -55,7 +67,7 @@ class ProgressTracker:
         if callback in self._callbacks:
             self._callbacks.remove(callback)
 
-    def _notify(self, progress: dict):
+    def _notify(self, progress: dict, user_id: str | None = None):
         """Notify progress update (call all callbacks)"""
         from deeptutor.runtime.mode import is_server
 
@@ -68,16 +80,14 @@ class ProgressTracker:
                 try:
                     asyncio.get_running_loop()
                     asyncio.create_task(
-                        broadcaster.broadcast(self.kb_name, progress, user_id=current_user_id())
+                        broadcaster.broadcast(self.kb_name, progress, user_id=user_id)
                     )
                 except RuntimeError:
                     try:
                         loop = asyncio.get_event_loop()
                         if loop.is_running():
                             asyncio.create_task(
-                                broadcaster.broadcast(
-                                    self.kb_name, progress, user_id=current_user_id()
-                                )
+                                broadcaster.broadcast(self.kb_name, progress, user_id=user_id)
                             )
                     except RuntimeError:
                         pass
@@ -218,17 +228,21 @@ class ProgressTracker:
             if error:
                 fallback_logger.error("%s [ProgressTracker] Error: %s", prefix, error)
 
+        owner_user_id = self._resolve_owner_user_id()
+
         self._save_progress(progress)
 
         if self.task_id:
             try:
                 from deeptutor.api.utils.task_log_stream import get_task_stream_manager
 
-                get_task_stream_manager().emit(self.task_id, "progress", progress)
+                get_task_stream_manager().emit(
+                    self.task_id, "progress", progress, user_id=owner_user_id
+                )
             except Exception as e:
                 _logger_instance().debug("Failed to emit task progress event: %s", e)
 
-        self._notify(progress)
+        self._notify(progress, user_id=owner_user_id)
 
     def get_progress(self) -> dict | None:
         """Get current progress"""
