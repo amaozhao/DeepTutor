@@ -108,7 +108,7 @@ def test_mimic_websocket_accepts_config_and_returns_messages(
 ) -> None:
     question_router_module = _load_question_router_module(monkeypatch)
     mimic_root = tmp_path / "mimic_papers"
-    parsed_dir = mimic_root / "parsed_exam"
+    parsed_dir = mimic_root / "paper"
     parsed_dir.mkdir(parents=True)
 
     async def _fake_mimic_exam_questions(*_args, **_kwargs):

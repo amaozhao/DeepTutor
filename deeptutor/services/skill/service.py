@@ -552,16 +552,15 @@ class SkillService:
         return f"---\n{header}\n---\n\n{body.lstrip()}".rstrip() + "\n"
 
 
-_instances: dict[Path, SkillService] = {}
+_instances: dict[str, SkillService] = {}
 
 
 def get_skill_service() -> SkillService:
     root = (get_path_service().get_workspace_dir() / "skills").resolve()
-    service = _instances.get(root)
-    if service is None:
-        service = SkillService(root)
-        _instances[root] = service
-    return service
+    key = str(root)
+    if key not in _instances:
+        _instances[key] = SkillService(root=root)
+    return _instances[key]
 
 
 __all__ = [

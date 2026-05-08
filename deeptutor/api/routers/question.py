@@ -39,6 +39,9 @@ MIMIC_OUTPUT_DIR: Path | None = None
 def _mimic_output_dir() -> Path:
     if MIMIC_OUTPUT_DIR is not None:
         return MIMIC_OUTPUT_DIR
+    # Resolved per-call so a per-user PathService (set after auth) routes
+    # generated mimic papers under the caller's own workspace instead of
+    # admin's directory frozen at import time.
     return get_path_service().get_question_dir() / "mimic_papers"
 
 
@@ -64,11 +67,11 @@ def _resolve_mimic_parsed_dir(paper_path: str) -> Path:
 @router.websocket("/mimic")
 async def websocket_mimic_generate(websocket: WebSocket):
     user = authenticate_websocket_user(websocket)
-    if user is None:
-        await websocket.close(code=1008)
+    if user is not None:
+        with user_scope(user.id):
+            await _authenticated_websocket_mimic_generate(websocket)
         return
-    with user_scope(user.id):
-        await _authenticated_websocket_mimic_generate(websocket)
+    await _authenticated_websocket_mimic_generate(websocket)
 
 
 async def _authenticated_websocket_mimic_generate(websocket: WebSocket):
@@ -374,15 +377,6 @@ async def _authenticated_websocket_mimic_generate(websocket: WebSocket):
 
 @router.websocket("/generate")
 async def websocket_question_generate(websocket: WebSocket):
-    user = authenticate_websocket_user(websocket)
-    if user is None:
-        await websocket.close(code=1008)
-        return
-    with user_scope(user.id):
-        await _authenticated_websocket_question_generate(websocket)
-
-
-async def _authenticated_websocket_question_generate(websocket: WebSocket):
     await websocket.accept()
 
     # Get task ID manager

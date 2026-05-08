@@ -1205,7 +1205,7 @@ export default function CoWriterPage() {
         id: "math",
         icon: () => (
           <span className="text-[11px] font-semibold leading-none">
-            &Sigma;
+            {"\u03A3"}
           </span>
         ),
         title: "Math Block",

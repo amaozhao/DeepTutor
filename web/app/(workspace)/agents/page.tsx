@@ -103,7 +103,8 @@ export default function AgentsPage() {
     setLoading(true);
     try {
       const res = await apiFetch(apiUrl("/api/v1/tutorbot"));
-      setBots(await res.json());
+      const data = await res.json();
+      setBots(Array.isArray(data) ? data : (data.bots ?? []));
     } finally {
       setLoading(false);
     }
@@ -553,7 +554,8 @@ function ChannelsTab({
     setLoadingDetail(true);
     try {
       // Edit form needs raw secrets to populate fields. Default GET masks them.
-      const res = await apiFetch(apiUrl(`/api/v1/tutorbot/${bid}?include_secrets=true`),
+      const res = await apiFetch(
+        apiUrl(`/api/v1/tutorbot/${bid}?include_secrets=true`),
       );
       if (!res.ok) return;
       const data = await res.json();
@@ -1453,7 +1455,8 @@ function ProfilesTab({
               onToast(t("No template selected to update"));
               return false;
             }
-            const tplRes = await apiFetch(apiUrl(`/api/v1/tutorbot/souls/${sourceSoulTemplate.id}`),
+            const tplRes = await apiFetch(
+              apiUrl(`/api/v1/tutorbot/souls/${sourceSoulTemplate.id}`),
               {
                 method: "PUT",
                 headers: { "Content-Type": "application/json" },
@@ -1501,9 +1504,7 @@ function ProfilesTab({
               }),
             });
             if (tplRes.status === 409) {
-              onToast(
-                t("A soul with this id already exists, try another name"),
-              );
+              onToast(t("A soul with this id already exists, try another name"));
               return false;
             }
             if (!tplRes.ok) {
@@ -1516,7 +1517,8 @@ function ProfilesTab({
           }
         }
 
-        const res = await apiFetch(apiUrl(`/api/v1/tutorbot/${selectedBot}/files/${activeFile}`),
+        const res = await apiFetch(
+          apiUrl(`/api/v1/tutorbot/${selectedBot}/files/${activeFile}`),
           {
             method: "PUT",
             headers: { "Content-Type": "application/json" },
@@ -1526,7 +1528,8 @@ function ProfilesTab({
         if (res.ok) {
           setFiles((prev) => ({ ...prev, [activeFile]: editor }));
           if (activeFile === "SOUL.md") {
-            const personaRes = await apiFetch(apiUrl(`/api/v1/tutorbot/${selectedBot}`),
+            const personaRes = await apiFetch(
+              apiUrl(`/api/v1/tutorbot/${selectedBot}`),
               {
                 method: "PATCH",
                 headers: { "Content-Type": "application/json" },

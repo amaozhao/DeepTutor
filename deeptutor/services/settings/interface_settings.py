@@ -18,6 +18,13 @@ DEFAULT_UI_SETTINGS: dict[str, Any] = {
 }
 
 
+def _interface_settings_file():
+    # Resolved on every call so a per-user PathService (set after auth)
+    # routes reads to the caller's own ``settings/interface.json`` instead
+    # of the admin scope frozen at import time.
+    return get_path_service().get_settings_file("interface")
+
+
 def _normalize_language(language: Any, default: str = "en") -> str:
     """
     Normalize language codes:
@@ -47,7 +54,7 @@ def get_ui_settings() -> dict[str, Any]:
     Returns:
         dict containing at least: {"theme": "...", "language": "..."}
     """
-    settings_file = get_path_service().get_settings_file("interface")
+    settings_file = _interface_settings_file()
     if settings_file.exists():
         try:
             with open(settings_file, encoding="utf-8") as f:

@@ -89,16 +89,6 @@ export function apiUrl(path: string): string {
   return `${normalizedBase}${normalizedPath}`;
 }
 
-export function apiFetch(
-  input: RequestInfo | URL,
-  init: RequestInit = {},
-): Promise<Response> {
-  return fetch(input, {
-    ...init,
-    credentials: init.credentials ?? "include",
-  });
-}
-
 /**
  * Construct a WebSocket URL from a path
  * @param path - WebSocket path (e.g., '/api/v1/solve')
@@ -118,4 +108,28 @@ export function wsUrl(path: string): string {
   const normalizedBase = base.endsWith("/") ? base.slice(0, -1) : base;
 
   return `${normalizedBase}${normalizedPath}`;
+}
+
+const AUTH_ENABLED = process.env.NEXT_PUBLIC_AUTH_ENABLED === "true";
+
+/**
+ * Authenticated fetch wrapper. Behaves identically to `fetch` but automatically
+ * redirects to /login when the backend returns 401 (expired / invalid token).
+ */
+export async function apiFetch(
+  input: RequestInfo | URL,
+  init: RequestInit = {},
+): Promise<Response> {
+  const res = await fetch(input, {
+    ...init,
+    credentials: init.credentials ?? "include",
+  });
+
+  if (res.status === 401 && AUTH_ENABLED && typeof window !== "undefined") {
+    const next = encodeURIComponent(window.location.pathname);
+    window.location.href = `/login?next=${next}`;
+    return new Promise(() => {});
+  }
+
+  return res;
 }

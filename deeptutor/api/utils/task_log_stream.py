@@ -37,8 +37,15 @@ class KnowledgeTaskStreamManager:
 
     def _key(self, task_id: str, user_id: str | None = None) -> tuple[str | None, str]:
         safe_task_id = validate_task_id(task_id)
-        owner = str(user_id or current_user_id() or "").strip() or None
-        return owner, safe_task_id
+        owner = str(user_id or current_user_id() or "").strip()
+        if not owner:
+            try:
+                from deeptutor.multi_user.context import get_current_user
+
+                owner = str(get_current_user().id or "").strip()
+            except Exception:
+                owner = ""
+        return owner or None, safe_task_id
 
     def ensure_task(self, task_id: str, user_id: str | None = None):
         key = self._key(task_id, user_id)
@@ -145,13 +152,13 @@ class KnowledgeTaskStreamManager:
 
 
 @contextlib.contextmanager
-def capture_task_logs(task_id: str):
+def capture_task_logs(task_id: str, user_id: str | None = None):
     """Forward all logs bound to ``task_id`` into the task's SSE stream."""
     manager = KnowledgeTaskStreamManager.get_instance()
-    manager.ensure_task(task_id)
+    manager.ensure_task(task_id, user_id=user_id)
 
     def emit(event: ProcessLogEvent) -> None:
-        manager.emit_process_log(task_id, event)
+        manager.emit_process_log(task_id, event, user_id=user_id)
 
     with bind_log_context(task_id=task_id, capability="knowledge", sink="ui"):
         with capture_process_logs(emit, task_id=task_id):

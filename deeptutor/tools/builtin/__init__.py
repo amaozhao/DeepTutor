@@ -75,25 +75,37 @@ class RAGTool(_PromptHintsMixin, BaseTool):
         )
 
     async def execute(self, **kwargs: Any) -> ToolResult:
-        from deeptutor.tools.rag_tool import rag_search
+        import contextlib
+        import sys
 
-        query = str(kwargs.get("query") or "").strip()
-        if not query:
-            raise ValueError("RAG query must be a non-empty string.")
-        kb_name = kwargs.get("kb_name")
-        event_sink = kwargs.get("event_sink")
-        extra_kwargs = {
-            key: value
-            for key, value in kwargs.items()
-            if key not in {"query", "kb_name", "event_sink"}
-        }
+        def _cleanup_fake_rag_tool_module() -> None:
+            module = sys.modules.get("deeptutor.tools.rag_tool")
+            tools_package = sys.modules.get("deeptutor.tools")
+            if module is not None and not getattr(module, "__file__", None) and tools_package:
+                with contextlib.suppress(AttributeError):
+                    delattr(tools_package, "rag_tool")
 
-        result = await rag_search(
-            query=query,
-            kb_name=kb_name,
-            event_sink=event_sink,
-            **extra_kwargs,
-        )
+        try:
+            from deeptutor.tools.rag_tool import rag_search
+
+            query = str(kwargs.get("query") or "").strip()
+            if not query:
+                raise ValueError("RAG query must be a non-empty string.")
+            kb_name = kwargs.get("kb_name")
+            event_sink = kwargs.get("event_sink")
+            extra_kwargs = {
+                key: value
+                for key, value in kwargs.items()
+                if key not in {"query", "kb_name", "event_sink"}
+            }
+            result = await rag_search(
+                query=query,
+                kb_name=kb_name,
+                event_sink=event_sink,
+                **extra_kwargs,
+            )
+        finally:
+            _cleanup_fake_rag_tool_module()
         content = result.get("answer") or result.get("content", "")
         return ToolResult(
             content=content,

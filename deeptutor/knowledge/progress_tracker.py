@@ -44,7 +44,15 @@ class ProgressTracker:
         self.progress_file = self.kb_dir / ".progress.json"
         self._callbacks: list = []  # Support multiple callbacks
         self.task_id: str | None = None  # Task ID (for log identification)
-        self.owner_user_id: str | None = current_user_id()
+        owner = current_user_id()
+        if not owner:
+            try:
+                from deeptutor.multi_user.context import get_current_user
+
+                owner = str(get_current_user().id or "").strip() or None
+            except Exception:
+                owner = None
+        self.owner_user_id: str | None = owner
 
     def set_owner_user_id(self, user_id: str | None) -> None:
         self.owner_user_id = validate_user_id(user_id) if user_id else None
@@ -53,6 +61,13 @@ class ProgressTracker:
         if self.owner_user_id:
             return self.owner_user_id
         owner = current_user_id()
+        if not owner:
+            try:
+                from deeptutor.multi_user.context import get_current_user
+
+                owner = str(get_current_user().id or "").strip() or None
+            except Exception:
+                owner = None
         if owner:
             self.owner_user_id = owner
         return self.owner_user_id

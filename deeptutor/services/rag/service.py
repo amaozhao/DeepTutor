@@ -8,6 +8,7 @@ from pathlib import Path
 import shutil
 from typing import Any, Dict, List, Optional
 
+from deeptutor.auth.context import current_user_id
 from deeptutor.auth.resource_ids import safe_resolve_under
 from deeptutor.knowledge.naming import validate_knowledge_base_name
 
@@ -19,10 +20,13 @@ DEFAULT_KB_BASE_DIR = str(
 
 
 def default_kb_base_dir() -> str:
-    """Return the active user's private knowledge-base root."""
+    """Return the active knowledge-base root for legacy and multi-user contexts."""
     from deeptutor.services.path_service import get_path_service
 
-    return str(get_path_service().get_user_root() / "knowledge_bases")
+    path_service = get_path_service()
+    if current_user_id():
+        return str(path_service.get_user_root() / "knowledge_bases")
+    return str(path_service.get_knowledge_bases_root())
 
 
 class RAGService:
@@ -34,7 +38,18 @@ class RAGService:
         provider: Optional[str] = None,  # accepted for backward compatibility
     ):
         self.logger = logging.getLogger(__name__)
-        self.kb_base_dir = kb_base_dir or default_kb_base_dir()
+        if kb_base_dir is None:
+            try:
+                kb_base_dir = default_kb_base_dir()
+            except Exception:
+                self.logger.warning(
+                    "RAGService falling back to DEFAULT_KB_BASE_DIR (%s); "
+                    "this should only happen in single-user / CLI mode. "
+                    "Multi-user requests must reach this path with an explicit kb_base_dir.",
+                    DEFAULT_KB_BASE_DIR,
+                )
+                kb_base_dir = DEFAULT_KB_BASE_DIR
+        self.kb_base_dir = kb_base_dir
         self.provider = DEFAULT_PROVIDER
         self._pipeline = None
 

@@ -29,7 +29,15 @@ class TaskIDManager:
         return cls._instance
 
     def _owner_id(self, user_id: str | None = None) -> str | None:
-        return str(user_id or current_user_id() or "").strip() or None
+        owner = str(user_id or current_user_id() or "").strip()
+        if not owner:
+            try:
+                from deeptutor.multi_user.context import get_current_user
+
+                owner = str(get_current_user().id or "").strip()
+            except Exception:
+                owner = ""
+        return owner or None
 
     def _lookup_key(self, task_key: str, user_id: str | None = None) -> str:
         owner = self._owner_id(user_id) or "_legacy"

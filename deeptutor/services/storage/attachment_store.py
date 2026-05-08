@@ -28,6 +28,7 @@ uploaded twice in the same session.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 from pathlib import Path
@@ -153,7 +154,8 @@ class LocalDiskAttachmentStore:
         if target is None:
             raise ValueError(f"refusing to write attachment outside storage root: {stored!r}")
 
-        self._write_sync(target, data)
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(None, self._write_sync, target, data)
 
         # The router uses the same _coerce_filename rules to look up the file,
         # so the public URL must use the sanitised pieces. Each path segment
@@ -185,7 +187,8 @@ class LocalDiskAttachmentStore:
         session_dir = self._session_dir(session_id)
         if not session_dir.exists():
             return
-        self._rmtree_sync(session_dir)
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(None, self._rmtree_sync, session_dir)
 
     @staticmethod
     def _rmtree_sync(path: Path) -> None:
@@ -204,11 +207,11 @@ class LocalDiskAttachmentStore:
         return target
 
 
-_stores: dict[Path, AttachmentStore] = {}
+_stores: dict[str, AttachmentStore] = {}
 
 
 def get_attachment_store() -> AttachmentStore:
-    """Return the current user's :class:`AttachmentStore`.
+    """Return the process-wide :class:`AttachmentStore`.
 
     Today this is always a :class:`LocalDiskAttachmentStore`; future S3/MinIO
     backends can be selected here based on an env var.
@@ -219,11 +222,10 @@ def get_attachment_store() -> AttachmentStore:
         if override
         else get_path_service().get_user_root().joinpath(*_DEFAULT_SUBPATH).resolve()
     )
-    store = _stores.get(root)
-    if store is None:
-        store = LocalDiskAttachmentStore(root=root)
-        _stores[root] = store
-    return store
+    key = str(root)
+    if key not in _stores:
+        _stores[key] = LocalDiskAttachmentStore(root=root)
+    return _stores[key]
 
 
 def reset_attachment_store() -> None:

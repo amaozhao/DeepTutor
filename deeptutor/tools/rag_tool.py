@@ -10,6 +10,7 @@ import asyncio
 from typing import Dict, List, Optional
 
 # Import RAGService as the single entry point
+from deeptutor.auth.context import current_user_id
 from deeptutor.knowledge.naming import validate_knowledge_base_name
 from deeptutor.services.rag.service import RAGService, default_kb_base_dir
 
@@ -73,10 +74,53 @@ async def rag_search(
     if not query:
         raise ValueError("RAG query must be a non-empty string.")
 
+    if kb_base_dir is None and not str(kb_name or "").strip():
+        try:
+            from deeptutor.multi_user.context import get_current_user
+
+            if get_current_user().scope.kind == "user":
+                raise ValueError(
+                    "No knowledge base selected. Pass kb_name explicitly or set a default."
+                )
+        except ValueError:
+            raise
+        except Exception:
+            pass
+
+    if kb_base_dir is None:
+        try:
+            from deeptutor.multi_user.context import get_current_user
+            from deeptutor.multi_user.knowledge_access import resolve_for_rag
+
+            current_user = get_current_user()
+            if current_user_id() is not None and current_user.id == "local-admin":
+                raise RuntimeError("legacy user_scope is active")
+            resource = resolve_for_rag(kb_name)
+            if resource is not None:
+                kb_base_dir = str(resource.base_dir)
+                kb_name = resource.name
+            elif not current_user.is_admin:
+                # Non-admin users must never silently fall back to admin's KB
+                # directory. ``resolve_for_rag`` returning ``None`` means the
+                # caller passed no kb_name at all — surface that as a
+                # configuration error instead of leaking admin KBs.
+                raise ValueError(
+                    "No knowledge base selected. Pass kb_name explicitly or set a default."
+                )
+        except ValueError:
+            raise
+        except Exception as exc:
+            if getattr(exc, "status_code", None) in {403, 404}:
+                raise ValueError(str(getattr(exc, "detail", exc))) from exc
+            # Fall back to the legacy resolver so CLI/local single-user remains
+            # tolerant when no request context exists. This branch only runs
+            # for admin / single-user mode (the non-admin path raised above).
+            pass
+
     service = RAGService(kb_base_dir=kb_base_dir, provider=provider)
     resolved_kb_name = _resolve_kb_name(kb_name, kb_base_dir=kb_base_dir)
     if not resolved_kb_name:
-        raise ValueError("No knowledge base selected and no default knowledge base is configured.")
+        raise ValueError("No default knowledge base is configured.")
 
     try:
         return await service.search(

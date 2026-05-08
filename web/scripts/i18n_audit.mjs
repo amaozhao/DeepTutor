@@ -43,6 +43,13 @@ function auditFile(content) {
     if (text.startsWith(")")) continue;
     if (text.includes("&&") || text.includes("= ") || text.startsWith("=")) continue;
     if (text.includes("mark.") || text.includes("diff")) continue;
+    // Regex scanning can see TypeScript type annotations or Tailwind arbitrary
+    // selectors as JSX text when a generic `>` is followed by later markup.
+    if (/^(void\s*\|\s*)?Promise$/.test(text)) continue;
+    if (/^[A-Za-z0-9:[\].>&_"'-]+$/.test(text) && text.includes("]:"))
+      continue;
+    // Comments that mention JSX tags can be split by the text regex.
+    if (text === "context. Next.js") continue;
     if (text.includes(">/i") || text.includes("katex")) continue;
     // Common non-translatable tokens / file extensions / escapes
     if (text === ".md" || text === ".pdf" || text === "\\n") continue;
