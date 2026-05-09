@@ -10,9 +10,10 @@ URL shape::
 
     GET /api/attachments/{session_id}/{attachment_id}/{filename}
 
-The session id functions as the ACL boundary, mirroring how the rest of
-the app treats sessions today (single-tenant, session ownership is local
-trust). Once multi-user auth lands we should swap this for signed URLs.
+The URL intentionally does not carry a user id. The auth dependency sets the
+request-local user context before this router runs, and the attachment store
+is resolved from that user's PathService root, so the same URL shape maps to
+different on-disk roots for admin and non-admin users.
 """
 
 from __future__ import annotations
