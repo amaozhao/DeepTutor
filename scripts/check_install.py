@@ -234,7 +234,6 @@ def check_frontend_packages(project_root: Path) -> tuple[bool, int, int]:
         "react-dom",
         "typescript",
         "tailwindcss",
-        "@radix-ui/react-dialog",
         "lucide-react",
     ]
 
