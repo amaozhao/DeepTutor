@@ -9,8 +9,7 @@ import logging
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field, field_validator
 
-from deeptutor.services.session import get_session_store
-from deeptutor.services.session.sqlite_store import get_sqlite_session_store
+from deeptutor.services.session import get_session_store, get_sqlite_session_store
 
 logger = logging.getLogger(__name__)
 

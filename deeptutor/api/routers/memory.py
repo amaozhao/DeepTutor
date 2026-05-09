@@ -23,6 +23,11 @@ def _get_route_session_store():
 _VALID_FILES: set[MemoryFile] = {"summary", "profile"}
 
 
+def get_sqlite_session_store():
+    """Backward-compatible hook for tests and legacy monkeypatches."""
+    return get_session_store()
+
+
 def _snap_dict(snap) -> dict:
     return {
         "summary": snap.summary,

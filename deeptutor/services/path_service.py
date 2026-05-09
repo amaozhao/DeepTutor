@@ -104,8 +104,8 @@ class PathService:
 
     @property
     def workspace_root(self) -> Path:
-        if getattr(self, "_uses_default_workspace_root", False):
-            return (self.project_root / "data").resolve()
+        if self._uses_default_workspace_root:
+            return (self._project_root / "data").resolve()
         return self._workspace_root
 
     def get_data_root(self) -> Path:

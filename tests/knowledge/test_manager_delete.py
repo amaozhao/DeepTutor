@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import os
+import shutil
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -48,7 +50,7 @@ def test_delete_knowledge_base_clears_config_when_rmtree_fails(
     the raised OSError aborted the delete and the entry was stuck forever.
     """
     manager = KnowledgeBaseManager(base_dir=str(tmp_path))
-    _create_kb(manager, "broken")
+    kb_dir = _create_kb(manager, "broken")
 
     def _rmtree_always_errors(path, onerror=None, **_kwargs):
         # Simulate a persistent OSError that chmod-retry cannot recover from.
@@ -62,8 +64,12 @@ def test_delete_knowledge_base_clears_config_when_rmtree_fails(
 
     monkeypatch.setattr(manager_mod, "shutil", SimpleNamespace(rmtree=_rmtree_always_errors))
 
-    assert manager.delete_knowledge_base("broken", confirm=True) is True
-    assert "broken" not in _read_config(manager.config_file).get("knowledge_bases", {})
+    try:
+        assert manager.delete_knowledge_base("broken", confirm=True) is True
+        assert "broken" not in _read_config(manager.config_file).get("knowledge_bases", {})
+        assert os.access(kb_dir, os.R_OK | os.X_OK)
+    finally:
+        shutil.rmtree(kb_dir, ignore_errors=True)
 
 
 def test_delete_knowledge_base_removes_orphan_config_when_directory_missing(

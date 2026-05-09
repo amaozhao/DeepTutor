@@ -798,9 +798,9 @@ async def list_knowledge_bases():
                         source="admin" if get_current_user().is_admin else "user",
                         assigned=False,
                         read_only=False,
-                        provenance_label=access_by_id.get(
-                            f"{own_prefix}{info['name']}", {}
-                        ).get("provenance_label"),
+                        provenance_label=access_by_id.get(f"{own_prefix}{info['name']}", {}).get(
+                            "provenance_label"
+                        ),
                     )
                 )
             except Exception as e:
