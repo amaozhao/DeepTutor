@@ -13,9 +13,9 @@ from pathlib import Path
 import shutil
 from typing import Optional
 
-from deeptutor.auth.resource_ids import safe_resolve_under
 from deeptutor.knowledge.naming import validate_knowledge_base_name
 from deeptutor.knowledge.progress_tracker import ProgressStage, ProgressTracker
+from deeptutor.multi_user.resource_ids import safe_resolve_under
 from deeptutor.services.rag.factory import DEFAULT_PROVIDER
 from deeptutor.services.rag.file_routing import FileTypeRouter
 from deeptutor.services.rag.service import RAGService

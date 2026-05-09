@@ -1,5 +1,9 @@
 import { apiFetch, apiUrl } from "@/lib/api";
-import type { GrantPayload, MultiUserResources } from "./types";
+import type {
+  CurrentUserAccess,
+  GrantPayload,
+  MultiUserResources,
+} from "./types";
 
 async function readError(res: Response, fallback: string): Promise<string> {
   try {
@@ -17,6 +21,12 @@ export async function fetchAdminResources(): Promise<MultiUserResources> {
       await readError(res, "Failed to load assignable resources"),
     );
   return (await res.json()) as MultiUserResources;
+}
+
+export async function fetchMyAccess(): Promise<CurrentUserAccess> {
+  const res = await apiFetch(apiUrl("/api/v1/multi-user/me/access"));
+  if (!res.ok) throw new Error(await readError(res, "Failed to load account"));
+  return (await res.json()) as CurrentUserAccess;
 }
 
 export async function fetchUserGrant(userId: string): Promise<GrantPayload> {

@@ -108,6 +108,9 @@ const nextConfig = {
     position: "bottom-right",
   },
 
+  // Keep HMR clean when users open the dev server via 127.0.0.1 instead of localhost.
+  allowedDevOrigins: ["127.0.0.1"],
+
   // Transpile mermaid and related packages for proper ESM handling
   transpilePackages: ["mermaid"],
 

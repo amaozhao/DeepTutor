@@ -8,7 +8,7 @@ from typing import Optional
 
 from fastapi import WebSocket
 
-from deeptutor.auth.context import current_user_id
+from deeptutor.multi_user.context import current_user_id
 
 logger = logging.getLogger(__name__)
 

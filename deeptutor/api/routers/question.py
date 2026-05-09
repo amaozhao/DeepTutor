@@ -11,8 +11,10 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from deeptutor.agents.question import AgentCoordinator
 from deeptutor.api.utils.task_id_manager import TaskIDManager
-from deeptutor.auth.context import user_scope
-from deeptutor.auth.dependencies import authenticate_websocket_user
+from deeptutor.api.utils.websocket_auth import (
+    reset_websocket_current_user,
+    set_websocket_current_user,
+)
 from deeptutor.logging import (
     ProcessLogEvent,
     bind_log_context,
@@ -66,12 +68,13 @@ def _resolve_mimic_parsed_dir(paper_path: str) -> Path:
 
 @router.websocket("/mimic")
 async def websocket_mimic_generate(websocket: WebSocket):
-    user = authenticate_websocket_user(websocket)
-    if user is not None:
-        with user_scope(user.id):
-            await _authenticated_websocket_mimic_generate(websocket)
+    token = await set_websocket_current_user(websocket)
+    if token is None:
         return
-    await _authenticated_websocket_mimic_generate(websocket)
+    try:
+        await _authenticated_websocket_mimic_generate(websocket)
+    finally:
+        reset_websocket_current_user(token)
 
 
 async def _authenticated_websocket_mimic_generate(websocket: WebSocket):

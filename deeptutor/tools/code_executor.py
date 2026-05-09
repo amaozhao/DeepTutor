@@ -312,11 +312,12 @@ async def run_code(
     if workspace_dir is not None:
         custom_workspace = Path(workspace_dir).expanduser().resolve()
         try:
-            from deeptutor.auth.context import current_user_id
-            from deeptutor.auth.resource_ids import safe_resolve_under
+            from deeptutor.multi_user.context import get_current_user_or_none
+            from deeptutor.multi_user.resource_ids import safe_resolve_under
             from deeptutor.services.path_service import get_path_service
 
-            if current_user_id():
+            current_user = get_current_user_or_none()
+            if current_user is not None and current_user.scope.kind == "user":
                 safe_resolve_under(get_path_service().get_user_root(), custom_workspace)
         except ValueError:
             raise

@@ -31,7 +31,6 @@ from pydantic import BaseModel
 from deeptutor.api.utils.progress_broadcaster import ProgressBroadcaster
 from deeptutor.api.utils.task_id_manager import TaskIDManager
 from deeptutor.api.utils.task_log_stream import capture_task_logs, get_task_stream_manager
-from deeptutor.auth.context import current_user_id
 from deeptutor.knowledge.add_documents import DocumentAdder
 from deeptutor.knowledge.initializer import KnowledgeBaseInitializer
 from deeptutor.knowledge.manager import KnowledgeBaseManager
@@ -49,7 +48,6 @@ from deeptutor.multi_user.knowledge_access import (
     list_visible_knowledge_bases as list_visible_kb_access,
 )
 from deeptutor.services.config import PROJECT_ROOT, load_config_with_main
-from deeptutor.services.path_service import get_path_service
 from deeptutor.services.rag.factory import DEFAULT_PROVIDER
 from deeptutor.services.rag.file_routing import FileTypeRouter
 from deeptutor.utils.document_validator import DocumentValidator
@@ -82,24 +80,10 @@ DEFAULT_KB_ALIASES = {"", "default", "current", "selected", "默认", "默认知
 
 # Lazy initialization
 kb_manager = None
-_kb_managers: dict[Path, KnowledgeBaseManager] = {}
-
-
-def _legacy_kb_base_dir() -> Path:
-    if current_user_id():
-        return get_path_service().get_user_root() / "knowledge_bases"
-    return _kb_base_dir
 
 
 def get_kb_manager():
     """Get KnowledgeBaseManager instance (lazy init)"""
-    if current_user_id():
-        base_dir = _legacy_kb_base_dir().resolve()
-        manager = _kb_managers.get(base_dir)
-        if manager is None:
-            manager = KnowledgeBaseManager(base_dir=str(base_dir))
-            _kb_managers[base_dir] = manager
-        return manager
     if kb_manager is not None:
         return kb_manager
     return current_kb_manager()

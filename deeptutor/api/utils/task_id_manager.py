@@ -7,8 +7,8 @@ import threading
 from typing import Optional
 import uuid
 
-from deeptutor.auth.context import current_user_id
-from deeptutor.auth.resource_ids import validate_task_id
+from deeptutor.multi_user.context import current_user_id
+from deeptutor.multi_user.resource_ids import validate_task_id
 
 
 class TaskIDManager:

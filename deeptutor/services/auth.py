@@ -40,7 +40,20 @@ AUTH_ENABLED: bool = os.getenv("AUTH_ENABLED", "false").lower() == "true"
 AUTH_USERNAME: str = os.getenv("AUTH_USERNAME", "admin")
 AUTH_PASSWORD_HASH: str = os.getenv("AUTH_PASSWORD_HASH", "")
 AUTH_SECRET: str = os.getenv("AUTH_SECRET", "")
-TOKEN_EXPIRE_HOURS: int = int(os.getenv("AUTH_TOKEN_EXPIRE_HOURS", "24"))
+
+
+def _int_env(name: str, default: int) -> int:
+    raw = os.getenv(name)
+    if raw is None or raw.strip() == "":
+        return default
+    try:
+        return int(raw)
+    except ValueError:
+        logger.warning("Invalid %s=%r; using default %s", name, raw, default)
+        return default
+
+
+TOKEN_EXPIRE_HOURS: int = _int_env("AUTH_TOKEN_EXPIRE_HOURS", 24)
 
 # PocketBase auth mode — active when POCKETBASE_URL is set AND AUTH_ENABLED=true.
 # When enabled, login/register proxy to PocketBase and token validation uses

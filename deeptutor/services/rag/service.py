@@ -8,9 +8,8 @@ from pathlib import Path
 import shutil
 from typing import Any, Dict, List, Optional
 
-from deeptutor.auth.context import current_user_id
-from deeptutor.auth.resource_ids import safe_resolve_under
 from deeptutor.knowledge.naming import validate_knowledge_base_name
+from deeptutor.multi_user.resource_ids import safe_resolve_under
 
 from .factory import DEFAULT_PROVIDER, get_pipeline, list_pipelines
 
@@ -24,8 +23,6 @@ def default_kb_base_dir() -> str:
     from deeptutor.services.path_service import get_path_service
 
     path_service = get_path_service()
-    if current_user_id():
-        return str(path_service.get_user_root() / "knowledge_bases")
     return str(path_service.get_knowledge_bases_root())
 
 

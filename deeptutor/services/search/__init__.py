@@ -51,11 +51,12 @@ def _get_web_search_config() -> dict[str, Any]:
 def _save_results(result: dict[str, Any], output_dir: str, provider: str) -> str:
     output_path = Path(output_dir)
     try:
-        from deeptutor.auth.context import current_user_id
-        from deeptutor.auth.resource_ids import safe_resolve_under
+        from deeptutor.multi_user.context import get_current_user_or_none
+        from deeptutor.multi_user.resource_ids import safe_resolve_under
         from deeptutor.services.path_service import get_path_service
 
-        if current_user_id():
+        current_user = get_current_user_or_none()
+        if current_user is not None and current_user.scope.kind == "user":
             output_path = safe_resolve_under(get_path_service().get_user_root(), output_path)
     except ValueError:
         raise

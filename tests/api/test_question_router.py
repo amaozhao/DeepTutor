@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from contextlib import contextmanager
 import importlib
 from pathlib import Path
 import sys
@@ -8,27 +7,11 @@ import types
 
 import pytest
 
-FastAPI = pytest.importorskip("fastapi").FastAPI
-TestClient = pytest.importorskip("fastapi.testclient").TestClient
-
 
 @pytest.fixture(autouse=True)
 def _cleanup_question_router_module():
     yield
     sys.modules.pop("deeptutor.api.routers.question", None)
-
-
-class _DummyProcessLogEvent:
-    def __init__(self, **kwargs) -> None:
-        self.data = {"type": "process_log", **kwargs}
-
-    def to_dict(self):
-        return self.data
-
-
-@contextmanager
-def _noop_context(*_args, **_kwargs):
-    yield
 
 
 def _package(name: str) -> types.ModuleType:
@@ -48,9 +31,9 @@ def _load_question_router_module(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setitem(sys.modules, "deeptutor.agents.question", fake_agents_question)
 
     fake_logging = _package("deeptutor.logging")
-    fake_logging.ProcessLogEvent = _DummyProcessLogEvent
-    fake_logging.bind_log_context = _noop_context
-    fake_logging.capture_process_logs = _noop_context
+    fake_logging.ProcessLogEvent = object
+    fake_logging.bind_log_context = lambda *_args, **_kwargs: pytest.MonkeyPatch.context()
+    fake_logging.capture_process_logs = lambda *_args, **_kwargs: pytest.MonkeyPatch.context()
     fake_logging.current_log_context = lambda: {}
     monkeypatch.setitem(sys.modules, "deeptutor.logging", fake_logging)
 
@@ -88,107 +71,52 @@ def _load_question_router_module(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setitem(sys.modules, "deeptutor.tools", fake_tools)
     monkeypatch.setitem(sys.modules, "deeptutor.tools.question", fake_tools_question)
 
-    module = importlib.import_module("deeptutor.api.routers.question")
-    monkeypatch.setattr(
-        module,
-        "authenticate_websocket_user",
-        lambda _websocket: types.SimpleNamespace(id="user_alpha"),
-    )
-    return module
+    return importlib.import_module("deeptutor.api.routers.question")
 
 
-def _build_app(router_module) -> FastAPI:
-    app = FastAPI()
-    app.include_router(router_module.router, prefix="/api/v1/question")
-    return app
-
-
-def test_mimic_websocket_accepts_config_and_returns_messages(
+def test_mimic_resolves_relative_parsed_dir_under_mimic_root(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    question_router_module = _load_question_router_module(monkeypatch)
-    mimic_root = tmp_path / "mimic_papers"
-    parsed_dir = mimic_root / "paper"
-    parsed_dir.mkdir(parents=True)
-
-    async def _fake_mimic_exam_questions(*_args, **_kwargs):
-        return {"success": False, "error": "stub mimic failure"}
-
-    monkeypatch.setattr(question_router_module, "mimic_exam_questions", _fake_mimic_exam_questions)
-    monkeypatch.setattr(question_router_module, "MIMIC_OUTPUT_DIR", mimic_root)
-
-    with TestClient(_build_app(question_router_module)) as client:
-        with client.websocket_connect("/api/v1/question/mimic") as websocket:
-            websocket.send_json(
-                {
-                    "mode": "parsed",
-                    "paper_path": str(parsed_dir),
-                    "kb_name": "demo-kb",
-                    "max_questions": 3,
-                }
-            )
-            messages = [websocket.receive_json() for _ in range(3)]
-
-    assert [message["type"] for message in messages] == ["status", "status", "error"]
-    assert messages[0]["stage"] == "init"
-    assert messages[1]["stage"] == "processing"
-    assert messages[2]["content"] == "stub mimic failure"
-
-
-def test_mimic_websocket_resolves_relative_parsed_dir_under_mimic_root(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    question_router_module = _load_question_router_module(monkeypatch)
+    module = _load_question_router_module(monkeypatch)
     mimic_root = tmp_path / "mimic_papers"
     parsed_dir = mimic_root / "2211asm1"
     parsed_dir.mkdir(parents=True)
-    seen: dict[str, object] = {}
+    monkeypatch.setattr(module, "MIMIC_OUTPUT_DIR", mimic_root)
 
-    async def _fake_mimic_exam_questions(*_args, **kwargs):
-        seen.update(kwargs)
-        return {"success": False, "error": "stub mimic failure"}
-
-    monkeypatch.setattr(question_router_module, "mimic_exam_questions", _fake_mimic_exam_questions)
-    monkeypatch.setattr(question_router_module, "MIMIC_OUTPUT_DIR", mimic_root)
-
-    with TestClient(_build_app(question_router_module)) as client:
-        with client.websocket_connect("/api/v1/question/mimic") as websocket:
-            websocket.send_json(
-                {
-                    "mode": "parsed",
-                    "paper_path": "2211asm1",
-                    "kb_name": "demo-kb",
-                    "max_questions": 3,
-                }
-            )
-            messages = [websocket.receive_json() for _ in range(3)]
-
-    assert [message["type"] for message in messages] == ["status", "status", "error"]
-    assert seen["paper_dir"] == str(parsed_dir.resolve())
+    assert module._resolve_mimic_parsed_dir("2211asm1") == parsed_dir.resolve()
 
 
-def test_mimic_websocket_rejects_parsed_path_outside_user_mimic_root(
+def test_mimic_rejects_parsed_path_outside_user_mimic_root(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    question_router_module = _load_question_router_module(monkeypatch)
+    module = _load_question_router_module(monkeypatch)
+    monkeypatch.setattr(module, "MIMIC_OUTPUT_DIR", tmp_path / "mimic_papers")
 
-    async def _fake_mimic_exam_questions(*_args, **_kwargs):
-        return {"success": False, "error": "should not run"}
+    with pytest.raises(ValueError, match="current user's mimic output directory"):
+        module._resolve_mimic_parsed_dir(str(tmp_path / "outside_paper"))
 
-    monkeypatch.setattr(question_router_module, "mimic_exam_questions", _fake_mimic_exam_questions)
-    monkeypatch.setattr(question_router_module, "MIMIC_OUTPUT_DIR", tmp_path / "mimic_papers")
 
-    with TestClient(_build_app(question_router_module)) as client:
-        with client.websocket_connect("/api/v1/question/mimic") as websocket:
-            websocket.send_json(
-                {
-                    "mode": "parsed",
-                    "paper_path": str(tmp_path / "outside_paper"),
-                    "kb_name": "demo-kb",
-                    "max_questions": 3,
-                }
-            )
-            messages = [websocket.receive_json() for _ in range(2)]
+@pytest.mark.asyncio
+async def test_mimic_websocket_sets_and_resets_upstream_user_context(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _load_question_router_module(monkeypatch)
+    calls: list[str] = []
 
-    assert [message["type"] for message in messages] == ["status", "error"]
-    assert "current user's mimic output directory" in messages[1]["content"]
+    async def _fake_set_websocket_current_user(_websocket):
+        calls.append("set")
+        return object()
+
+    def _fake_reset_websocket_current_user(_token):
+        calls.append("reset")
+
+    async def _fake_authenticated_handler(_websocket):
+        calls.append("handler")
+
+    monkeypatch.setattr(module, "set_websocket_current_user", _fake_set_websocket_current_user)
+    monkeypatch.setattr(module, "reset_websocket_current_user", _fake_reset_websocket_current_user)
+    monkeypatch.setattr(module, "_authenticated_websocket_mimic_generate", _fake_authenticated_handler)
+
+    await module.websocket_mimic_generate(object())
+
+    assert calls == ["set", "handler", "reset"]

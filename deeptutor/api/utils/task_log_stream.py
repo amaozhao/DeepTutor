@@ -7,9 +7,9 @@ import threading
 import time
 from typing import Any
 
-from deeptutor.auth.context import current_user_id
-from deeptutor.auth.resource_ids import validate_task_id
 from deeptutor.logging import ProcessLogEvent, bind_log_context, capture_process_logs
+from deeptutor.multi_user.context import current_user_id
+from deeptutor.multi_user.resource_ids import validate_task_id
 
 
 def _format_sse(event: str, payload: dict[str, Any]) -> str:

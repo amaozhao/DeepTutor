@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from deeptutor.auth.resource_ids import validate_resource_id
+from deeptutor.multi_user.resource_ids import validate_resource_id
 from deeptutor.tutorbot.utils.helpers import ensure_dir
 
 

@@ -10,9 +10,9 @@ import json
 import logging
 from pathlib import Path
 
-from deeptutor.auth.context import current_user_id, validate_user_id
-from deeptutor.auth.resource_ids import safe_resolve_under
 from deeptutor.knowledge.naming import validate_knowledge_base_name
+from deeptutor.multi_user.context import current_user_id
+from deeptutor.multi_user.resource_ids import safe_resolve_under, validate_user_id
 
 # Use unified logging system
 

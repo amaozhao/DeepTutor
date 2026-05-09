@@ -16,8 +16,8 @@ from typing import List, Optional
 
 from dotenv import load_dotenv
 
-from deeptutor.auth.resource_ids import safe_resolve_under
 from deeptutor.knowledge.naming import validate_knowledge_base_name
+from deeptutor.multi_user.resource_ids import safe_resolve_under
 from deeptutor.services.rag.factory import DEFAULT_PROVIDER
 from deeptutor.services.rag.file_routing import FileTypeRouter
 from deeptutor.services.rag.index_versioning import list_kb_versions

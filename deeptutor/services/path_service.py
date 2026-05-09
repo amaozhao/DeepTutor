@@ -25,8 +25,7 @@ data/user/
 from pathlib import Path
 from typing import Literal, cast
 
-from deeptutor.auth.context import current_user_id, validate_user_id
-from deeptutor.auth.resource_ids import validate_resource_id, validate_task_id
+from deeptutor.multi_user.resource_ids import validate_resource_id, validate_task_id
 
 AgentModule = Literal[
     "solve",
@@ -126,9 +125,6 @@ class PathService:
         return self.get_system_settings_dir() / name
 
     def get_user_root(self) -> Path:
-        scoped_user_id = current_user_id()
-        if scoped_user_id:
-            return self.get_users_root() / validate_user_id(scoped_user_id)
         return self._user_data_dir
 
     def get_knowledge_bases_root(self) -> Path:
@@ -258,9 +254,6 @@ class PathService:
         return self.get_notebook_dir() / "notebooks_index.json"
 
     def get_memory_dir(self) -> Path:
-        if current_user_id():
-            return self.get_workspace_feature_dir("memory")
-
         new_dir = self.workspace_root / "memory"
         old_dir = self.get_workspace_feature_dir("memory")
         if self.workspace_root == (self.project_root / "data").resolve() and old_dir.exists():
@@ -430,18 +423,12 @@ class PathService:
 
 
 def get_path_service() -> PathService:
-    if current_user_id():
-        return PathService.get_instance()
     try:
-        from deeptutor.multi_user.context import get_current_user
         from deeptutor.multi_user.paths import get_current_path_service
 
-        user = get_current_user()
-        if user.id != "local-admin":
-            return get_current_path_service()
+        return get_current_path_service()
     except Exception:
-        pass
-    return PathService.get_instance()
+        return PathService.get_instance()
 
 
 __all__ = [

@@ -23,7 +23,7 @@ def test_identity_migrates_legacy_users_with_stable_uid(tmp_path, monkeypatch):
     assert users_file.exists()
 
 
-def test_path_service_uses_current_user_scope(tmp_path, monkeypatch):
+def test_path_service_uses_current_multiuser_context(tmp_path, monkeypatch):
     monkeypatch.setattr(paths, "ensure_user_workspace", lambda _uid: tmp_path)
     user_root = tmp_path / "multi-user" / "u_alice"
     user = CurrentUser(

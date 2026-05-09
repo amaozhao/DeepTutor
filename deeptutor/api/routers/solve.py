@@ -15,8 +15,10 @@ from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 
 from deeptutor.agents.solve import MainSolver, SolverSessionManager
 from deeptutor.api.utils.task_id_manager import TaskIDManager
-from deeptutor.auth.context import user_scope
-from deeptutor.auth.dependencies import authenticate_websocket_user
+from deeptutor.api.utils.websocket_auth import (
+    reset_websocket_current_user,
+    set_websocket_current_user,
+)
 from deeptutor.capabilities.deep_solve import DeepSolveCapability
 from deeptutor.logging import bind_log_context, capture_process_logs
 from deeptutor.services.config import PROJECT_ROOT, load_config_with_main
@@ -94,12 +96,13 @@ async def delete_solver_session(session_id: str):
 
 @router.websocket("/solve")
 async def websocket_solve(websocket: WebSocket):
-    user = authenticate_websocket_user(websocket)
-    if user is None:
-        await websocket.close(code=1008)
+    token = await set_websocket_current_user(websocket)
+    if token is None:
         return
-    with user_scope(user.id):
+    try:
         await _authenticated_websocket_solve(websocket)
+    finally:
+        reset_websocket_current_user(token)
 
 
 async def _authenticated_websocket_solve(websocket: WebSocket):

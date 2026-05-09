@@ -9,8 +9,6 @@ All logic is delegated to RAGService in deeptutor/services/rag/service.py.
 import asyncio
 from typing import Dict, List, Optional
 
-# Import RAGService as the single entry point
-from deeptutor.auth.context import current_user_id
 from deeptutor.knowledge.naming import validate_knowledge_base_name
 from deeptutor.services.rag.service import RAGService, default_kb_base_dir
 
@@ -93,8 +91,6 @@ async def rag_search(
             from deeptutor.multi_user.knowledge_access import resolve_for_rag
 
             current_user = get_current_user()
-            if current_user_id() is not None and current_user.id == "local-admin":
-                raise RuntimeError("legacy user_scope is active")
             resource = resolve_for_rag(kb_name)
             if resource is not None:
                 kb_base_dir = str(resource.base_dir)

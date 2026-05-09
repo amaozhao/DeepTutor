@@ -11,8 +11,10 @@ import logging
 from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 
 from deeptutor.agents.chat import ChatAgent, SessionManager
-from deeptutor.auth.context import user_scope
-from deeptutor.auth.dependencies import authenticate_websocket_user
+from deeptutor.api.utils.websocket_auth import (
+    reset_websocket_current_user,
+    set_websocket_current_user,
+)
 from deeptutor.services.config import PROJECT_ROOT, load_config_with_main
 from deeptutor.services.llm.config import get_llm_config
 from deeptutor.services.settings.interface_settings import get_ui_language
@@ -87,12 +89,13 @@ async def delete_session(session_id: str):
 
 @router.websocket("/chat")
 async def websocket_chat(websocket: WebSocket):
-    user = authenticate_websocket_user(websocket)
-    if user is None:
-        await websocket.close(code=1008)
+    token = await set_websocket_current_user(websocket)
+    if token is None:
         return
-    with user_scope(user.id):
+    try:
         await _authenticated_websocket_chat(websocket)
+    finally:
+        reset_websocket_current_user(token)
 
 
 async def _authenticated_websocket_chat(websocket: WebSocket):

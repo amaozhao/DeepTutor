@@ -7,7 +7,6 @@ import pytest
 
 from deeptutor.api.utils.progress_broadcaster import ProgressBroadcaster
 from deeptutor.api.utils.task_log_stream import KnowledgeTaskStreamManager
-from deeptutor.auth.context import user_scope
 from deeptutor.knowledge.manager import KnowledgeBaseManager
 from deeptutor.knowledge.progress_tracker import ProgressStage, ProgressTracker
 
@@ -82,10 +81,23 @@ async def test_progress_tracker_emits_task_progress_to_captured_owner_from_threa
     stream_manager = KnowledgeTaskStreamManager.get_instance()
     stream_manager._buffers.clear()
     stream_manager._subscribers.clear()
-    with user_scope("user_alpha"):
+    from deeptutor.multi_user.context import reset_current_user, set_current_user
+    from deeptutor.multi_user.models import CurrentUser, UserScope
+
+    token = set_current_user(
+        CurrentUser(
+            id="user_alpha",
+            username="user_alpha",
+            role="user",
+            scope=UserScope(kind="user", user_id="user_alpha", root=tmp_path / "user_alpha"),
+        )
+    )
+    try:
         tracker = ProgressTracker("demo-kb", tmp_path)
         tracker.task_id = "kb_init_demo"
         stream_manager.ensure_task("kb_init_demo", user_id="user_alpha")
+    finally:
+        reset_current_user(token)
 
     thread = threading.Thread(
         target=tracker.update,

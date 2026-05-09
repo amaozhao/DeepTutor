@@ -14,6 +14,27 @@ export type ModelAccess = {
   search: ModelAccessItem[];
 };
 
+export type CurrentUserAccess = {
+  user: {
+    id: string;
+    username: string;
+    role: "admin" | "user";
+    is_admin: boolean;
+  };
+  models: Partial<ModelAccess>;
+  knowledge_bases: Array<{
+    id: string;
+    name: string;
+    source: "admin" | "user";
+    assigned?: boolean;
+    read_only?: boolean;
+    available?: boolean;
+    provenance_label?: string;
+  }>;
+  skills: string[];
+  spaces: Array<Record<string, unknown>>;
+};
+
 export type GrantPayload = {
   version: number;
   user_id: string;

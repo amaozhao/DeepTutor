@@ -39,7 +39,7 @@ def get_pipeline(
     if kb_base_dir is None:
         from deeptutor.services.path_service import get_path_service
 
-        kb_base_dir = str(get_path_service().get_user_root() / "knowledge_bases")
+        kb_base_dir = str(get_path_service().get_knowledge_bases_root())
 
     if kwargs:
         # When custom kwargs are provided, build a fresh instance and skip

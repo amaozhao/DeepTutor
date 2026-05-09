@@ -22,8 +22,7 @@ from typing import Any
 
 import yaml
 
-from deeptutor.auth.context import user_scope
-from deeptutor.auth.resource_ids import validate_resource_id
+from deeptutor.multi_user.resource_ids import validate_resource_id
 from deeptutor.services.path_service import get_path_service
 
 logger = logging.getLogger(__name__)
@@ -1145,15 +1144,27 @@ def reset_tutorbot_managers() -> None:
 
 
 async def auto_start_all_user_bots() -> None:
-    path_service = get_path_service()
-    users_root = path_service.get_users_root()
-    if not users_root.exists():
-        return
-    for user_root in users_root.iterdir():
-        if not user_root.is_dir():
+    from deeptutor.multi_user.context import reset_current_user, set_current_user
+    from deeptutor.multi_user.identity import list_user_info
+    from deeptutor.multi_user.models import CurrentUser
+    from deeptutor.multi_user.paths import ensure_user_workspace, scope_for_user
+
+    for record in list_user_info():
+        user_id = str(record.get("id") or "").strip()
+        if not user_id or record.get("disabled") or record.get("role") == "admin":
             continue
-        with user_scope(user_root.name):
+        ensure_user_workspace(user_id)
+        user = CurrentUser(
+            id=user_id,
+            username=str(record.get("username") or user_id),
+            role="user",
+            scope=scope_for_user(user_id, is_admin=False),
+        )
+        token = set_current_user(user)
+        try:
             await get_tutorbot_manager().auto_start_bots()
+        finally:
+            reset_current_user(token)
 
 
 async def stop_all_tutorbot_managers(*, preserve_auto_start: bool = True) -> None:

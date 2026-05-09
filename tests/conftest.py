@@ -5,17 +5,18 @@ Root conftest — shared fixtures for the entire test suite.
 from __future__ import annotations
 
 import asyncio
-from contextlib import suppress
+from contextlib import contextmanager, suppress
 from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
 
-from deeptutor.auth.dependencies import SESSION_COOKIE
-from deeptutor.auth.models import AuthUser
 from deeptutor.core.capability_protocol import BaseCapability, CapabilityManifest
 from deeptutor.core.context import Attachment, UnifiedContext
 from deeptutor.core.stream_bus import StreamBus
+from deeptutor.multi_user.context import reset_current_user, set_current_user
+from deeptutor.multi_user.models import CurrentUser, UserScope
+from deeptutor.services.path_service import PathService
 
 # ---------------------------------------------------------------------------
 # StreamBus
@@ -94,6 +95,43 @@ def sqlite_store(tmp_db_path: Path):
     return SQLiteSessionStore(db_path=tmp_db_path)
 
 
+@pytest.fixture
+def as_multi_user(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """Run code with an upstream ``multi_user`` CurrentUser under ``tmp_path``."""
+    from deeptutor.multi_user import paths
+
+    multi_user_root = tmp_path / "multi-user"
+    monkeypatch.setattr(paths, "MULTI_USER_ROOT", multi_user_root)
+    monkeypatch.setattr(paths, "ADMIN_WORKSPACE_ROOT", tmp_path / "data")
+    monkeypatch.setattr(paths, "_path_services", {})
+    PathService.reset_instance()
+
+    @contextmanager
+    def _scope(uid: str, *, role: str = "user", username: str | None = None):
+        if role == "admin":
+            scope = paths.admin_scope()
+        else:
+            scope = UserScope(
+                kind="user",
+                user_id=uid,
+                root=(multi_user_root / uid).resolve(),
+            )
+        token = set_current_user(
+            CurrentUser(
+                id=uid,
+                username=username or uid,
+                role=role,  # type: ignore[arg-type]
+                scope=scope,
+            )
+        )
+        try:
+            yield
+        finally:
+            reset_current_user(token)
+
+    return _scope
+
+
 # ---------------------------------------------------------------------------
 # Fake / stub capability
 # ---------------------------------------------------------------------------
@@ -132,37 +170,3 @@ def fake_llm_config() -> MagicMock:
     cfg.api_key = "sk-test"
     cfg.api_base = "https://api.openai.com/v1"
     return cfg
-
-
-# ---------------------------------------------------------------------------
-# Auth helpers
-# ---------------------------------------------------------------------------
-
-
-@pytest.fixture
-def auth_user() -> AuthUser:
-    """Default authenticated user for API/router tests."""
-    return AuthUser(
-        id="test_user",
-        email="test@example.com",
-        password_hash="hash",
-        display_name="Test User",
-        created_at=1.0,
-        updated_at=1.0,
-        role="admin",
-    )
-
-
-@pytest.fixture
-def auth_cookie(monkeypatch: pytest.MonkeyPatch, auth_user: AuthUser) -> dict[str, str]:
-    """Cookie that satisfies auth dependencies without touching the real auth DB."""
-    token = "test-session-token"
-    monkeypatch.setattr(
-        "deeptutor.auth.dependencies.get_auth_store",
-        lambda: type(
-            "FakeAuthStore",
-            (),
-            {"get_user_by_session_token": lambda self, value: auth_user if value == token else None},
-        )(),
-    )
-    return {SESSION_COOKIE: token}

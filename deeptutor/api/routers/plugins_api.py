@@ -18,7 +18,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from deeptutor.auth.dependencies import require_user_scope
+from deeptutor.api.routers.auth import require_auth
 from deeptutor.logging import (
     ProcessLogEvent,
     bind_log_context,
@@ -123,7 +123,7 @@ async def list_plugins():
     }
 
 
-@router.post("/tools/{tool_name}/execute", dependencies=[Depends(require_user_scope)])
+@router.post("/tools/{tool_name}/execute", dependencies=[Depends(require_auth)])
 async def execute_tool(tool_name: str, body: ToolExecuteRequest):
     """Execute a single tool with explicit parameters (for Playground testing)."""
     registry = get_tool_registry()
@@ -291,7 +291,7 @@ async def _execute_stream(tool_name: str, params: dict[str, Any]) -> AsyncGenera
             task.cancel()
 
 
-@router.post("/tools/{tool_name}/execute-stream", dependencies=[Depends(require_user_scope)])
+@router.post("/tools/{tool_name}/execute-stream", dependencies=[Depends(require_auth)])
 async def execute_tool_stream(tool_name: str, body: ToolExecuteRequest):
     """Execute a tool and stream process logs + result as SSE."""
     return StreamingResponse(
@@ -408,7 +408,7 @@ async def _execute_capability_stream(
 
 @router.post(
     "/capabilities/{capability_name}/execute-stream",
-    dependencies=[Depends(require_user_scope)],
+    dependencies=[Depends(require_auth)],
 )
 async def execute_capability_stream(
     capability_name: str,

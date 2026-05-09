@@ -11,8 +11,10 @@ from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
 
 from deeptutor.agents.vision_solver import VisionSolverAgent
-from deeptutor.auth.context import user_scope
-from deeptutor.auth.dependencies import authenticate_websocket_user
+from deeptutor.api.utils.websocket_auth import (
+    reset_websocket_current_user,
+    set_websocket_current_user,
+)
 from deeptutor.services.llm import get_llm_config
 from deeptutor.services.settings.interface_settings import get_ui_language
 from deeptutor.tools.vision import ImageError, resolve_image_input
@@ -130,12 +132,13 @@ async def analyze_image(request: VisionAnalyzeRequest) -> VisionAnalyzeResponse:
 
 @router.websocket("/vision/solve")
 async def websocket_vision_solve(websocket: WebSocket):
-    user = authenticate_websocket_user(websocket)
-    if user is None:
-        await websocket.close(code=1008)
+    token = await set_websocket_current_user(websocket)
+    if token is None:
         return
-    with user_scope(user.id):
+    try:
         await _authenticated_websocket_vision_solve(websocket)
+    finally:
+        reset_websocket_current_user(token)
 
 
 async def _authenticated_websocket_vision_solve(websocket: WebSocket):

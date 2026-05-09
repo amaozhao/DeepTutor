@@ -5,6 +5,7 @@ SQLite-backed unified chat session store.
 from __future__ import annotations
 
 import asyncio
+from contextlib import contextmanager
 from dataclasses import dataclass
 import json
 import os
@@ -81,7 +82,7 @@ class SQLiteSessionStore:
             pass
 
     def _initialize(self) -> None:
-        with sqlite3.connect(self.db_path) as conn:
+        with self._connect() as conn:
             conn.execute("PRAGMA foreign_keys = ON")
             conn.executescript(
                 """
@@ -199,11 +200,16 @@ class SQLiteSessionStore:
         async with self._lock:
             return await asyncio.to_thread(fn, *args)
 
-    def _connect(self) -> sqlite3.Connection:
+    @contextmanager
+    def _connect(self):
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA foreign_keys = ON")
-        return conn
+        try:
+            with conn:
+                yield conn
+        finally:
+            conn.close()
 
     def _create_session_sync(
         self, title: str | None = None, session_id: str | None = None

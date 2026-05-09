@@ -9,8 +9,8 @@ from pathlib import Path
 import traceback
 from typing import Any, Callable, Dict, List, Optional
 
-from deeptutor.auth.resource_ids import safe_resolve_under
 from deeptutor.knowledge.naming import validate_knowledge_base_name
+from deeptutor.multi_user.resource_ids import safe_resolve_under
 from deeptutor.services.embedding import get_embedding_config
 from deeptutor.services.rag.embedding_signature import signature_from_embedding_config
 from deeptutor.services.rag.index_versioning import (
@@ -50,7 +50,7 @@ class LlamaIndexPipeline:
         if kb_base_dir is None:
             from deeptutor.services.path_service import get_path_service
 
-            kb_base_dir = str(get_path_service().get_user_root() / "knowledge_bases")
+            kb_base_dir = str(get_path_service().get_knowledge_bases_root())
         self.kb_base_dir = kb_base_dir
         self._signature_provider = signature_provider or signature_from_embedding_config
         self.document_loader = document_loader or LlamaIndexDocumentLoader(self.logger)

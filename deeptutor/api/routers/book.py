@@ -15,8 +15,10 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, Field
 
-from deeptutor.auth.context import user_scope
-from deeptutor.auth.dependencies import authenticate_websocket_user
+from deeptutor.api.utils.websocket_auth import (
+    reset_websocket_current_user,
+    set_websocket_current_user,
+)
 from deeptutor.book import (
     BlockType,
     BookProposal,
@@ -491,12 +493,13 @@ def _serialize_event(event) -> dict[str, Any]:
 
 @router.websocket("/ws")
 async def book_websocket(ws: WebSocket) -> None:
-    user = authenticate_websocket_user(ws)
-    if user is None:
-        await ws.close(code=1008)
+    token = await set_websocket_current_user(ws)
+    if token is None:
         return
-    with user_scope(user.id):
+    try:
         await _authenticated_book_websocket(ws)
+    finally:
+        reset_websocket_current_user(token)
 
 
 async def _authenticated_book_websocket(ws: WebSocket) -> None:

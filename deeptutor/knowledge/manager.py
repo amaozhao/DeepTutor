@@ -17,9 +17,9 @@ import stat
 import sys
 from typing import Any
 
-from deeptutor.auth.context import current_user_id
-from deeptutor.auth.resource_ids import safe_resolve_under
 from deeptutor.knowledge.naming import validate_knowledge_base_name
+from deeptutor.multi_user.context import get_current_user_or_none
+from deeptutor.multi_user.resource_ids import safe_resolve_under
 from deeptutor.services.rag.factory import DEFAULT_PROVIDER, normalize_provider_name
 from deeptutor.services.rag.file_routing import FileTypeRouter
 
@@ -1005,7 +1005,8 @@ class KnowledgeBaseManager:
             raise ValueError(f"Folder does not exist: {folder}")
         if not folder.is_dir():
             raise ValueError(f"Path is not a directory: {folder}")
-        if current_user_id():
+        current_user = get_current_user_or_none()
+        if current_user is not None and current_user.scope.kind == "user":
             from deeptutor.services.path_service import get_path_service
 
             user_root = get_path_service().get_user_root().resolve()
