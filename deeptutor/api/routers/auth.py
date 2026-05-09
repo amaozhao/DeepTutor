@@ -63,13 +63,13 @@ class RegisterRequest(BaseModel):
 
         v = v.strip()
         if not v:
-            raise ValueError("Email cannot be empty")
+            raise ValueError("Username or email cannot be empty")
         # Accept standard email addresses (used by PocketBase mode) or plain
         # usernames (used by the built-in SQLite/JSON auth mode).
         email_re = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
         plain_re = re.compile(r"^[A-Za-z0-9_\-.]{3,64}$")
         if not email_re.match(v) and not plain_re.match(v):
-            raise ValueError("Enter a valid email address")
+            raise ValueError("Enter a valid username or email address")
         return v
 
     @field_validator("password")

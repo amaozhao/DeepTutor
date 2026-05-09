@@ -76,18 +76,18 @@ export default function RegisterPage() {
       {/* Card */}
       <div className="bg-[var(--card)] border border-[var(--border)] rounded-2xl shadow-sm px-8 py-8">
         <form onSubmit={handleSubmit} className="space-y-5">
-          {/* Email */}
+          {/* Username */}
           <div>
             <label
               htmlFor="username"
               className="block text-sm font-medium text-[var(--foreground)] mb-1.5"
             >
-              {t("Email")}
+              {t("Username (or email)")}
             </label>
             <input
               id="username"
-              type="email"
-              autoComplete="email"
+              type="text"
+              autoComplete="username"
               required
               value={username}
               onChange={(e) => setUsername(e.target.value)}
@@ -96,7 +96,7 @@ export default function RegisterPage() {
                          placeholder:text-[var(--muted-foreground)]
                          focus:outline-none focus:ring-2 focus:ring-[var(--primary)] focus:border-transparent
                          transition-shadow text-sm"
-              placeholder={t("you@example.com")}
+              placeholder={t("admin or you@example.com")}
             />
           </div>
 
