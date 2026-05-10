@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import json
 
-import pytest
 from fastapi import HTTPException
+import pytest
 
-from deeptutor.multi_user import grants, paths
+from deeptutor.multi_user import grants, knowledge_access, paths
 from deeptutor.multi_user.knowledge_access import (
     assert_writable,
     list_visible_knowledge_bases,
@@ -47,8 +47,6 @@ def _write_grant(user_id: str, payload: dict) -> None:
 def test_admin_knowledge_bases_are_hidden_until_granted(
     tmp_path, monkeypatch, as_multi_user
 ) -> None:
-    from deeptutor.multi_user import knowledge_access
-
     monkeypatch.setattr(grants, "GRANTS_DIR", tmp_path / "grants")
     knowledge_access._manager_for.cache_clear()
 
