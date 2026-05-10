@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from fastapi import Depends, FastAPI
+from fastapi.testclient import TestClient
 import pytest
 
 from deeptutor.api.routers import auth
@@ -19,7 +21,13 @@ def _current_user(user_id: str, role: str) -> CurrentUser:
     )
 
 
-def test_require_auth_resets_request_local_user(monkeypatch: pytest.MonkeyPatch) -> None:
+async def _request_user_payload() -> dict[str, str]:
+    user = get_current_user()
+    return {"user_id": user.id, "username": user.username, "role": user.role}
+
+
+@pytest.mark.asyncio
+async def test_require_auth_resets_request_local_user(monkeypatch: pytest.MonkeyPatch) -> None:
     previous = _current_user("admin-before", "admin")
     token = set_current_user(previous)
     try:
@@ -31,17 +39,47 @@ def test_require_auth_resets_request_local_user(monkeypatch: pytest.MonkeyPatch)
         )
 
         dependency = auth.require_auth(authorization="Bearer token", dt_token=None)
-        payload = next(dependency)
+        payload = await dependency.__anext__()
 
         assert payload is not None
         assert payload.username == "zhaoruoshui"
         assert get_current_user().id == "child-1"
         assert get_current_user().role == "user"
 
-        with pytest.raises(StopIteration):
-            next(dependency)
+        with pytest.raises(StopAsyncIteration):
+            await dependency.__anext__()
 
         assert get_current_user().id == "admin-before"
         assert get_current_user().role == "admin"
     finally:
         reset_current_user(token)
+
+
+def test_router_dependency_context_is_visible_to_async_endpoint(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(auth, "AUTH_ENABLED", True)
+    monkeypatch.setattr(
+        auth,
+        "decode_token",
+        lambda _token: TokenPayload(username="zhaoruoshui", role="user", user_id="child-1"),
+    )
+    app = FastAPI()
+    app.add_api_route(
+        "/current-user",
+        _request_user_payload,
+        dependencies=[Depends(auth.require_auth)],
+    )
+
+    response = TestClient(app).get(
+        "/current-user",
+        headers={"Authorization": "Bearer token"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload == {
+        "user_id": "child-1",
+        "username": "zhaoruoshui",
+        "role": "user",
+    }

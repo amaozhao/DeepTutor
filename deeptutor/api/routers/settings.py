@@ -18,13 +18,12 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from deeptutor.multi_user.context import get_current_user
-from deeptutor.multi_user.paths import get_current_path_service
 from deeptutor.multi_user.model_access import (
     allowed_llm_options,
-    redacted_model_access,
     user_catalog,
     user_catalog_service,
 )
+from deeptutor.multi_user.paths import get_current_path_service
 from deeptutor.services.config import get_config_test_runner, get_model_catalog_service
 from deeptutor.services.config.provider_runtime import EMBEDDING_PROVIDERS
 from deeptutor.services.embedding.client import reset_embedding_client
@@ -183,7 +182,7 @@ def _require_settings_admin(user: Any | None = None) -> None:
         )
 
 
-def _provider_choices() -> dict[str, list[dict[str, str]]]:
+def _provider_choices(*, include_default_urls: bool = True) -> dict[str, list[dict[str, str]]]:
     """Build dropdown options for provider selection, keyed by service type."""
     llm = sorted(
         [
@@ -196,7 +195,7 @@ def _provider_choices() -> dict[str, list[dict[str, str]]]:
                     if s.name == "custom_anthropic"
                     else s.label
                 ),
-                "base_url": s.default_api_base,
+                "base_url": s.default_api_base if include_default_urls else "",
             }
             for s in PROVIDERS
         ],
@@ -207,7 +206,7 @@ def _provider_choices() -> dict[str, list[dict[str, str]]]:
             {
                 "value": name,
                 "label": spec.label,
-                "base_url": spec.default_api_base,
+                "base_url": spec.default_api_base if include_default_urls else "",
                 "default_dim": str(spec.default_dim) if spec.default_dim else "",
             }
             for name, spec in EMBEDDING_PROVIDERS.items()
@@ -235,8 +234,7 @@ async def get_settings():
             "catalog": user_catalog(),
             "catalog_scope": "user",
             "can_apply_env": False,
-            "model_access": redacted_model_access(user.id),
-            "providers": _provider_choices(),
+            "providers": _provider_choices(include_default_urls=False),
         }
     return {
         "ui": load_ui_settings(),

@@ -1,6 +1,6 @@
 """Auth router — login, logout, status, registration, and user-management endpoints."""
 
-from collections.abc import Iterator
+from collections.abc import AsyncIterator
 from contextvars import Token
 import logging
 import os
@@ -9,13 +9,13 @@ import re
 from fastapi import APIRouter, Cookie, Depends, Header, HTTPException, Response, status
 from pydantic import BaseModel, field_validator
 
-# SameSite=None lets the cookie work when the browser accesses the frontend via
-# 127.0.0.1 and the backend via localhost (different origins on the same machine).
-# Browsers require Secure=True for SameSite=None, but that needs HTTPS — so in
-# local dev we fall back to SameSite=Lax and tell users to use localhost:// URLs.
-_SECURE = os.getenv("AUTH_COOKIE_SECURE", "false").lower() == "true"
-_SAMESITE = "none" if _SECURE else "lax"
-
+from deeptutor.multi_user.context import (
+    reset_current_user,
+    set_current_user,
+    user_from_token_payload,
+)
+from deeptutor.multi_user.models import CurrentUser
+from deeptutor.multi_user.paths import local_admin_user
 from deeptutor.services.auth import (
     AUTH_ENABLED,
     POCKETBASE_ENABLED,
@@ -32,13 +32,13 @@ from deeptutor.services.auth import (
     register_pb,
     set_role,
 )
-from deeptutor.multi_user.context import (
-    reset_current_user,
-    set_current_user,
-    user_from_token_payload,
-)
-from deeptutor.multi_user.models import CurrentUser
-from deeptutor.multi_user.paths import local_admin_user
+
+# SameSite=None lets the cookie work when the browser accesses the frontend via
+# 127.0.0.1 and the backend via localhost (different origins on the same machine).
+# Browsers require Secure=True for SameSite=None, but that needs HTTPS — so in
+# local dev we fall back to SameSite=Lax and tell users to use localhost:// URLs.
+_SECURE = os.getenv("AUTH_COOKIE_SECURE", "false").lower() == "true"
+_SAMESITE = "none" if _SECURE else "lax"
 
 logger = logging.getLogger(__name__)
 
@@ -154,10 +154,10 @@ def _extract_token(authorization: str | None, dt_token: str | None) -> str | Non
 # ---------------------------------------------------------------------------
 
 
-def require_auth(
+async def require_auth(
     authorization: str | None = Header(default=None, alias="Authorization"),
     dt_token: str | None = Cookie(default=None),
-) -> Iterator[TokenPayload | None]:
+) -> AsyncIterator[TokenPayload | None]:
     """
     FastAPI dependency that enforces authentication when AUTH_ENABLED=true.
 
