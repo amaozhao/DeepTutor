@@ -42,6 +42,9 @@ export function useNotebookSelection() {
             description: nb.description ?? "",
             record_count: nb.record_count ?? 0,
             color: nb.color ?? "",
+            source: nb.source,
+            read_only: nb.read_only,
+            provenance_label: nb.provenance_label,
           }),
         );
       setNotebooks(items);

@@ -15,6 +15,8 @@ from dataclasses import dataclass, field
 import re
 from typing import Any, Iterable, Sequence
 
+from deeptutor.multi_user.book_storage_access import resolve_book_storage_for_read
+
 from .models import Block, BlockStatus, BlockType, Book, Chapter, Page, Spine
 from .storage import BookStorage, get_book_storage
 
@@ -105,20 +107,31 @@ def build_book_context(
     if not refs:
         return BookContextResult()
 
-    store = storage or get_book_storage()
     warnings: list[str] = []
     sections: list[str] = []
 
     for ref in refs:
-        book = store.load_book(ref.book_id)
+        if storage is None:
+            try:
+                resolved = resolve_book_storage_for_read(ref.book_id)
+            except Exception:
+                warnings.append(f"book_not_found:{ref.book_id}")
+                continue
+            store = resolved.storage
+            book_id = resolved.book_id
+        else:
+            store = storage or get_book_storage()
+            book_id = ref.book_id
+
+        book = store.load_book(book_id)
         if book is None:
             warnings.append(f"book_not_found:{ref.book_id}")
             continue
 
-        spine = store.load_spine(ref.book_id)
+        spine = store.load_spine(book_id)
         page_sections: list[str] = []
         for page_id in ref.page_ids:
-            page = store.load_page(ref.book_id, page_id)
+            page = store.load_page(book_id, page_id)
             if page is None:
                 warnings.append(f"page_not_found:{ref.book_id}:{page_id}")
                 continue

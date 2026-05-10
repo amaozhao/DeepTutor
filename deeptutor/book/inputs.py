@@ -18,6 +18,10 @@ from dataclasses import dataclass, field
 import logging
 from typing import Any
 
+from deeptutor.agents.notebook import NotebookAnalysisAgent
+from deeptutor.multi_user.notebook_access import get_records_by_references_for_current_user
+from deeptutor.services.session.sqlite_store import get_sqlite_session_store
+
 from .models import (
     BookInputs,
     ChatMessageSnapshot,
@@ -97,8 +101,6 @@ async def _resolve_chat_selections(
     if not selections:
         return []
     try:
-        from deeptutor.services.session import get_sqlite_session_store
-
         store = get_sqlite_session_store()
     except Exception as exc:
         logger.warning(f"Chat session store unavailable: {exc}")
@@ -183,9 +185,7 @@ async def _resolve_notebook_context(
     if not notebook_refs:
         return "", 0
     try:
-        from deeptutor.services.notebook import notebook_manager
-
-        records = notebook_manager.get_records_by_references(
+        records = get_records_by_references_for_current_user(
             [ref.model_dump() for ref in notebook_refs]
         )
     except Exception as exc:
@@ -196,8 +196,6 @@ async def _resolve_notebook_context(
         return "", 0
 
     try:
-        from deeptutor.agents.notebook import NotebookAnalysisAgent
-
         agent = NotebookAnalysisAgent(language=language)
         context = await agent.analyze(user_question=user_intent, records=records)
     except Exception as exc:
@@ -232,8 +230,6 @@ async def _resolve_question_notebook(
     if not category_ids and not entry_ids:
         return "", 0
     try:
-        from deeptutor.services.session import get_sqlite_session_store
-
         store = get_sqlite_session_store()
     except Exception as exc:
         logger.warning(f"Question notebook unavailable: {exc}")

@@ -116,9 +116,14 @@ export default function NotebookSelector({
                         backgroundColor: notebook.color || "var(--primary)",
                       }}
                     />
-                    <span className="flex-1 truncate text-[13px] font-medium text-[var(--foreground)]">
+                    <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-[var(--foreground)]">
                       {notebook.name}
                     </span>
+                    {notebook.read_only && (
+                      <span className="rounded-full border border-[var(--border)] bg-[var(--muted)] px-1.5 py-0.5 text-[10px] font-medium text-[var(--muted-foreground)]">
+                        {t("Shared")}
+                      </span>
+                    )}
                     <span className="text-[11px] tabular-nums text-[var(--muted-foreground)]">
                       {selectedFromThis > 0 && (
                         <span className="font-medium text-[var(--primary)]">

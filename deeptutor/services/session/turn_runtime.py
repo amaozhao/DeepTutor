@@ -27,15 +27,15 @@ from deeptutor.multi_user.model_access import (
     apply_allowed_llm_selection,
     llm_catalog_context_for_selection,
 )
+from deeptutor.multi_user.notebook_access import get_records_by_references_for_current_user
 from deeptutor.multi_user.paths import get_admin_path_service
 from deeptutor.multi_user.skill_access import assigned_skill_ids
 from deeptutor.runtime.orchestrator import ChatOrchestrator
+from deeptutor.services.llm.config import LLMConfig
 from deeptutor.services.memory import get_memory_service
 from deeptutor.services.model_selection import LLMSelection, apply_llm_selection_to_catalog
 from deeptutor.services.model_selection.runtime import activate_llm_selection, reset_llm_selection
-from deeptutor.services.notebook import get_notebook_manager
 from deeptutor.services.path_service import get_path_service
-from deeptutor.services.llm.config import LLMConfig
 from deeptutor.services.session.context_builder import ContextBuilder
 from deeptutor.services.session.pocketbase_store import PocketBaseSessionStore
 from deeptutor.services.session.protocol import SessionStoreProtocol
@@ -442,9 +442,7 @@ class TurnRuntimeManager:
                         "source": first_option.get("source"),
                     }
                 if not selected_default:
-                    raise RuntimeError(
-                        "No LLM model is assigned or configured for your account."
-                    )
+                    raise RuntimeError("No LLM model is assigned or configured for your account.")
                 llm_selection = selected_default
         if llm_selection:
             try:
@@ -492,8 +490,10 @@ class TurnRuntimeManager:
                 metadata=session_metadata,
             ),
         )
-        if payload.get("skills") or payload.get("memory_references") or payload.get(
-            "book_references"
+        if (
+            payload.get("skills")
+            or payload.get("memory_references")
+            or payload.get("book_references")
         ):
             await self._persist_and_publish(
                 execution,
@@ -884,9 +884,7 @@ class TurnRuntimeManager:
                 skills_context = "\n\n".join(part for part in (admin_block, user_block) if part)
 
             if notebook_references:
-                referenced_records = get_notebook_manager().get_records_by_references(
-                    notebook_references
-                )
+                referenced_records = get_records_by_references_for_current_user(notebook_references)
                 if referenced_records:
                     analysis_agent = NotebookAnalysisAgent(
                         language=str(payload.get("language", "en") or "en")

@@ -11,6 +11,12 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from deeptutor.agents.notebook import NotebookSummarizeAgent
+from deeptutor.multi_user.context import get_current_user
+from deeptutor.multi_user.notebook_access import (
+    list_visible_notebooks,
+    resolve_notebook_for_read,
+    resolve_notebook_for_write,
+)
 from deeptutor.services.llm import clean_thinking_tags
 from deeptutor.services.notebook import notebook_manager
 
@@ -86,6 +92,40 @@ async def _build_record_summary(request: AddRecordRequest) -> str:
     ).strip()
 
 
+def _add_record_to_requested_notebooks(request: AddRecordRequest, summary: str) -> dict:
+    if get_current_user().is_admin:
+        return notebook_manager.add_record(
+            notebook_ids=request.notebook_ids,
+            record_type=request.record_type,
+            title=request.title,
+            summary=summary,
+            user_query=request.user_query,
+            output=request.output,
+            metadata=request.metadata,
+            kb_name=request.kb_name,
+        )
+
+    resolved_ids: list[str] = []
+    manager = notebook_manager
+    for notebook_id in request.notebook_ids:
+        try:
+            resolved = resolve_notebook_for_write(notebook_id, copy_public=True)
+        except HTTPException:
+            continue
+        manager = resolved.manager
+        resolved_ids.append(resolved.notebook_id)
+    return manager.add_record(
+        notebook_ids=resolved_ids,
+        record_type=request.record_type,
+        title=request.title,
+        summary=summary,
+        user_query=request.user_query,
+        output=request.output,
+        metadata=request.metadata,
+        kb_name=request.kb_name,
+    )
+
+
 async def _stream_add_record_with_summary(
     request: AddRecordRequest,
 ) -> AsyncGenerator[str, None]:
@@ -114,16 +154,7 @@ async def _stream_add_record_with_summary(
                 yield f"data: {json.dumps({'type': 'summary_chunk', 'content': summary}, ensure_ascii=False)}\n\n"
 
         summary = clean_thinking_tags("".join(summary_parts)).strip()
-        result = notebook_manager.add_record(
-            notebook_ids=request.notebook_ids,
-            record_type=request.record_type,
-            title=request.title,
-            summary=summary,
-            user_query=request.user_query,
-            output=request.output,
-            metadata=request.metadata,
-            kb_name=request.kb_name,
-        )
+        result = _add_record_to_requested_notebooks(request, summary)
         payload = {
             "type": "result",
             "success": True,
@@ -146,7 +177,19 @@ async def list_notebooks():
         Notebook list (includes summary information)
     """
     try:
-        notebooks = notebook_manager.list_notebooks()
+        if get_current_user().is_admin:
+            notebooks = [
+                {
+                    **notebook,
+                    "source": "admin",
+                    "read_only": False,
+                    "assigned": False,
+                    "provenance_label": "Admin workspace",
+                }
+                for notebook in notebook_manager.list_notebooks()
+            ]
+        else:
+            notebooks = list_visible_notebooks()
         return {"notebooks": notebooks, "total": len(notebooks)}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -202,10 +245,27 @@ async def get_notebook(notebook_id: str):
         Notebook details (includes all records)
     """
     try:
-        notebook = notebook_manager.get_notebook(notebook_id)
+        if get_current_user().is_admin:
+            notebook = notebook_manager.get_notebook(notebook_id)
+            if not notebook:
+                raise HTTPException(status_code=404, detail="Notebook not found")
+            return {
+                **notebook,
+                "source": "admin",
+                "read_only": False,
+                "provenance_label": "Admin workspace",
+            }
+
+        resolved = resolve_notebook_for_read(notebook_id)
+        notebook = resolved.manager.get_notebook(resolved.notebook_id)
         if not notebook:
             raise HTTPException(status_code=404, detail="Notebook not found")
-        return notebook
+        return {
+            **notebook,
+            "source": resolved.source,
+            "read_only": resolved.read_only,
+            "provenance_label": "Shared by admin" if resolved.read_only else "Created by you",
+        }
     except HTTPException:
         raise
     except Exception as e:
@@ -225,8 +285,14 @@ async def update_notebook(notebook_id: str, request: UpdateNotebookRequest):
         Updated notebook information
     """
     try:
-        notebook = notebook_manager.update_notebook(
-            notebook_id=notebook_id,
+        manager = notebook_manager
+        resolved_id = notebook_id
+        if not get_current_user().is_admin:
+            resolved = resolve_notebook_for_write(notebook_id, copy_public=False)
+            manager = resolved.manager
+            resolved_id = resolved.notebook_id
+        notebook = manager.update_notebook(
+            notebook_id=resolved_id,
             name=request.name,
             description=request.description,
             color=request.color,
@@ -253,7 +319,13 @@ async def delete_notebook(notebook_id: str):
         Deletion result
     """
     try:
-        success = notebook_manager.delete_notebook(notebook_id)
+        manager = notebook_manager
+        resolved_id = notebook_id
+        if not get_current_user().is_admin:
+            resolved = resolve_notebook_for_write(notebook_id, copy_public=False)
+            manager = resolved.manager
+            resolved_id = resolved.notebook_id
+        success = manager.delete_notebook(resolved_id)
         if not success:
             raise HTTPException(status_code=404, detail="Notebook not found")
         return {"success": True, "message": "Notebook deleted successfully"}
@@ -276,16 +348,7 @@ async def add_record(request: AddRecordRequest):
     """
     try:
         summary = await _build_record_summary(request)
-        result = notebook_manager.add_record(
-            notebook_ids=request.notebook_ids,
-            record_type=request.record_type,
-            title=request.title,
-            summary=summary,
-            user_query=request.user_query,
-            output=request.output,
-            metadata=request.metadata,
-            kb_name=request.kb_name,
-        )
+        result = _add_record_to_requested_notebooks(request, summary)
         return {
             "success": True,
             "summary": summary,
@@ -319,7 +382,13 @@ async def remove_record(notebook_id: str, record_id: str):
         Deletion result
     """
     try:
-        success = notebook_manager.remove_record(notebook_id, record_id)
+        manager = notebook_manager
+        resolved_id = notebook_id
+        if not get_current_user().is_admin:
+            resolved = resolve_notebook_for_write(notebook_id, copy_public=True)
+            manager = resolved.manager
+            resolved_id = resolved.notebook_id
+        success = manager.remove_record(resolved_id, record_id)
         if not success:
             raise HTTPException(status_code=404, detail="Record not found")
         return {"success": True, "message": "Record removed successfully"}
@@ -333,8 +402,14 @@ async def remove_record(notebook_id: str, record_id: str):
 async def update_record(notebook_id: str, record_id: str, request: UpdateRecordRequest):
     """Update an existing notebook record in place."""
     try:
-        updated = notebook_manager.update_record(
-            notebook_id=notebook_id,
+        manager = notebook_manager
+        resolved_id = notebook_id
+        if not get_current_user().is_admin:
+            resolved = resolve_notebook_for_write(notebook_id, copy_public=True)
+            manager = resolved.manager
+            resolved_id = resolved.notebook_id
+        updated = manager.update_record(
+            notebook_id=resolved_id,
             record_id=record_id,
             title=request.title,
             summary=request.summary,

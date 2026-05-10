@@ -29,7 +29,7 @@ from pathlib import Path
 import shutil
 from typing import Any
 
-from deeptutor.services.path_service import get_path_service
+from deeptutor.services.path_service import PathService, get_path_service
 
 from .models import Book, BookInputs, ExplorationReport, Page, Progress, Spine
 
@@ -79,8 +79,8 @@ def _read_json(path: Path) -> Any | None:
 class BookStorage:
     """Async-friendly wrapper around the on-disk book layout."""
 
-    def __init__(self) -> None:
-        self.path_service = get_path_service()
+    def __init__(self, path_service: PathService | None = None) -> None:
+        self.path_service = path_service or get_path_service()
         self._lock = asyncio.Lock()
 
     # ── Path helpers ─────────────────────────────────────────────────────

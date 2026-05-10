@@ -23,12 +23,18 @@ from deeptutor.book import (
     BlockType,
     BookProposal,
     Spine,
-    get_book_engine,
 )
 from deeptutor.book.models import ContentType
 from deeptutor.book.streaming import SOURCE as BOOK_SOURCE
 from deeptutor.core.stream import StreamEventType
 from deeptutor.core.stream_bus import StreamBus
+from deeptutor.multi_user.book_access import (
+    current_book_engine,
+    decorate_book_detail,
+    list_visible_books,
+    resolve_book_for_read,
+    resolve_book_for_write,
+)
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -151,21 +157,20 @@ async def health_check() -> dict[str, str]:
 
 @router.get("/books")
 async def list_books() -> dict[str, Any]:
-    engine = get_book_engine()
-    return {"books": [b.model_dump(mode="json") for b in engine.list_books()]}
+    return {"books": list_visible_books()}
 
 
 @router.get("/books/{book_id}")
 async def get_book(book_id: str) -> dict[str, Any]:
-    engine = get_book_engine()
-    book = engine.load_book(book_id)
+    resolved = resolve_book_for_read(book_id)
+    book = resolved.engine.load_book(resolved.book_id)
     if book is None:
         raise HTTPException(status_code=404, detail="Book not found")
-    spine = engine.load_spine(book_id)
-    pages = engine.list_pages(book_id)
-    progress = engine.load_progress(book_id)
+    spine = resolved.engine.load_spine(resolved.book_id)
+    pages = resolved.engine.list_pages(resolved.book_id)
+    progress = resolved.engine.load_progress(resolved.book_id)
     return {
-        "book": book.model_dump(mode="json"),
+        "book": decorate_book_detail(book, source=resolved.source, read_only=resolved.read_only),
         "spine": spine.model_dump(mode="json") if spine else None,
         "pages": [p.model_dump(mode="json") for p in pages],
         "progress": progress.model_dump(mode="json"),
@@ -174,8 +179,8 @@ async def get_book(book_id: str) -> dict[str, Any]:
 
 @router.get("/books/{book_id}/spine")
 async def get_spine(book_id: str) -> dict[str, Any]:
-    engine = get_book_engine()
-    spine = engine.load_spine(book_id)
+    resolved = resolve_book_for_read(book_id)
+    spine = resolved.engine.load_spine(resolved.book_id)
     if spine is None:
         raise HTTPException(status_code=404, detail="Spine not found")
     return {"spine": spine.model_dump(mode="json")}
@@ -183,8 +188,8 @@ async def get_spine(book_id: str) -> dict[str, Any]:
 
 @router.get("/books/{book_id}/pages/{page_id}")
 async def get_page(book_id: str, page_id: str) -> dict[str, Any]:
-    engine = get_book_engine()
-    page = engine.load_page(book_id, page_id)
+    resolved = resolve_book_for_read(book_id)
+    page = resolved.engine.load_page(resolved.book_id, page_id)
     if page is None:
         raise HTTPException(status_code=404, detail="Page not found")
     return {"page": page.model_dump(mode="json")}
@@ -192,8 +197,8 @@ async def get_page(book_id: str, page_id: str) -> dict[str, Any]:
 
 @router.delete("/books/{book_id}")
 async def delete_book(book_id: str) -> dict[str, Any]:
-    engine = get_book_engine()
-    ok = engine.delete_book(book_id)
+    resolved = resolve_book_for_write(book_id, copy_public=False)
+    ok = resolved.engine.delete_book(resolved.book_id)
     if not ok:
         raise HTTPException(status_code=404, detail="Book not found")
     return {"deleted": True, "book_id": book_id}
@@ -204,7 +209,7 @@ async def create_book(req: CreateBookRequest) -> dict[str, Any]:
     """Stage 1: capture inputs + run IdeationAgent."""
     if not req.user_intent.strip():
         raise HTTPException(status_code=400, detail="user_intent is required")
-    engine = get_book_engine()
+    engine = current_book_engine()
     try:
         book, proposal = await engine.create_book(
             user_intent=req.user_intent,
@@ -228,7 +233,7 @@ async def create_book(req: CreateBookRequest) -> dict[str, Any]:
 @router.post("/books/confirm-proposal")
 async def confirm_proposal(req: ConfirmProposalRequest) -> dict[str, Any]:
     """Stage 2: user confirms (and possibly edits) the proposal → SpineAgent."""
-    engine = get_book_engine()
+    resolved = resolve_book_for_write(req.book_id, copy_public=True)
     edited: BookProposal | None = None
     if req.proposal:
         try:
@@ -236,7 +241,10 @@ async def confirm_proposal(req: ConfirmProposalRequest) -> dict[str, Any]:
         except Exception as exc:
             raise HTTPException(status_code=400, detail=f"Invalid proposal: {exc}")
     try:
-        book, spine = await engine.confirm_proposal(book_id=req.book_id, edited_proposal=edited)
+        book, spine = await resolved.engine.confirm_proposal(
+            book_id=resolved.book_id,
+            edited_proposal=edited,
+        )
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
     except Exception as exc:  # noqa: BLE001
@@ -251,7 +259,7 @@ async def confirm_proposal(req: ConfirmProposalRequest) -> dict[str, Any]:
 @router.post("/books/confirm-spine")
 async def confirm_spine(req: ConfirmSpineRequest) -> dict[str, Any]:
     """Stage 3: user confirms the spine → create pending page shells."""
-    engine = get_book_engine()
+    resolved = resolve_book_for_write(req.book_id, copy_public=True)
     edited: Spine | None = None
     if req.spine:
         try:
@@ -259,8 +267,8 @@ async def confirm_spine(req: ConfirmSpineRequest) -> dict[str, Any]:
         except Exception as exc:
             raise HTTPException(status_code=400, detail=f"Invalid spine: {exc}")
     try:
-        pages = await engine.confirm_spine(
-            book_id=req.book_id,
+        pages = await resolved.engine.confirm_spine(
+            book_id=resolved.book_id,
             edited_spine=edited,
             auto_compile=req.auto_compile,
         )
@@ -275,9 +283,13 @@ async def confirm_spine(req: ConfirmSpineRequest) -> dict[str, Any]:
 @router.post("/books/compile-page")
 async def compile_page(req: CompilePageRequest) -> dict[str, Any]:
     """Drive the compiler for the page the user just opened (current-page priority)."""
-    engine = get_book_engine()
+    resolved = resolve_book_for_write(req.book_id, copy_public=True)
     try:
-        page = await engine.compile_page(book_id=req.book_id, page_id=req.page_id, force=req.force)
+        page = await resolved.engine.compile_page(
+            book_id=resolved.book_id,
+            page_id=req.page_id,
+            force=req.force,
+        )
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
     except Exception as exc:  # noqa: BLE001
@@ -288,10 +300,10 @@ async def compile_page(req: CompilePageRequest) -> dict[str, Any]:
 
 @router.post("/books/regenerate-block")
 async def regenerate_block(req: RegenerateBlockRequest) -> dict[str, Any]:
-    engine = get_book_engine()
+    resolved = resolve_book_for_write(req.book_id, copy_public=True)
     try:
-        block = await engine.regenerate_block(
-            book_id=req.book_id,
+        block = await resolved.engine.regenerate_block(
+            book_id=resolved.book_id,
             page_id=req.page_id,
             block_id=req.block_id,
             params_override=req.params_override,
@@ -320,11 +332,11 @@ def _coerce_content_type(name: str) -> ContentType:
 
 @router.post("/books/insert-block")
 async def insert_block(req: InsertBlockRequest) -> dict[str, Any]:
-    engine = get_book_engine()
+    resolved = resolve_book_for_write(req.book_id, copy_public=True)
     block_type = _coerce_block_type(req.block_type)
     try:
-        block = await engine.insert_block(
-            book_id=req.book_id,
+        block = await resolved.engine.insert_block(
+            book_id=resolved.book_id,
             page_id=req.page_id,
             block_type=block_type,
             params=req.params,
@@ -341,8 +353,12 @@ async def insert_block(req: InsertBlockRequest) -> dict[str, Any]:
 
 @router.post("/books/delete-block")
 async def delete_block(req: DeleteBlockRequest) -> dict[str, Any]:
-    engine = get_book_engine()
-    ok = await engine.delete_block(book_id=req.book_id, page_id=req.page_id, block_id=req.block_id)
+    resolved = resolve_book_for_write(req.book_id, copy_public=True)
+    ok = await resolved.engine.delete_block(
+        book_id=resolved.book_id,
+        page_id=req.page_id,
+        block_id=req.block_id,
+    )
     if not ok:
         raise HTTPException(status_code=404, detail="Block not found")
     return {"ok": True}
@@ -350,9 +366,9 @@ async def delete_block(req: DeleteBlockRequest) -> dict[str, Any]:
 
 @router.post("/books/move-block")
 async def move_block(req: MoveBlockRequest) -> dict[str, Any]:
-    engine = get_book_engine()
-    ok = await engine.move_block(
-        book_id=req.book_id,
+    resolved = resolve_book_for_write(req.book_id, copy_public=True)
+    ok = await resolved.engine.move_block(
+        book_id=resolved.book_id,
         page_id=req.page_id,
         block_id=req.block_id,
         new_position=req.new_position,
@@ -364,11 +380,11 @@ async def move_block(req: MoveBlockRequest) -> dict[str, Any]:
 
 @router.post("/books/change-block-type")
 async def change_block_type(req: ChangeBlockTypeRequest) -> dict[str, Any]:
-    engine = get_book_engine()
+    resolved = resolve_book_for_write(req.book_id, copy_public=True)
     new_type = _coerce_block_type(req.new_type)
     try:
-        block = await engine.change_block_type(
-            book_id=req.book_id,
+        block = await resolved.engine.change_block_type(
+            book_id=resolved.book_id,
             page_id=req.page_id,
             block_id=req.block_id,
             new_type=new_type,
@@ -384,11 +400,11 @@ async def change_block_type(req: ChangeBlockTypeRequest) -> dict[str, Any]:
 
 @router.post("/books/deep-dive")
 async def deep_dive(req: DeepDiveRequest) -> dict[str, Any]:
-    engine = get_book_engine()
+    resolved = resolve_book_for_write(req.book_id, copy_public=True)
     content_type = _coerce_content_type(req.content_type)
     try:
-        page = await engine.create_deep_dive_subpage(
-            book_id=req.book_id,
+        page = await resolved.engine.create_deep_dive_subpage(
+            book_id=resolved.book_id,
             parent_page_id=req.parent_page_id,
             topic=req.topic,
             block_id=req.block_id,
@@ -404,9 +420,9 @@ async def deep_dive(req: DeepDiveRequest) -> dict[str, Any]:
 
 @router.post("/books/quiz-attempt")
 async def quiz_attempt(req: QuizAttemptRequest) -> dict[str, Any]:
-    engine = get_book_engine()
-    progress = await engine.record_quiz_attempt(
-        book_id=req.book_id,
+    resolved = resolve_book_for_write(req.book_id, copy_public=True)
+    progress = await resolved.engine.record_quiz_attempt(
+        book_id=resolved.book_id,
         page_id=req.page_id,
         block_id=req.block_id,
         question_id=req.question_id,
@@ -418,16 +434,16 @@ async def quiz_attempt(req: QuizAttemptRequest) -> dict[str, Any]:
 
 @router.get("/books/{book_id}/health")
 async def book_health(book_id: str) -> dict[str, Any]:
-    engine = get_book_engine()
-    drift = engine.kb_drift_report(book_id)
-    log = engine.log_health(book_id)
+    resolved = resolve_book_for_read(book_id)
+    drift = resolved.engine.kb_drift_report(resolved.book_id)
+    log = resolved.engine.log_health(resolved.book_id)
     return {"kb_drift": drift, "log_health": log}
 
 
 @router.post("/books/{book_id}/refresh-fingerprints")
 async def refresh_fingerprints(book_id: str) -> dict[str, Any]:
-    engine = get_book_engine()
-    result = engine.refresh_kb_fingerprints(book_id)
+    resolved = resolve_book_for_write(book_id, copy_public=True)
+    result = resolved.engine.refresh_kb_fingerprints(resolved.book_id)
     if result is None:
         raise HTTPException(status_code=404, detail="Book not found")
     return result
@@ -435,10 +451,10 @@ async def refresh_fingerprints(book_id: str) -> dict[str, Any]:
 
 @router.post("/books/supplement")
 async def supplement(req: SupplementRequest) -> dict[str, Any]:
-    engine = get_book_engine()
+    resolved = resolve_book_for_write(req.book_id, copy_public=True)
     try:
-        block = await engine.supplement_for_weakness(
-            book_id=req.book_id,
+        block = await resolved.engine.supplement_for_weakness(
+            book_id=resolved.book_id,
             page_id=req.page_id,
             topic=req.topic,
         )
@@ -452,9 +468,9 @@ async def supplement(req: SupplementRequest) -> dict[str, Any]:
 
 @router.post("/books/page-chat-session")
 async def set_page_chat_session(req: PageChatSessionRequest) -> dict[str, Any]:
-    engine = get_book_engine()
-    book = engine.set_page_chat_session(
-        book_id=req.book_id,
+    resolved = resolve_book_for_write(req.book_id, copy_public=True)
+    book = resolved.engine.set_page_chat_session(
+        book_id=resolved.book_id,
         page_id=req.page_id,
         session_id=req.session_id,
     )
@@ -465,9 +481,12 @@ async def set_page_chat_session(req: PageChatSessionRequest) -> dict[str, Any]:
 
 @router.post("/books/rebuild")
 async def rebuild_book(req: RebuildBookRequest) -> dict[str, Any]:
-    engine = get_book_engine()
+    resolved = resolve_book_for_write(req.book_id, copy_public=True)
     try:
-        pages = await engine.rebuild_book(book_id=req.book_id, auto_compile=req.auto_compile)
+        pages = await resolved.engine.rebuild_book(
+            book_id=resolved.book_id,
+            auto_compile=req.auto_compile,
+        )
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
     except Exception as exc:  # noqa: BLE001
@@ -541,7 +560,6 @@ async def _authenticated_book_websocket(ws: WebSocket) -> None:
         return asyncio.create_task(_forward())
 
     try:
-        engine = get_book_engine()
         while not closed:
             try:
                 data = await ws.receive_json()
@@ -561,6 +579,7 @@ async def _authenticated_book_websocket(ws: WebSocket) -> None:
 
             try:
                 if msg_type == "create":
+                    engine = current_book_engine()
                     book, proposal = await engine.create_book(
                         user_intent=str(data.get("user_intent") or ""),
                         chat_session_id=str(data.get("chat_session_id") or ""),
@@ -583,11 +602,15 @@ async def _authenticated_book_websocket(ws: WebSocket) -> None:
                     )
 
                 elif msg_type == "confirm_proposal":
+                    resolved = resolve_book_for_write(
+                        str(data.get("book_id") or ""),
+                        copy_public=True,
+                    )
                     edited: BookProposal | None = None
                     if data.get("proposal"):
                         edited = BookProposal.model_validate(data["proposal"])
-                    book, spine = await engine.confirm_proposal(
-                        book_id=str(data.get("book_id") or ""),
+                    book, spine = await resolved.engine.confirm_proposal(
+                        book_id=resolved.book_id,
                         edited_proposal=edited,
                         stream=bus,
                     )
@@ -600,11 +623,15 @@ async def _authenticated_book_websocket(ws: WebSocket) -> None:
                     )
 
                 elif msg_type == "confirm_spine":
+                    resolved = resolve_book_for_write(
+                        str(data.get("book_id") or ""),
+                        copy_public=True,
+                    )
                     edited_spine: Spine | None = None
                     if data.get("spine"):
                         edited_spine = Spine.model_validate(data["spine"])
-                    pages = await engine.confirm_spine(
-                        book_id=str(data.get("book_id") or ""),
+                    pages = await resolved.engine.confirm_spine(
+                        book_id=resolved.book_id,
                         edited_spine=edited_spine,
                         auto_compile=bool(data.get("auto_compile", True)),
                         stream=bus,
@@ -617,8 +644,12 @@ async def _authenticated_book_websocket(ws: WebSocket) -> None:
                     )
 
                 elif msg_type == "compile_page":
-                    page = await engine.compile_page(
-                        book_id=str(data.get("book_id") or ""),
+                    resolved = resolve_book_for_write(
+                        str(data.get("book_id") or ""),
+                        copy_public=True,
+                    )
+                    page = await resolved.engine.compile_page(
+                        book_id=resolved.book_id,
                         page_id=str(data.get("page_id") or ""),
                         stream=bus,
                         force=bool(data.get("force", False)),
@@ -631,8 +662,12 @@ async def _authenticated_book_websocket(ws: WebSocket) -> None:
                     )
 
                 elif msg_type == "regenerate_block":
-                    block = await engine.regenerate_block(
-                        book_id=str(data.get("book_id") or ""),
+                    resolved = resolve_book_for_write(
+                        str(data.get("book_id") or ""),
+                        copy_public=True,
+                    )
+                    block = await resolved.engine.regenerate_block(
+                        book_id=resolved.book_id,
                         page_id=str(data.get("page_id") or ""),
                         block_id=str(data.get("block_id") or ""),
                         params_override=data.get("params_override"),

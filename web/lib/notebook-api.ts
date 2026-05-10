@@ -24,6 +24,9 @@ export interface NotebookSummary {
   record_count?: number;
   created_at?: number;
   updated_at?: number;
+  source?: "admin" | "user";
+  read_only?: boolean;
+  provenance_label?: string;
 }
 
 export interface NotebookRecordItem {

@@ -39,6 +39,9 @@ interface NotebookInfo {
   color?: string;
   icon?: string;
   updated_at?: number;
+  source?: "admin" | "user";
+  read_only?: boolean;
+  provenance_label?: string;
 }
 
 interface NotebookRecord {
@@ -95,6 +98,9 @@ export default function NotebooksSection() {
           color: data.color ?? info?.color,
           icon: data.icon ?? info?.icon,
           updated_at: data.updated_at ?? info?.updated_at,
+          source: data.source ?? info?.source,
+          read_only: data.read_only ?? info?.read_only,
+          provenance_label: data.provenance_label ?? info?.provenance_label,
           records,
         });
       } catch {
@@ -118,6 +124,9 @@ export default function NotebooksSection() {
         color: nb.color,
         icon: nb.icon,
         updated_at: nb.updated_at,
+        source: nb.source,
+        read_only: nb.read_only,
+        provenance_label: nb.provenance_label,
       }));
       setNotebooks(next);
       if (selectedId && next.some((n) => n.id === selectedId)) {
@@ -315,6 +324,11 @@ export default function NotebooksSection() {
                         <div className="truncate text-[13.5px] font-semibold text-[var(--foreground)]">
                           {notebook.name}
                         </div>
+                        {notebook.read_only && (
+                          <span className="mt-1 inline-flex rounded-full border border-[var(--border)] bg-[var(--muted)] px-1.5 py-0.5 text-[10px] font-medium text-[var(--muted-foreground)]">
+                            {t("Shared")}
+                          </span>
+                        )}
                         <p className="mt-0.5 line-clamp-1 min-h-[1.1em] text-[11.5px] leading-relaxed text-[var(--muted-foreground)]">
                           {notebook.description || (
                             <span className="italic text-[var(--muted-foreground)]/60">
@@ -335,17 +349,19 @@ export default function NotebooksSection() {
                       </div>
                     </div>
                   </button>
-                  <button
-                    type="button"
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      void handleDelete(notebook.id, notebook.name);
-                    }}
-                    title={t("Delete")}
-                    className="absolute right-1.5 top-1.5 rounded-md p-1.5 text-[var(--muted-foreground)] opacity-0 transition-opacity hover:bg-[var(--destructive)]/10 hover:text-[var(--destructive)] group-hover:opacity-100"
-                  >
-                    <Trash2 size={12} />
-                  </button>
+                  {!notebook.read_only && (
+                    <button
+                      type="button"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        void handleDelete(notebook.id, notebook.name);
+                      }}
+                      title={t("Delete")}
+                      className="absolute right-1.5 top-1.5 rounded-md p-1.5 text-[var(--muted-foreground)] opacity-0 transition-opacity hover:bg-[var(--destructive)]/10 hover:text-[var(--destructive)] group-hover:opacity-100"
+                    >
+                      <Trash2 size={12} />
+                    </button>
+                  )}
                 </div>
               );
             })}
@@ -375,6 +391,11 @@ export default function NotebooksSection() {
                     <h3 className="text-[15px] font-semibold text-[var(--foreground)]">
                       {selected.name}
                     </h3>
+                    {selected.read_only && (
+                      <span className="rounded-full border border-[var(--border)] bg-[var(--muted)] px-1.5 py-0.5 text-[10px] font-medium text-[var(--muted-foreground)]">
+                        {t("Shared")}
+                      </span>
+                    )}
                     {selected.description && (
                       <span className="text-[12px] text-[var(--muted-foreground)]">
                         — {selected.description}

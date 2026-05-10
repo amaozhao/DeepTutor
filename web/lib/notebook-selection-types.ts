@@ -6,6 +6,9 @@ export interface Notebook {
   description: string;
   record_count: number;
   color: string;
+  source?: "admin" | "user";
+  read_only?: boolean;
+  provenance_label?: string;
 }
 
 export interface NotebookRecord {

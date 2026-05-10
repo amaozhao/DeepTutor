@@ -150,6 +150,9 @@ export interface Book {
   metadata: Record<string, unknown> & {
     page_chat_sessions?: Record<string, string>;
   };
+  source?: "admin" | "user";
+  read_only?: boolean;
+  provenance_label?: string;
 }
 
 export interface Progress {
