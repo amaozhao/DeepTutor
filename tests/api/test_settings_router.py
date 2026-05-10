@@ -206,6 +206,7 @@ async def test_get_llm_options_returns_redacted_catalog(monkeypatch: pytest.Monk
     assert response["active"] == {
         "profile_id": "llm-profile-default",
         "model_id": "llm-model-default",
+        "source": "admin",
     }
     assert response["options"][0]["model"] == "gpt-4o-mini"
     assert "api_key" not in response["options"][0]
@@ -256,7 +257,7 @@ async def test_update_catalog_invalidates_runtime_caches(monkeypatch: pytest.Mon
     new_llm_client = llm_client_module.get_llm_client()
     new_embedding_client = embedding_client_module.get_embedding_client()
 
-    assert response == {"catalog": updated_catalog}
+    assert response == {"catalog": updated_catalog, "catalog_scope": "admin"}
     assert old_llm_config.model == "gpt-old"
     assert new_llm_config.model == "gpt-new"
     assert new_llm_config.base_url == "https://new-llm.example/v1"

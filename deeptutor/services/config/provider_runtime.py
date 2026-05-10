@@ -24,7 +24,7 @@ from .embedding_endpoint import (
     embedding_endpoint_validation_error,
     normalize_embedding_endpoint_for_display,
 )
-from .env_store import EnvStore, get_env_store
+from .env_store import ConfigSummary, EnvStore, get_env_store
 from .loader import load_config_with_main
 from .model_catalog import ModelCatalogService, get_model_catalog_service
 
@@ -315,6 +315,31 @@ def _load_catalog(catalog: dict[str, Any] | None) -> dict[str, Any]:
     return get_model_catalog_service().load()
 
 
+def _empty_config_summary() -> ConfigSummary:
+    return ConfigSummary(
+        backend_port=0,
+        frontend_port=0,
+        llm={
+            "binding": "",
+            "model": "",
+            "api_key": "",
+            "host": "",
+            "api_version": "",
+            "reasoning_effort": "",
+        },
+        embedding={
+            "binding": "",
+            "model": "",
+            "api_key": "",
+            "host": "",
+            "dimension": "",
+            "send_dimensions": "",
+            "api_version": "",
+        },
+        search={"provider": "", "api_key": "", "base_url": "", "proxy": ""},
+    )
+
+
 def _active_profile_and_model(
     catalog: dict[str, Any],
     service: ModelCatalogService,
@@ -398,16 +423,17 @@ def resolve_llm_runtime_config(
     env_store: EnvStore | None = None,
     service: ModelCatalogService | None = None,
     llm_selection: dict[str, Any] | LLMSelection | None = None,
+    allow_env_fallback: bool = True,
 ) -> ResolvedLLMConfig:
     """Resolve active LLM config with TutorBot-style provider matching."""
     env = env_store or get_env_store()
     catalog_service = service or get_model_catalog_service()
-    loaded = _load_catalog(catalog)
+    loaded = catalog if catalog is not None else catalog_service.load()
     loaded = apply_llm_selection_to_catalog(loaded, llm_selection)
 
     profile, model = _active_profile_and_model(loaded, catalog_service, "llm")
-    summary = env.as_summary()
-    env_values = env.load()
+    summary = env.as_summary() if allow_env_fallback else _empty_config_summary()
+    env_values = env.load() if allow_env_fallback else {}
 
     resolved_model = _as_str((model or {}).get("model")) or summary.llm.get("model", "").strip()
     if not resolved_model:

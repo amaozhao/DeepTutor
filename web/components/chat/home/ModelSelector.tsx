@@ -182,6 +182,7 @@ export default function ModelSelector({
               const optionSelection = {
                 profile_id: option.profile_id,
                 model_id: option.model_id,
+                source: option.source,
               };
               const optionKey = llmSelectionKey(optionSelection);
               const selected = optionKey === selectedKey;

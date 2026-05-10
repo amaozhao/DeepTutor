@@ -6,6 +6,8 @@ from pathlib import Path
 from typing import Any, cast
 from uuid import uuid4
 
+from deeptutor.multi_user.context import get_current_user
+from deeptutor.multi_user.paths import get_admin_path_service
 from deeptutor.services.path_service import get_path_service
 
 from .embedding_endpoint import normalize_embedding_endpoint_for_display
@@ -57,14 +59,14 @@ class ModelCatalogService:
             cls._instances[key] = cls(resolved)
         return cls._instances[key]
 
-    def load(self) -> dict[str, Any]:
+    def load(self, *, hydrate_from_env: bool = True) -> dict[str, Any]:
         if self.path.exists():
             with open(self.path, "r", encoding="utf-8") as handle:
                 loaded = json.load(handle) or {}
             catalog = _default_catalog()
             catalog.update({k: v for k, v in loaded.items() if k != "services"})
             catalog["services"].update(loaded.get("services", {}))
-            hydrated = self._hydrate_missing_services_from_env(catalog)
+            hydrated = self._hydrate_missing_services_from_env(catalog) if hydrate_from_env else False
             # Only overlay .env values onto the active profile while the
             # catalog is still in its pristine, freshly-seeded state
             # (one auto-generated profile per service whose id matches
@@ -77,14 +79,14 @@ class ModelCatalogService:
             # base_url after page refresh). The first-bootstrap case is
             # already handled by ``_hydrate_missing_services_from_env``.
             synced = False
-            if self._is_catalog_pristine(catalog):
+            if hydrate_from_env and self._is_catalog_pristine(catalog):
                 synced = self._sync_active_services_from_env(catalog)
             normalized = self._normalize(catalog)
             if hydrated or synced or normalized:
                 self.save(catalog)
             return catalog
 
-        catalog = self._build_from_env()
+        catalog = self._build_from_env() if hydrate_from_env else _default_catalog()
         self.save(catalog)
         return catalog
 
@@ -522,9 +524,6 @@ class ModelCatalogService:
 
 def get_model_catalog_service() -> ModelCatalogService:
     try:
-        from deeptutor.multi_user.context import get_current_user
-        from deeptutor.multi_user.paths import get_admin_path_service
-
         if not get_current_user().is_admin:
             return ModelCatalogService.get_instance(
                 get_admin_path_service().get_settings_file("model_catalog")

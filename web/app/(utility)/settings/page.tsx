@@ -88,6 +88,8 @@ type ProviderOption = {
 type SettingsPayload = {
   ui: UiSettings;
   catalog?: Catalog;
+  catalog_scope?: "admin" | "user";
+  can_apply_env?: boolean;
   model_access?: ModelAccess;
   providers?: Record<ServiceName, ProviderOption[]>;
 };
@@ -595,6 +597,10 @@ function SettingsPageContent() {
   // a loading skeleton while it's null so non-admin users never see an empty
   // catalog editor flash before the API answers with model_access.
   const [catalogEditable, setCatalogEditable] = useState<boolean | null>(null);
+  const [catalogScope, setCatalogScope] = useState<"admin" | "user" | null>(
+    null,
+  );
+  const [canApplyEnv, setCanApplyEnv] = useState(false);
   const [activeService, setActiveService] = useState<ServiceName>("llm");
   const [logs, setLogs] = useState<string>("Waiting for test run...");
   const [testRunning, setTestRunning] = useState<ServiceName | null>(null);
@@ -632,9 +638,13 @@ function SettingsPageContent() {
           setCatalog(settingsPayload.catalog);
           setDraft(cloneCatalog(settingsPayload.catalog));
           setCatalogEditable(true);
-          setModelAccess(null);
+          setCatalogScope(settingsPayload.catalog_scope ?? "admin");
+          setCanApplyEnv(Boolean(settingsPayload.can_apply_env));
+          setModelAccess(settingsPayload.model_access ?? null);
         } else {
           setCatalogEditable(false);
+          setCatalogScope(null);
+          setCanApplyEnv(false);
           setModelAccess(settingsPayload.model_access ?? null);
         }
         setTheme(settingsPayload.ui.theme);
@@ -689,6 +699,8 @@ function SettingsPageContent() {
   // -- Derived ------------------------------------------------------------
 
   const settingsLoading = catalogEditable === null;
+  const canManageGlobalCatalog =
+    catalogEditable === true && catalogScope === "admin" && canApplyEnv;
   const activeProfile = getActiveProfile(draft, activeService);
   const activeModel = getActiveModel(draft, activeService);
   const hasUnsavedChanges =
@@ -919,6 +931,7 @@ function SettingsPageContent() {
       const payload = await response.json();
       setCatalog(payload.catalog);
       setDraft(cloneCatalog(payload.catalog));
+      setCatalogScope(payload.catalog_scope ?? catalogScope);
       setToast(t("Draft saved"));
     } finally {
       setSaving(false);
@@ -926,7 +939,7 @@ function SettingsPageContent() {
   };
 
   const applyCatalog = async () => {
-    if (!catalogEditable) return;
+    if (!canManageGlobalCatalog) return;
     setApplying(true);
     try {
       const response = await apiFetch(apiUrl("/api/v1/settings/apply"), {
@@ -937,6 +950,7 @@ function SettingsPageContent() {
       const payload = await response.json();
       setCatalog(payload.catalog);
       setDraft(cloneCatalog(payload.catalog));
+      setCatalogScope(payload.catalog_scope ?? "admin");
       setToast(t("Applied to .env"));
       const statusResponse = await apiFetch(apiUrl("/api/v1/system/status"));
       setStatus((await statusResponse.json()) as SystemStatus);
@@ -948,7 +962,7 @@ function SettingsPageContent() {
   // -- Diagnostics (existing single-service test) -------------------------
 
   const runDetailedTest = async () => {
-    if (!catalogEditable) return;
+    if (!canManageGlobalCatalog) return;
     if (eventSourceRef.current) {
       eventSourceRef.current.close();
       eventSourceRef.current = null;
@@ -1068,13 +1082,15 @@ function SettingsPageContent() {
           <div className="flex items-center gap-2">
             {catalogEditable === true && (
               <>
-                <button
-                  onClick={runTour}
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--border)]/50 px-3 py-1.5 text-[12px] font-medium text-[var(--muted-foreground)] transition-colors hover:border-[var(--border)] hover:text-[var(--foreground)]"
-                >
-                  <Rocket className="h-3 w-3" />
-                  {t("Tour")}
-                </button>
+                {canManageGlobalCatalog && (
+                  <button
+                    onClick={runTour}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--border)]/50 px-3 py-1.5 text-[12px] font-medium text-[var(--muted-foreground)] transition-colors hover:border-[var(--border)] hover:text-[var(--foreground)]"
+                  >
+                    <Rocket className="h-3 w-3" />
+                    {t("Tour")}
+                  </button>
+                )}
                 <button
                   data-tour="tour-save-test"
                   onClick={saveCatalog}
@@ -1088,19 +1104,21 @@ function SettingsPageContent() {
                   )}
                   {t("Save Draft")}
                 </button>
-                <button
-                  data-tour="tour-actions"
-                  onClick={applyCatalog}
-                  disabled={applying}
-                  className="inline-flex items-center gap-1.5 rounded-lg bg-[var(--foreground)] px-3 py-1.5 text-[12px] font-medium text-[var(--background)] transition-opacity hover:opacity-80 disabled:opacity-40"
-                >
-                  {applying ? (
-                    <Loader2 className="h-3 w-3 animate-spin" />
-                  ) : (
-                    <Wand2 className="h-3 w-3" />
-                  )}
-                  {t("Apply")}
-                </button>
+                {canManageGlobalCatalog && (
+                  <button
+                    data-tour="tour-actions"
+                    onClick={applyCatalog}
+                    disabled={applying}
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-[var(--foreground)] px-3 py-1.5 text-[12px] font-medium text-[var(--background)] transition-opacity hover:opacity-80 disabled:opacity-40"
+                  >
+                    {applying ? (
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                    ) : (
+                      <Wand2 className="h-3 w-3" />
+                    )}
+                    {t("Apply")}
+                  </button>
+                )}
               </>
             )}
           </div>
@@ -1180,6 +1198,17 @@ function SettingsPageContent() {
               )}
             </p>
           </>
+        )}
+
+        {catalogEditable === true && catalogScope === "user" && (
+          <div className="mb-5 space-y-3">
+            {modelAccess && <ModelAccessSummary access={modelAccess} />}
+            <p className="text-[12px] leading-relaxed text-[var(--muted-foreground)]">
+              {t(
+                "Your custom model settings are private to this account. Administrator .env keys are not shown here.",
+              )}
+            </p>
+          </div>
         )}
 
         {/* ── Runtime status ── */}
@@ -1845,7 +1874,8 @@ function SettingsPageContent() {
             </div>
 
             {/* ── Diagnostics ── */}
-            <div className="mb-6 rounded-xl border border-[var(--border)]">
+            {canManageGlobalCatalog && (
+              <div className="mb-6 rounded-xl border border-[var(--border)]">
               <div className="flex items-center justify-between px-5 py-3.5">
                 <button
                   type="button"
@@ -1904,7 +1934,8 @@ function SettingsPageContent() {
                   </pre>
                 </div>
               )}
-            </div>
+              </div>
+            )}
 
             {/* ── Footer note ── */}
             <p className="mt-2 pb-4 text-[11px] leading-relaxed text-[var(--muted-foreground)]/40">
@@ -1915,7 +1946,7 @@ function SettingsPageContent() {
       </div>
 
       {/* ── Spotlight overlay (tour onboarding) ── */}
-      {catalogEditable === true &&
+      {canManageGlobalCatalog &&
         tourGuideStep >= 0 &&
         tourGuideStep < TOUR_GUIDE_STEPS.length && (
           <SpotlightOverlay

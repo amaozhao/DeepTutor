@@ -6,7 +6,7 @@ Manages system status checks and model connection tests
 from datetime import datetime
 import time
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel
 
 from deeptutor.multi_user.context import get_current_user
@@ -25,6 +25,14 @@ class TestResponse(BaseModel):
     model: str | None = None
     response_time_ms: float | None = None
     error: str | None = None
+
+
+def _require_system_admin() -> None:
+    if not get_current_user().is_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="System model diagnostics are available to administrators only.",
+        )
 
 
 @router.get("/runtime-topology")
@@ -137,7 +145,11 @@ async def get_system_status():
     if not get_current_user().is_admin:
         for section in ("llm", "embeddings"):
             result[section].pop("model", None)
+            result[section].pop("error", None)
+            result[section]["testable"] = False
         result["search"].pop("provider", None)
+        result["search"].pop("error", None)
+        result["search"]["testable"] = False
 
     return result
 
@@ -150,6 +162,7 @@ async def test_llm_connection():
     Returns:
         Test result with success status and response time
     """
+    _require_system_admin()
     start_time = time.time()
 
     try:
@@ -218,6 +231,7 @@ async def test_embeddings_connection():
     Returns:
         Test result with success status and response time
     """
+    _require_system_admin()
     start_time = time.time()
 
     try:
@@ -269,6 +283,7 @@ async def test_embeddings_connection():
 
 @router.post("/test/search", response_model=TestResponse)
 async def test_search_connection():
+    _require_system_admin()
     start_time = time.time()
 
     try:

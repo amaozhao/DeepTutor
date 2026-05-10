@@ -1,7 +1,10 @@
 """Auth router — login, logout, status, registration, and user-management endpoints."""
 
+from collections.abc import Iterator
+from contextvars import Token
 import logging
 import os
+import re
 
 from fastapi import APIRouter, Cookie, Depends, Header, HTTPException, Response, status
 from pydantic import BaseModel, field_validator
@@ -29,6 +32,13 @@ from deeptutor.services.auth import (
     register_pb,
     set_role,
 )
+from deeptutor.multi_user.context import (
+    reset_current_user,
+    set_current_user,
+    user_from_token_payload,
+)
+from deeptutor.multi_user.models import CurrentUser
+from deeptutor.multi_user.paths import local_admin_user
 
 logger = logging.getLogger(__name__)
 
@@ -59,8 +69,6 @@ class RegisterRequest(BaseModel):
     @field_validator("username")
     @classmethod
     def username_valid(cls, v: str) -> str:
-        import re
-
         v = v.strip()
         if not v:
             raise ValueError("Username or email cannot be empty")
@@ -149,7 +157,7 @@ def _extract_token(authorization: str | None, dt_token: str | None) -> str | Non
 def require_auth(
     authorization: str | None = Header(default=None, alias="Authorization"),
     dt_token: str | None = Cookie(default=None),
-) -> TokenPayload | None:
+) -> Iterator[TokenPayload | None]:
     """
     FastAPI dependency that enforces authentication when AUTH_ENABLED=true.
 
@@ -163,34 +171,35 @@ def require_auth(
     Returns the authenticated TokenPayload, or None if auth is disabled.
     Raises HTTP 401 if auth is enabled but the token is missing or invalid.
     """
-    if not AUTH_ENABLED:
-        from deeptutor.multi_user.context import set_current_user
-        from deeptutor.multi_user.paths import local_admin_user
+    context_token: Token[CurrentUser | None] | None = None
+    try:
+        if not AUTH_ENABLED:
+            context_token = set_current_user(local_admin_user())
+            yield None
+            return
 
-        set_current_user(local_admin_user())
-        return None
+        token = _extract_token(authorization, dt_token)
 
-    token = _extract_token(authorization, dt_token)
+        if not token:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Not authenticated",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
 
-    if not token:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Not authenticated",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+        payload = decode_token(token)
+        if not payload:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid or expired token",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
 
-    payload = decode_token(token)
-    if not payload:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or expired token",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-
-    from deeptutor.multi_user.context import set_current_user, user_from_token_payload
-
-    set_current_user(user_from_token_payload(payload))
-    return payload
+        context_token = set_current_user(user_from_token_payload(payload))
+        yield payload
+    finally:
+        if context_token is not None:
+            reset_current_user(context_token)
 
 
 def require_admin(
@@ -203,9 +212,7 @@ def require_admin(
     When AUTH_ENABLED=false, all requests are treated as admin.
     """
     if not AUTH_ENABLED:
-        from deeptutor.services.auth import TokenPayload as TP
-
-        return TP(username="local", role="admin", user_id="local-admin")
+        return TokenPayload(username="local", role="admin", user_id="local-admin")
 
     if payload is None or payload.role != "admin":
         raise HTTPException(

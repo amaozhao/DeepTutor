@@ -18,13 +18,20 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from deeptutor.multi_user.context import get_current_user
-from deeptutor.multi_user.model_access import allowed_llm_options, redacted_model_access
+from deeptutor.multi_user.paths import get_current_path_service
+from deeptutor.multi_user.model_access import (
+    allowed_llm_options,
+    redacted_model_access,
+    user_catalog,
+    user_catalog_service,
+)
 from deeptutor.services.config import get_config_test_runner, get_model_catalog_service
+from deeptutor.services.config.provider_runtime import EMBEDDING_PROVIDERS
 from deeptutor.services.embedding.client import reset_embedding_client
 from deeptutor.services.llm.client import reset_llm_client
 from deeptutor.services.llm.config import clear_llm_config_cache
 from deeptutor.services.model_selection import list_llm_options
-from deeptutor.services.path_service import get_path_service
+from deeptutor.services.provider_registry import PROVIDERS
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -32,13 +39,13 @@ TOUR_CACHE: Any = None
 
 
 def _settings_file():
-    return get_path_service().get_settings_file("interface")
+    return get_current_path_service().get_settings_file("interface")
 
 
 def _tour_cache_file():
     if TOUR_CACHE is not None:
         return TOUR_CACHE
-    return get_path_service().get_settings_dir() / ".tour_cache.json"
+    return get_current_path_service().get_settings_dir() / ".tour_cache.json"
 
 
 DEFAULT_SIDEBAR_NAV_ORDER = {
@@ -119,8 +126,9 @@ def redact_catalog_for_user(catalog: dict[str, Any]) -> dict[str, Any]:
 
 
 def _catalog_for_user(user: Any) -> dict[str, Any]:
-    catalog = get_model_catalog_service().load()
-    return catalog if _is_admin_user(user) else redact_catalog_for_user(catalog)
+    if _is_admin_user(user):
+        return get_model_catalog_service().load()
+    return user_catalog()
 
 
 def _invalidate_runtime_caches() -> None:
@@ -177,9 +185,6 @@ def _require_settings_admin(user: Any | None = None) -> None:
 
 def _provider_choices() -> dict[str, list[dict[str, str]]]:
     """Build dropdown options for provider selection, keyed by service type."""
-    from deeptutor.services.config.provider_runtime import EMBEDDING_PROVIDERS
-    from deeptutor.services.provider_registry import PROVIDERS
-
     llm = sorted(
         [
             {
@@ -227,11 +232,17 @@ async def get_settings():
     if not user.is_admin:
         return {
             "ui": load_ui_settings(),
+            "catalog": user_catalog(),
+            "catalog_scope": "user",
+            "can_apply_env": False,
             "model_access": redacted_model_access(user.id),
+            "providers": _provider_choices(),
         }
     return {
         "ui": load_ui_settings(),
         "catalog": get_model_catalog_service().load(),
+        "catalog_scope": "admin",
+        "can_apply_env": True,
         "providers": _provider_choices(),
     }
 
@@ -240,7 +251,8 @@ async def get_settings():
 async def get_catalog(user: Any | None = None):
     if user is not None:
         return {"catalog": _catalog_for_user(user)}
-    _require_settings_admin()
+    if not get_current_user().is_admin:
+        return {"catalog": user_catalog(), "catalog_scope": "user"}
     return {"catalog": get_model_catalog_service().load()}
 
 
@@ -255,21 +267,35 @@ async def get_llm_options(user: Any | None = None):
 
 @router.put("/catalog")
 async def update_catalog(payload: CatalogPayload, user: Any | None = None):
-    _require_settings_admin(user)
+    actor = user if user is not None else get_current_user()
+    if not _is_admin_user(actor):
+        catalog = user_catalog_service().save(payload.catalog)
+        return {"catalog": catalog, "catalog_scope": "user"}
     catalog = get_model_catalog_service().save(payload.catalog)
     _invalidate_runtime_caches()
-    return {"catalog": catalog}
+    return {"catalog": catalog, "catalog_scope": "admin"}
 
 
 @router.post("/apply")
 async def apply_catalog(payload: CatalogPayload | None = None, user: Any | None = None):
-    _require_settings_admin(user)
+    actor = user if user is not None else get_current_user()
+    if not _is_admin_user(actor):
+        service = user_catalog_service()
+        catalog = payload.catalog if payload is not None else user_catalog()
+        saved = service.save(catalog)
+        return {
+            "message": "Personal model configuration saved.",
+            "catalog": saved,
+            "catalog_scope": "user",
+            "env": {},
+        }
     catalog = payload.catalog if payload is not None else get_model_catalog_service().load()
     rendered = get_model_catalog_service().apply(catalog)
     _invalidate_runtime_caches()
     return {
         "message": "Catalog applied to the active .env configuration.",
         "catalog": get_model_catalog_service().load(),
+        "catalog_scope": "admin",
         "env": rendered,
     }
 

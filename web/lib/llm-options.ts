@@ -17,7 +17,7 @@ export interface LLMOptionsResponse {
 
 export function llmSelectionKey(selection: LLMSelection | null | undefined) {
   if (!selection?.profile_id || !selection.model_id) return "";
-  return `${selection.profile_id}:${selection.model_id}`;
+  return `${selection.source || "admin"}:${selection.profile_id}:${selection.model_id}`;
 }
 
 export function sameLLMSelection(

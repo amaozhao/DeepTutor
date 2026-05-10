@@ -5,24 +5,55 @@ Turn-level runtime manager for unified chat streaming.
 from __future__ import annotations
 
 import asyncio
+import base64 as _b64
 from collections.abc import AsyncIterator, Callable, Sequence
 import contextlib
 from contextvars import Token
 from dataclasses import dataclass, field
 import json
 import logging
-from typing import TYPE_CHECKING, Any, Literal
+import os
+from typing import Any, Literal
+import uuid as _uuid
 
+from deeptutor.agents.notebook import NotebookAnalysisAgent
+from deeptutor.book.context import build_book_context
+from deeptutor.capabilities.request_contracts import validate_capability_config
+from deeptutor.core.context import Attachment, UnifiedContext
 from deeptutor.core.stream import StreamEvent, StreamEventType
+from deeptutor.multi_user.context import get_current_user
+from deeptutor.multi_user.model_access import (
+    allowed_llm_options,
+    apply_allowed_llm_selection,
+    llm_catalog_context_for_selection,
+)
+from deeptutor.multi_user.paths import get_admin_path_service
+from deeptutor.multi_user.skill_access import assigned_skill_ids
+from deeptutor.runtime.orchestrator import ChatOrchestrator
+from deeptutor.services.memory import get_memory_service
+from deeptutor.services.model_selection import LLMSelection, apply_llm_selection_to_catalog
+from deeptutor.services.model_selection.runtime import activate_llm_selection, reset_llm_selection
+from deeptutor.services.notebook import get_notebook_manager
 from deeptutor.services.path_service import get_path_service
+from deeptutor.services.llm.config import LLMConfig
+from deeptutor.services.session.context_builder import ContextBuilder
+from deeptutor.services.session.pocketbase_store import PocketBaseSessionStore
 from deeptutor.services.session.protocol import SessionStoreProtocol
-
-if TYPE_CHECKING:
-    from deeptutor.services.llm.config import LLMConfig
+from deeptutor.services.session.sqlite_store import get_sqlite_session_store
+from deeptutor.services.skill import get_skill_service
+from deeptutor.services.skill.service import SkillService
+from deeptutor.services.storage import get_attachment_store
+from deeptutor.utils.document_extractor import extract_documents_from_records
 
 logger = logging.getLogger(__name__)
 
 MemoryReference = Literal["summary", "profile"]
+
+
+def _get_session_store() -> SessionStoreProtocol:
+    if os.getenv("POCKETBASE_URL"):
+        return PocketBaseSessionStore()
+    return get_sqlite_session_store()
 
 
 def _should_capture_assistant_content(event: StreamEvent) -> bool:
@@ -62,8 +93,6 @@ def _string_list(value: Any) -> list[str]:
 
 
 def _llm_selection_dict(value: Any) -> dict[str, str] | None:
-    from deeptutor.services.model_selection import LLMSelection
-
     selection = LLMSelection.from_payload(value)
     return selection.to_dict() if selection else None
 
@@ -355,9 +384,7 @@ class TurnRuntimeManager:
     """Run one turn in the background and multiplex persisted/live events."""
 
     def __init__(self, store: SessionStoreProtocol | None = None) -> None:
-        from deeptutor.services.session import get_session_store
-
-        self.store = store or get_session_store()
+        self.store = store or _get_session_store()
         self._lock = asyncio.Lock()
         self._executions: dict[str, _TurnExecution] = {}
 
@@ -376,8 +403,6 @@ class TurnRuntimeManager:
             key: raw_config.pop(key) for key in runtime_only_keys if key in raw_config
         }
         try:
-            from deeptutor.capabilities.request_contracts import validate_capability_config
-
             validated_public_config = validate_capability_config(capability, raw_config)
         except ValueError as exc:
             raise RuntimeError(str(exc)) from exc
@@ -397,8 +422,6 @@ class TurnRuntimeManager:
             raise RuntimeError(str(exc)) from exc
         if llm_selection:
             try:
-                from deeptutor.multi_user.model_access import apply_allowed_llm_selection
-
                 llm_selection = apply_allowed_llm_selection(llm_selection) or {}
             except PermissionError as exc:
                 raise RuntimeError(str(exc)) from exc
@@ -407,34 +430,27 @@ class TurnRuntimeManager:
             # never silently fall through to the global LLM client (which is
             # configured from admin's .env). Admin keeps the existing behavior
             # (None llm_selection → default config from admin scope).
-            from deeptutor.multi_user.context import get_current_user
-            from deeptutor.multi_user.model_access import redacted_model_access
-
             current_user = get_current_user()
             if not current_user.is_admin:
-                assigned_llms = [
-                    item
-                    for item in redacted_model_access(current_user.id).get("llm", [])
-                    if item.get("available")
-                ]
-                if not assigned_llms:
+                options_payload = allowed_llm_options()
+                selected_default = options_payload.get("active")
+                if not selected_default and options_payload.get("options"):
+                    first_option = options_payload["options"][0]
+                    selected_default = {
+                        "profile_id": first_option.get("profile_id"),
+                        "model_id": first_option.get("model_id"),
+                        "source": first_option.get("source"),
+                    }
+                if not selected_default:
                     raise RuntimeError(
-                        "No LLM model is assigned to your account. Please contact an administrator."
+                        "No LLM model is assigned or configured for your account."
                     )
-                llm_selection = {
-                    "profile_id": assigned_llms[0].get("profile_id"),
-                    "model_id": assigned_llms[0].get("model_id"),
-                }
+                llm_selection = selected_default
         if llm_selection:
-            from deeptutor.services.config import get_model_catalog_service
-            from deeptutor.services.model_selection import (
-                LLMSelection,
-                apply_llm_selection_to_catalog,
-            )
-
             try:
+                _, selection_catalog, _ = llm_catalog_context_for_selection(llm_selection)
                 apply_llm_selection_to_catalog(
-                    get_model_catalog_service().load(),
+                    selection_catalog,
                     LLMSelection.from_payload(llm_selection),
                 )
             except ValueError as exc:
@@ -689,24 +705,11 @@ class TurnRuntimeManager:
         assistant_events: list[dict[str, Any]] = []
         assistant_content = ""
         llm_scope_token: Token[LLMConfig | None] | None = None
-        reset_active_llm_selection: Callable[[Token[LLMConfig | None] | None], None] | None = None
+        reset_active_llm_selection: Callable[[Token[LLMConfig | None] | None], None] | None = (
+            reset_llm_selection
+        )
 
         try:
-            from deeptutor.agents.notebook import NotebookAnalysisAgent
-            from deeptutor.book.context import build_book_context
-            from deeptutor.core.context import Attachment, UnifiedContext
-            from deeptutor.runtime.orchestrator import ChatOrchestrator
-            from deeptutor.services.memory import get_memory_service
-            from deeptutor.services.model_selection.runtime import (
-                activate_llm_selection,
-            )
-            from deeptutor.services.model_selection.runtime import (
-                reset_llm_selection as reset_active_llm_selection,
-            )
-            from deeptutor.services.notebook import get_notebook_manager
-            from deeptutor.services.session.context_builder import ContextBuilder
-            from deeptutor.services.skill import get_skill_service
-
             request_config = dict(payload.get("config", {}) or {})
             followup_question_context = _extract_followup_question_context(request_config)
             persist_user_message = _extract_persist_user_message(request_config)
@@ -724,11 +727,6 @@ class TurnRuntimeManager:
             history_context = ""
             question_bank_context = ""
             book_context = book_context_result.text
-
-            import base64 as _b64
-            import uuid as _uuid
-
-            from deeptutor.services.storage import get_attachment_store
 
             for item in payload.get("attachments", []):
                 record = {
@@ -776,8 +774,6 @@ class TurnRuntimeManager:
                         record.get("filename"),
                         exc,
                     )
-
-            from deeptutor.utils.document_extractor import extract_documents_from_records
 
             document_texts, attachment_records = extract_documents_from_records(attachment_records)
             attachments = [
@@ -848,11 +844,6 @@ class TurnRuntimeManager:
             #   the assigned skill ids, then load content from BOTH scopes
             #   (assigned skills live in admin workspace; user's own skills
             #   live in their workspace).
-            from deeptutor.multi_user.context import get_current_user
-            from deeptutor.multi_user.paths import get_admin_path_service
-            from deeptutor.multi_user.skill_access import assigned_skill_ids
-            from deeptutor.services.skill.service import SkillService
-
             current_user = get_current_user()
             user_skill_service = get_skill_service()
             requested_skills = _string_list(payload.get("skills"))
@@ -1196,9 +1187,7 @@ _runtime_instances: dict[str, TurnRuntimeManager] = {}
 
 
 def get_turn_runtime_manager() -> TurnRuntimeManager:
-    from deeptutor.services.session import get_session_store
-
-    store = get_session_store()
+    store = _get_session_store()
     key = str(getattr(store, "db_path", id(store)))
     if key not in _runtime_instances:
         _runtime_instances[key] = TurnRuntimeManager(store=store)

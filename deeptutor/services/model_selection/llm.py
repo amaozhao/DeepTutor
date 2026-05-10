@@ -17,6 +17,7 @@ class LLMSelection:
 
     profile_id: str
     model_id: str
+    source: str | None = None
 
     @classmethod
     def from_payload(cls, value: Any) -> "LLMSelection | None":
@@ -33,10 +34,14 @@ class LLMSelection:
             return None
         if not profile_id or not model_id:
             raise ValueError("Invalid LLM selection: profile_id and model_id are required.")
-        return cls(profile_id=profile_id, model_id=model_id)
+        source = str(value.get("source") or "").strip() or None
+        return cls(profile_id=profile_id, model_id=model_id, source=source)
 
     def to_dict(self) -> dict[str, str]:
-        return {"profile_id": self.profile_id, "model_id": self.model_id}
+        payload = {"profile_id": self.profile_id, "model_id": self.model_id}
+        if self.source:
+            payload["source"] = self.source
+        return payload
 
 
 def _coerce_int(value: Any) -> int | None:

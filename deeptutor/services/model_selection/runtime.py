@@ -5,6 +5,8 @@ from __future__ import annotations
 from contextvars import Token
 from typing import Any
 
+from deeptutor.multi_user.context import get_current_user
+from deeptutor.multi_user.model_access import allowed_llm_options, llm_catalog_context_for_selection
 from deeptutor.services.config.provider_runtime import ResolvedLLMConfig, resolve_llm_runtime_config
 from deeptutor.services.llm import config as llm_config_module
 from deeptutor.services.llm.config import LLMConfig
@@ -30,8 +32,30 @@ def llm_config_from_resolved(resolved: ResolvedLLMConfig) -> LLMConfig:
 def resolve_llm_config_for_selection(selection: Any) -> LLMConfig:
     """Resolve the LLM config for a chat/session selection reference."""
     if selection is None:
+        try:
+            if not get_current_user().is_admin:
+                active = allowed_llm_options().get("active")
+                if not active:
+                    raise RuntimeError(
+                        "No LLM model is assigned or configured for your account."
+                    )
+                selection = active
+        except RuntimeError:
+            raise
+        except Exception:
+            pass
+    if selection is None:
         return llm_config_module.get_llm_config()
-    return llm_config_from_resolved(resolve_llm_runtime_config(llm_selection=selection))
+
+    service, catalog, allow_env_fallback = llm_catalog_context_for_selection(selection)
+    return llm_config_from_resolved(
+        resolve_llm_runtime_config(
+            catalog=catalog,
+            service=service,
+            llm_selection=selection,
+            allow_env_fallback=allow_env_fallback,
+        )
+    )
 
 
 def activate_llm_selection(selection: Any) -> tuple[LLMConfig, Token[LLMConfig | None]]:
