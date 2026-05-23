@@ -1033,6 +1033,52 @@ async def test_invalid_finish_body_is_not_streamed_before_protocol_repair(
 
 
 @pytest.mark.asyncio
+async def test_anthropic_style_binding_uses_provider_stream(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Anthropic-wire providers must not be sent through OpenAI chat completions."""
+    monkeypatch.setattr(
+        "deeptutor.agents.chat.agentic_pipeline.get_llm_config",
+        lambda: SimpleNamespace(
+            binding="minimax_anthropic",
+            model="MiniMax-M2.7",
+            api_key="k",
+            base_url="https://api.minimaxi.com/anthropic",
+            api_version=None,
+        ),
+    )
+
+    async def fake_stream_messages(_self, messages, max_tokens):
+        assert messages[-1]["content"]
+        assert max_tokens > 0
+        yield "``FINISH``\n"
+        yield "可以从极限开始。"
+
+    pipeline = AgenticChatPipeline(language="zh")
+    pipeline.registry = SimpleNamespace(build_prompt_text=lambda *_args, **_kwargs: "- none")
+    monkeypatch.setattr(
+        pipeline,
+        "_build_openai_client",
+        lambda: (_ for _ in ()).throw(AssertionError("raw OpenAI client should not be used")),
+    )
+    monkeypatch.setattr(AgenticChatPipeline, "_stream_messages", fake_stream_messages)
+
+    bus = StreamBus()
+    events, consumer = await _collect_bus_events(bus)
+    await pipeline.run(UnifiedContext(session_id="s1", user_message="我想学微积分"), bus)
+    await asyncio.sleep(0)
+    await bus.close()
+    await consumer
+
+    content_events = [e.content for e in events if e.type == StreamEventType.CONTENT]
+    assert content_events == ["可以从极限开始。"]
+    result = [e for e in events if e.type == StreamEventType.RESULT][-1]
+    assert result.metadata["completed"] is True
+    assert result.metadata["iterations"] == 1
+    assert result.metadata["response"] == "可以从极限开始。"
+
+
+@pytest.mark.asyncio
 async def test_run_emits_final_fallback_if_forced_finish_never_complies(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

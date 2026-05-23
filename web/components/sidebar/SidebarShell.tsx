@@ -90,7 +90,7 @@ interface SidebarShellProps {
   onSelectSession?: (sessionId: string) => void | Promise<void>;
   onRenameSession?: (sessionId: string, title: string) => void | Promise<void>;
   onDeleteSession?: (sessionId: string) => void | Promise<void>;
-  footerSlot?: ReactNode;
+  footerSlot?: ReactNode | ((collapsed: boolean) => ReactNode);
 }
 
 export function SidebarShell({
@@ -110,6 +110,8 @@ export function SidebarShell({
   const { t } = useTranslation();
   const { sidebarCollapsed: collapsed, setSidebarCollapsed: setCollapsed } =
     useAppShell();
+  const renderedFooterSlot =
+    typeof footerSlot === "function" ? footerSlot(collapsed) : footerSlot;
 
   const handleNewChat = () => {
     if (onNewChat) {
@@ -218,7 +220,7 @@ export function SidebarShell({
               </Link>
             );
           })}
-          {footerSlot}
+          {renderedFooterSlot}
           <a
             href={GITHUB_REPO_URL}
             target="_blank"
@@ -344,7 +346,7 @@ export function SidebarShell({
             </Link>
           );
         })}
-        {footerSlot}
+        {renderedFooterSlot}
         <div className="mt-0.5 flex items-center gap-0.5">
           <VersionBadge />
           <a

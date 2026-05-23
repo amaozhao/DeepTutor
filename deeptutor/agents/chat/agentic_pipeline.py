@@ -82,6 +82,7 @@ from deeptutor.services.llm import (
 from deeptutor.services.llm.context_window import resolve_effective_context_window
 from deeptutor.services.prompt import get_prompt_manager
 from deeptutor.services.prompt.language import append_language_directive
+from deeptutor.services.provider_registry import find_by_name
 
 logger = logging.getLogger(__name__)
 
@@ -376,6 +377,10 @@ class AgenticChatPipeline:
             await self._run_answer_now(context, answer_now_context, stream)
             return
 
+        if not self._uses_openai_chat_client():
+            await self._run_provider_stream_chat(context, stream)
+            return
+
         enabled_tools = self._compose_enabled_tools(context)
         use_native_tools = bool(enabled_tools) and self._can_use_native_tool_calling()
         tool_schemas = (
@@ -456,6 +461,110 @@ class AgenticChatPipeline:
             "response": outcome.final_text,
             "iterations": outcome.iterations,
             "completed": outcome.completed,
+        }
+        await emit_capability_result(stream, result_payload, source="chat", usage=self._usage)
+
+    async def _run_provider_stream_chat(
+        self,
+        context: UnifiedContext,
+        stream: StreamBus,
+    ) -> None:
+        """Run a tool-less chat turn through the normalized provider stream.
+
+        The agentic loop uses ``AsyncOpenAI.chat.completions`` directly so
+        tests can inject scripted clients and OpenAI-compatible providers can
+        use native tool calls. Anthropic-style providers do not expose that
+        wire path; sending them through the raw OpenAI SDK yields a provider
+        404 before the user sees any answer.
+        """
+        system_prompt = self._build_system_prompt(enabled_tools=[], context=context)
+        user_content = self._t(
+            "user_template",
+            default=context.user_message,
+            user_message=context.user_message,
+        )
+        messages = self._build_messages(
+            context=context,
+            system_prompt=system_prompt,
+            user_content=user_content,
+        )
+        messages, images_stripped = self._prepare_messages_with_attachments(messages, context)
+
+        if images_stripped:
+            await stream.thinking(
+                self._t("notices.images_stripped", model=self.model or ""),
+                source="chat",
+                stage="responding",
+                metadata={"trace_kind": "warning"},
+            )
+
+        trace_meta, final_meta = self._build_iteration_trace_metadata(1)
+        chunks: list[str] = []
+        label_buf = ""
+        label_resolved = False
+
+        async def _emit_chunk(text: str) -> None:
+            if not text:
+                return
+            chunks.append(text)
+            await stream.content(
+                text,
+                source="chat",
+                stage="responding",
+                metadata=merge_trace_metadata(final_meta, {"trace_kind": "llm_chunk"}),
+            )
+
+        async with stream.stage("responding", source="chat"):
+            await stream.progress(
+                "",
+                source="chat",
+                stage="responding",
+                metadata=merge_trace_metadata(
+                    trace_meta, {"trace_kind": "call_status", "call_state": "streaming"}
+                ),
+            )
+            async for chunk in self._stream_messages(
+                messages,
+                max_tokens=self._responding_max_tokens,
+            ):
+                if not chunk:
+                    continue
+                if not label_resolved:
+                    label_buf += chunk
+                    parsed = _classify_answer_now_label(label_buf)
+                    if parsed is not None:
+                        _label, after_label = parsed
+                        label_resolved = True
+                        label_buf = ""
+                        await _emit_chunk(after_label)
+                    elif len(label_buf) > LABEL_PROBE_MAX_CHARS:
+                        label_resolved = True
+                        buffered = label_buf
+                        label_buf = ""
+                        await _emit_chunk(buffered)
+                    continue
+                await _emit_chunk(chunk)
+            if not label_resolved and label_buf:
+                parsed = _classify_answer_now_label(label_buf, final=True)
+                if parsed is not None:
+                    _label, after_label = parsed
+                    await _emit_chunk(after_label)
+                else:
+                    await _emit_chunk(label_buf)
+            await stream.progress(
+                "",
+                source="chat",
+                stage="responding",
+                metadata=merge_trace_metadata(
+                    trace_meta, {"trace_kind": "call_status", "call_state": "complete"}
+                ),
+            )
+
+        final_text = clean_thinking_tags("".join(chunks), self.binding, self.model)
+        result_payload: dict[str, Any] = {
+            "response": final_text,
+            "iterations": 1,
+            "completed": True,
         }
         await emit_capability_result(stream, result_payload, source="chat", usage=self._usage)
 
@@ -1615,6 +1724,12 @@ class AgenticChatPipeline:
         can still get one without poking at module-level state.
         """
         return build_openai_client(self._client_config)
+
+    def _uses_openai_chat_client(self) -> bool:
+        spec = find_by_name(self.binding)
+        if spec is None:
+            return True
+        return spec.backend in {"openai_compat", "azure_openai"}
 
     def _completion_kwargs(self, max_tokens: int) -> dict[str, Any]:
         return build_completion_kwargs(
