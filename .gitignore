@@ -290,3 +290,4 @@ celerybeat.pid
 *.ogg
 !demo/*.mp4
 .omx/
+.omc/
