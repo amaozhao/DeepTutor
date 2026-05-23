@@ -45,17 +45,9 @@ export function GrantEditor({ userId }: { userId: string }) {
 
   useEffect(() => {
     let cancelled = false;
-    Promise.resolve()
-      .then(() => {
-        if (cancelled) return null;
-        setLoading(true);
-        setSaveState("idle");
-        setMessage("");
-        return Promise.all([fetchAdminResources(), fetchUserGrant(userId)]);
-      })
-      .then((result) => {
-        if (cancelled || !result) return;
-        const [nextResources, nextGrant] = result;
+    Promise.all([fetchAdminResources(), fetchUserGrant(userId)])
+      .then(([nextResources, nextGrant]) => {
+        if (cancelled) return;
         setResources(nextResources);
         setGrant(nextGrant);
         setSavedFingerprint(grantFingerprint(nextGrant));

@@ -77,37 +77,34 @@ function QuizQuestionCard({
   const { t } = useTranslation();
   const [selected, setSelected] = useState<string | null>(null);
   const [revealed, setRevealed] = useState(false);
-  const reportedQuestionRef = useRef<string | null>(null);
+  const reportedRef = useRef<string | null>(null);
   const normalizedType = normalizeQuizQuestionType(question.question_type);
   const options = question.options || {};
   const isChoice = isChoiceQuizQuestion(normalizedType);
   const correct = String(question.correct_answer || "").trim();
   const correctChoiceKey = resolveChoiceAnswerKey(correct, options);
+  const reportKey = `${question.question_id || index}:${selected || ""}`;
 
   useEffect(() => {
-    const questionKey = question.question_id || `${index}:${question.question || ""}`;
     if (
-      !revealed ||
-      !selected ||
-      !onAttempt ||
-      reportedQuestionRef.current === questionKey
+      revealed &&
+      selected &&
+      reportedRef.current !== reportKey &&
+      onAttempt
     ) {
-      return;
+      reportedRef.current = reportKey;
+      onAttempt({
+        questionId: question.question_id,
+        userAnswer: selected,
+        isCorrect: selected.toUpperCase() === correctChoiceKey,
+      });
     }
-
-    onAttempt({
-      questionId: question.question_id,
-      userAnswer: selected,
-      isCorrect: selected.toUpperCase() === correctChoiceKey,
-    });
-    reportedQuestionRef.current = questionKey;
   }, [
+    reportKey,
     revealed,
     selected,
     onAttempt,
     question.question_id,
-    question.question,
-    index,
     correctChoiceKey,
   ]);
 

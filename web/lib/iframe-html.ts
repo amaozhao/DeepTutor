@@ -2,8 +2,8 @@
  * Helpers for rendering AI-generated HTML inside a sandboxed `<iframe>`:
  * - {@link injectKaTeX} ensures the page can render `$...$` / `$$...$$`
  *   even if the model didn't include KaTeX itself.
- * - {@link sanitizeIframeHtml} strips bare `<script>` blocks (except the
- *   KaTeX init shim) and any inline event handlers / `javascript:` URLs.
+ * - {@link sanitizeIframeHtml} strips navigation escapes while leaving
+ *   interactive scripts isolated by the caller's sandboxed iframe.
  *
  * These were originally written for the (now-deprecated) Guided Learning
  * page; the visualize capability now reuses them for `render_mode=html`.

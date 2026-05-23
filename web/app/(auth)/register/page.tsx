@@ -7,6 +7,7 @@ import { useTranslation } from "react-i18next";
 import { register, checkIsFirstUser, fetchAuthStatus } from "@/lib/auth";
 
 export default function RegisterPage() {
+  const { t } = useTranslation();
   const router = useRouter();
   const { t } = useTranslation();
 

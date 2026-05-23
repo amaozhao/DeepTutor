@@ -120,13 +120,12 @@ export default function BotChatPage() {
       return;
     }
     let cancelled = false;
-    queueMicrotask(() => {
-      if (cancelled) return;
-      setMessages([]);
-      setThinking([]);
-      thinkingRef.current = [];
-      setStreaming(false);
-    });
+    // Clear stale transcript immediately when navigating between bots.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setMessages([]);
+    setThinking([]);
+    thinkingRef.current = [];
+    setStreaming(false);
 
     apiFetch(apiUrl(`/api/v1/tutorbot/${botId}`))
       .then((r) => (r.ok ? r.json() : null))

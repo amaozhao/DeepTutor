@@ -194,7 +194,10 @@ class TutorBotManager:
 
     def __init__(self) -> None:
         self._bots: dict[str, TutorBotInstance] = {}
-        self._path_service = get_path_service()
+
+    @property
+    def _path_service(self):
+        return get_path_service()
 
     # ── Path helpers ──────────────────────────────────────────────
 

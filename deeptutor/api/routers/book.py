@@ -532,6 +532,13 @@ async def _authenticated_book_websocket(ws: WebSocket) -> None:
         {"type": "compile_page",     "book_id": "...", "page_id": "..."}
         {"type": "regenerate_block", "book_id": "...", "page_id": "...", "block_id": "...", "params_override": {}}
     """
+    from deeptutor.api.routers.auth import ws_auth_failed, ws_require_auth
+    from deeptutor.multi_user.context import reset_current_user
+
+    user_token = await ws_require_auth(ws)
+    if user_token is ws_auth_failed:
+        return
+
     await ws.accept()
     closed = False
 
@@ -704,3 +711,8 @@ async def _authenticated_book_websocket(ws: WebSocket) -> None:
             await ws.close()
         except Exception:
             pass
+        if user_token is not None:
+            try:
+                reset_current_user(user_token)
+            except Exception:
+                pass

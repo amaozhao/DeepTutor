@@ -58,7 +58,7 @@ def list_pipelines() -> List[Dict[str, str]]:
         {
             "id": DEFAULT_PROVIDER,
             "name": "LlamaIndex",
-            "description": "Pure vector retrieval, fastest processing speed.",
+            "description": "LlamaIndex retrieval with hybrid BM25/vector fusion when available.",
         }
     ]
 

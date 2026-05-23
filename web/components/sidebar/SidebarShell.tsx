@@ -8,6 +8,7 @@ import { useAppShell } from "@/context/AppShellContext";
 import {
   BookOpen,
   Bot,
+  Brain,
   Github,
   LayoutGrid,
   Library,
@@ -65,6 +66,12 @@ const PRIMARY_NAV: NavEntry[] = [
     icon: LayoutGrid,
     tooltipKey: "Space tooltip",
   },
+  {
+    href: "/memory",
+    label: "Memory",
+    icon: Brain,
+    tooltipKey: "Memory tooltip",
+  },
 ];
 
 const SECONDARY_NAV: NavEntry[] = [
@@ -83,7 +90,7 @@ interface SidebarShellProps {
   onSelectSession?: (sessionId: string) => void | Promise<void>;
   onRenameSession?: (sessionId: string, title: string) => void | Promise<void>;
   onDeleteSession?: (sessionId: string) => void | Promise<void>;
-  footerSlot?: ReactNode | ((collapsed: boolean) => ReactNode);
+  footerSlot?: ReactNode;
 }
 
 export function SidebarShell({
@@ -101,12 +108,8 @@ export function SidebarShell({
   const pathname = usePathname();
   const router = useRouter();
   const { t } = useTranslation();
-  const brandLabel = t("DeepTutor") as string;
-  const githubLabel = t("GitHub") as string;
   const { sidebarCollapsed: collapsed, setSidebarCollapsed: setCollapsed } =
     useAppShell();
-  const renderedFooterSlot =
-    typeof footerSlot === "function" ? footerSlot(collapsed) : footerSlot;
 
   const handleNewChat = () => {
     if (onNewChat) {
@@ -124,12 +127,12 @@ export function SidebarShell({
         <div className="relative mb-2 flex h-9 w-9 items-center justify-center">
           <Link
             href="/"
-            aria-label={brandLabel}
+            aria-label="DeepTutor"
             className="flex items-center justify-center transition-opacity duration-150 group-hover/sb:opacity-0"
           >
             <Image
-              src="/logo-ver2.png"
-              alt={brandLabel}
+              src="/logo.png"
+              alt="DeepTutor"
               width={22}
               height={22}
               className="h-[22px] w-[22px] rounded-md"
@@ -215,13 +218,13 @@ export function SidebarShell({
               </Link>
             );
           })}
-          {renderedFooterSlot}
+          {footerSlot}
           <a
             href={GITHUB_REPO_URL}
             target="_blank"
             rel="noreferrer noopener"
-            title={githubLabel}
-            aria-label={githubLabel}
+            title="GitHub"
+            aria-label="GitHub"
             className="mt-1 flex h-9 w-9 items-center justify-center rounded-xl text-[var(--muted-foreground)]/70 transition-colors hover:bg-[var(--background)]/50 hover:text-[var(--foreground)]"
           >
             <Github size={15} strokeWidth={1.6} />
@@ -237,17 +240,22 @@ export function SidebarShell({
     <aside className="flex w-[220px] h-screen shrink-0 flex-col bg-[var(--secondary)] transition-all duration-200">
       {/* Header: logo + collapse toggle */}
       <div className="flex h-14 items-center justify-between px-4">
-        <Link href="/" className="group flex items-center gap-2">
+        <Link href="/" className="group flex items-center gap-1.5">
           <Image
-            src="/logo-ver2.png"
-            alt={brandLabel}
+            src="/logo.png"
+            alt="DeepTutor"
             width={22}
             height={22}
             className="h-[22px] w-[22px] transition-transform duration-200 group-hover:scale-105"
           />
-          <span className="text-[16px] font-semibold leading-none tracking-[-0.02em] text-[var(--foreground)]">
-            {brandLabel}
-          </span>
+          <Image
+            src="/banner.png"
+            alt="DeepTutor"
+            width={897}
+            height={236}
+            priority
+            className="h-[22px] w-auto transition-transform duration-200 group-hover:scale-105"
+          />
         </Link>
         <button
           onClick={() => setCollapsed(true)}
@@ -336,15 +344,15 @@ export function SidebarShell({
             </Link>
           );
         })}
-        {renderedFooterSlot}
+        {footerSlot}
         <div className="mt-0.5 flex items-center gap-0.5">
           <VersionBadge />
           <a
             href={GITHUB_REPO_URL}
             target="_blank"
             rel="noreferrer noopener"
-            title={githubLabel}
-            aria-label={githubLabel}
+            title="GitHub"
+            aria-label="GitHub"
             className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-[var(--muted-foreground)]/55 transition-colors hover:bg-[var(--background)]/50 hover:text-[var(--muted-foreground)]"
           >
             <Github size={13} strokeWidth={1.7} />

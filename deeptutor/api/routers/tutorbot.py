@@ -12,10 +12,6 @@ from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket, WebSock
 from pydantic import BaseModel, ValidationError
 
 from deeptutor.api.routers.auth import require_auth
-from deeptutor.api.utils.websocket_auth import (
-    reset_websocket_current_user,
-    set_websocket_current_user,
-)
 from deeptutor.services.tutorbot import get_tutorbot_manager
 from deeptutor.services.tutorbot.manager import (
     BotConfig,
@@ -396,16 +392,13 @@ async def get_bot_history(bot_id: str, limit: int = 100):
 
 @router.websocket("/{bot_id}/ws")
 async def bot_chat_ws(ws: WebSocket, bot_id: str):
-    token = await set_websocket_current_user(ws)
-    if token is None:
+    from deeptutor.api.routers.auth import ws_auth_failed, ws_require_auth
+    from deeptutor.multi_user.context import reset_current_user
+
+    user_token = await ws_require_auth(ws)
+    if user_token is ws_auth_failed:
         return
-    try:
-        await _authenticated_bot_chat_ws(ws, bot_id)
-    finally:
-        reset_websocket_current_user(token)
 
-
-async def _authenticated_bot_chat_ws(ws: WebSocket, bot_id: str):
     # `disconnected` is the single source of truth for "client is gone".
     # Both task loops watch it so they can exit cooperatively without
     # raising exceptions back into manager code (which has broad
@@ -476,10 +469,11 @@ async def _authenticated_bot_chat_ws(ws: WebSocket, bot_id: str):
                 await _safe_send({"type": "thinking", "content": text})
 
             try:
+                chat_id_value = data.get("chat_id", "web")
                 response = await mgr.send_message(
                     bot_id,
                     content,
-                    chat_id=data.get("chat_id", "web"),
+                    chat_id=chat_id_value,
                     on_progress=on_progress,
                 )
                 if not await _safe_send({"type": "content", "content": response}):
@@ -534,4 +528,10 @@ async def _authenticated_bot_chat_ws(ws: WebSocket, bot_id: str):
         disconnected.set()
         user_task.cancel()
         notify_task.cancel()
+    finally:
+        if user_token is not None:
+            try:
+                reset_current_user(user_token)
+            except Exception:
+                pass
     logger.info("WebSocket closed for bot '%s'", bot_id)

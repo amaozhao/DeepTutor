@@ -158,6 +158,13 @@ async def _authenticated_websocket_vision_solve(websocket: WebSocket):
        - {"type": "text", "content": "..."}
        - {"type": "done"}
     """
+    from deeptutor.api.routers.auth import ws_auth_failed, ws_require_auth
+    from deeptutor.multi_user.context import reset_current_user
+
+    user_token = await ws_require_auth(websocket)
+    if user_token is ws_auth_failed:
+        return
+
     await websocket.accept()
 
     connection_closed = asyncio.Event()
@@ -261,3 +268,8 @@ async def _authenticated_websocket_vision_solve(websocket: WebSocket):
             pass
         except Exception as e:
             logger.debug(f"Error closing WebSocket: {e}")
+        if user_token is not None:
+            try:
+                reset_current_user(user_token)
+            except Exception:
+                pass

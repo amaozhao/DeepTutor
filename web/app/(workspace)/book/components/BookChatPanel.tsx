@@ -118,17 +118,13 @@ export default function BookChatPanel({
   const isComposingRef = useRef(false);
 
   useEffect(() => {
-    let cancelled = false;
     const raw = window.localStorage.getItem("deeptutor.bookChat.width");
     const parsed = Number(raw);
     if (Number.isFinite(parsed) && parsed >= 300 && parsed <= 720) {
-      queueMicrotask(() => {
-        if (!cancelled) setWidth(parsed);
-      });
+      // Hydrate persisted panel width after the SSR-safe default render.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setWidth(parsed);
     }
-    return () => {
-      cancelled = true;
-    };
   }, []);
 
   useEffect(() => {
@@ -152,13 +148,12 @@ export default function BookChatPanel({
     clientRef.current?.disconnect();
     clientRef.current = null;
     sessionIdRef.current = initialSessionId || null;
-    queueMicrotask(() => {
-      if (cancelled) return;
-      setMessages([]);
-      setAttachments([]);
-      setAttachmentError(null);
-      setBusy(false);
-    });
+    // Reset local chat state when the backing page/session changes.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setMessages([]);
+    setAttachments([]);
+    setAttachmentError(null);
+    setBusy(false);
 
     if (!open || !initialSessionId) return;
     void getSession(initialSessionId)

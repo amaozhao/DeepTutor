@@ -31,6 +31,7 @@ from deeptutor.services.llm.client import reset_llm_client
 from deeptutor.services.llm.config import clear_llm_config_cache
 from deeptutor.services.model_selection import list_llm_options
 from deeptutor.services.provider_registry import PROVIDERS
+from deeptutor.tools.builtin import USER_TOGGLEABLE_TOOL_NAMES
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -57,6 +58,11 @@ DEFAULT_UI_SETTINGS = {
     "language": "en",
     "sidebar_description": "✨ Data Intelligence Lab @ HKU",
     "sidebar_nav_order": DEFAULT_SIDEBAR_NAV_ORDER,
+    # User-toggleable chat tools. Default = all on; the /settings/tools page
+    # is the single switchboard. Removed names (e.g. tools that ship later
+    # and the user hasn't seen yet) are ignored on read; missing names from a
+    # legacy file fall back to the default (all on).
+    "enabled_optional_tools": list(USER_TOGGLEABLE_TOOL_NAMES),
 }
 
 
@@ -86,6 +92,10 @@ class SidebarDescriptionUpdate(BaseModel):
 
 class SidebarNavOrderUpdate(BaseModel):
     nav_order: SidebarNavOrder
+
+
+class EnabledToolsUpdate(BaseModel):
+    enabled_tools: List[str]
 
 
 class CatalogPayload(BaseModel):
@@ -153,10 +163,39 @@ def load_ui_settings() -> dict[str, Any]:
         try:
             with open(settings_file, encoding="utf-8") as handle:
                 saved = json.load(handle)
-                return {**DEFAULT_UI_SETTINGS, **saved}
+                merged = {**DEFAULT_UI_SETTINGS, **saved}
+                # Filter persisted enabled_optional_tools to current
+                # toggleable set so retired tool names can't leak into
+                # the per-turn payload.
+                merged["enabled_optional_tools"] = _sanitize_enabled_tools(
+                    merged.get("enabled_optional_tools")
+                )
+                return merged
         except Exception:
             pass
     return DEFAULT_UI_SETTINGS.copy()
+
+
+def _sanitize_enabled_tools(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return list(USER_TOGGLEABLE_TOOL_NAMES)
+    allowed = set(USER_TOGGLEABLE_TOOL_NAMES)
+    seen: set[str] = set()
+    out: list[str] = []
+    for name in value:
+        if isinstance(name, str) and name in allowed and name not in seen:
+            seen.add(name)
+            out.append(name)
+    return out
+
+
+def get_enabled_optional_tools() -> list[str]:
+    """Return the user's currently-enabled toggleable tool names.
+
+    Source of truth for the chat pipeline when a turn doesn't ship an
+    explicit ``tools`` list.
+    """
+    return _sanitize_enabled_tools(load_ui_settings().get("enabled_optional_tools"))
 
 
 def save_ui_settings(settings: dict[str, Any]) -> None:
@@ -215,12 +254,14 @@ def _provider_choices(*, include_default_urls: bool = True) -> dict[str, list[di
         key=lambda p: p["label"].lower(),
     )
     search = [
+        {"value": "none", "label": "None", "base_url": ""},
         {"value": "brave", "label": "Brave", "base_url": ""},
         {"value": "tavily", "label": "Tavily", "base_url": ""},
         {"value": "jina", "label": "Jina", "base_url": ""},
         {"value": "searxng", "label": "SearXNG", "base_url": ""},
         {"value": "duckduckgo", "label": "DuckDuckGo", "base_url": ""},
         {"value": "perplexity", "label": "Perplexity", "base_url": ""},
+        {"value": "serper", "label": "Serper", "base_url": ""},
     ]
     return {"llm": llm, "embedding": embedding, "search": search}
 
@@ -288,13 +329,13 @@ async def apply_catalog(payload: CatalogPayload | None = None, user: Any | None 
             "env": {},
         }
     catalog = payload.catalog if payload is not None else get_model_catalog_service().load()
-    rendered = get_model_catalog_service().apply(catalog)
+    applied = get_model_catalog_service().apply(catalog)
     _invalidate_runtime_caches()
     return {
-        "message": "Catalog applied to the active .env configuration.",
+        "message": "Catalog applied to runtime settings.",
         "catalog": get_model_catalog_service().load(),
         "catalog_scope": "admin",
-        "env": rendered,
+        "runtime": applied,
     }
 
 
@@ -365,6 +406,15 @@ async def update_sidebar_nav_order(update: SidebarNavOrderUpdate):
     current_ui["sidebar_nav_order"] = update.nav_order.model_dump()
     save_ui_settings(current_ui)
     return {"nav_order": update.nav_order.model_dump()}
+
+
+@router.put("/enabled-tools")
+async def update_enabled_tools(update: EnabledToolsUpdate):
+    sanitized = _sanitize_enabled_tools(update.enabled_tools)
+    current_ui = load_ui_settings()
+    current_ui["enabled_optional_tools"] = sanitized
+    save_ui_settings(current_ui)
+    return {"enabled_optional_tools": sanitized}
 
 
 @router.post("/tests/{service}/start")
@@ -444,7 +494,7 @@ async def complete_tour(
 ):
     _require_settings_admin(user)
     catalog = payload.catalog if payload and payload.catalog else get_model_catalog_service().load()
-    rendered = get_model_catalog_service().apply(catalog)
+    applied = get_model_catalog_service().apply(catalog)
     _invalidate_runtime_caches()
     now = int(time.time())
     launch_at = now + 3
@@ -468,7 +518,7 @@ async def complete_tour(
         "message": "Configuration saved. DeepTutor will restart shortly.",
         "launch_at": launch_at,
         "redirect_at": redirect_at,
-        "env": rendered,
+        "runtime": applied,
     }
 
 
@@ -476,5 +526,5 @@ async def complete_tour(
 async def reopen_tour():
     return {
         "message": "Run the terminal setup guide from the project root to re-open the guided setup.",
-        "command": "python scripts/start_tour.py",
+        "command": "deeptutor init",
     }
