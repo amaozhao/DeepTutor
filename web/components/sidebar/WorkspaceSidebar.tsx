@@ -73,11 +73,6 @@ export default function WorkspaceSidebar() {
     })
     .map(({ session }) => session);
 
-  const handleNewChat = () => {
-    newSession();
-    router.push("/chat");
-  };
-
   const handleSelectSession = useCallback(
     async (sessionId: string) => {
       router.push(`/chat/${sessionId}`);
@@ -124,7 +119,7 @@ export default function WorkspaceSidebar() {
       sessions={orderedSessions}
       activeSessionId={selectedSessionId}
       loadingSessions={loadingSessions}
-      onNewChat={handleNewChat}
+      onNewChat={newSession}
       onSelectSession={handleSelectSession}
       onRenameSession={handleRenameSession}
       onDeleteSession={handleDeleteSession}

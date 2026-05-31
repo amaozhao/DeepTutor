@@ -9,7 +9,6 @@ import { register, checkIsFirstUser, fetchAuthStatus } from "@/lib/auth";
 export default function RegisterPage() {
   const { t } = useTranslation();
   const router = useRouter();
-  const { t } = useTranslation();
 
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");

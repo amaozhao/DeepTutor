@@ -10,7 +10,6 @@ function LoginPageContent() {
   const { t } = useTranslation();
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { t } = useTranslation();
   const next = searchParams.get("next") ?? "/";
 
   const registered = searchParams.get("registered") === "1";

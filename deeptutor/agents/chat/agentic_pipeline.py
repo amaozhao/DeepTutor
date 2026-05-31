@@ -73,6 +73,7 @@ from deeptutor.services.llm import (
     clean_thinking_tags,
     get_llm_config,
     get_token_limit_kwargs,  # noqa: F401  (re-exported for tests)
+    has_thinking_tags,
     prepare_multimodal_messages,
     supports_tools,  # noqa: F401  (re-exported for tests)
 )
@@ -383,11 +384,14 @@ class AgenticChatPipeline:
 
         enabled_tools = self._compose_enabled_tools(context)
         use_native_tools = bool(enabled_tools) and self._can_use_native_tool_calling()
+        _is_reasoner = has_thinking_tags(self.binding, self.model)
         tool_schemas = (
             self._build_llm_tool_schemas(enabled_tools, context) if use_native_tools else None
         )
 
         system_prompt = self._build_system_prompt(enabled_tools, context)
+        if _is_reasoner and use_native_tools:
+            system_prompt = self._append_reasoner_protocol_note(system_prompt)
         user_content = self._t(
             "user_template",
             default=context.user_message,
@@ -398,18 +402,7 @@ class AgenticChatPipeline:
             system_prompt=system_prompt,
             user_content=user_content,
         )
-        messages, images_stripped = self._prepare_messages_with_attachments(messages, context)
-
-        if images_stripped:
-            # ``images_stripped`` is a transient warning, not a sub-trace, so
-            # it carries no call_id (frontend ``CallTracePanel`` groups by
-            # call_id and would otherwise spawn an empty sub-trace row).
-            await stream.thinking(
-                self._t("notices.images_stripped", model=self.model or ""),
-                source="chat",
-                stage="responding",
-                metadata={"trace_kind": "warning"},
-            )
+        messages = self._prepare_messages_with_attachments(messages, context)
 
         # Build the per-turn OpenAI client via ``_build_openai_client`` so
         # tests can monkey-patch that method post-instantiation to inject a
@@ -426,13 +419,39 @@ class AgenticChatPipeline:
         # call_id so it does NOT spawn its own sub-trace; each LLM iteration
         # and each tool call below allocate their own call_id and surface as
         # individual sub-traces in CallTracePanel.
+        completion_kwargs = self._completion_kwargs(max_tokens=self._responding_max_tokens)
+
+        # Reasoning models (e.g. Qwen3.6-Plus) need ``enable_thinking``
+        # explicitly set so the API correctly handles thinking + tool_calls.
+        # When the binding already has a ``thinking_style`` (e.g. dashscope),
+        # ``build_provider_extra_kwargs`` handles this. But when the model is
+        # accessed via a generic binding (e.g. custom / OpenAI-compatible)
+        # that lacks ``thinking_style``, we must inject it here.
+        if _is_reasoner and use_native_tools:
+            _spec = find_by_name(self.binding)
+            if not (_spec and _spec.thinking_style):
+                completion_kwargs.setdefault("extra_body", {})["enable_thinking"] = True
+
+        # When native tool calling is unavailable (no tool schemas), strip
+        # the TOOL label from the protocol so the loop does not expect
+        # ``tool_calls`` deltas and trigger ``tool_without_calls`` violations.
+        protocol = _CHAT_PROTOCOL
+        if not use_native_tools and protocol.tool_label is not None:
+            protocol = LabelProtocol(
+                allowed=tuple(l for l in protocol.allowed if l != LABEL_TOOL),
+                terminal=protocol.terminal,
+                intermediate=protocol.intermediate,
+                final=protocol.final,
+                tool_label=None,
+            )
+
         async with stream.stage("responding", source="chat"):
             outcome = await run_agentic_loop(
                 initial_messages=messages,
-                protocol=_CHAT_PROTOCOL,
+                protocol=protocol,
                 client=client,
                 model=self.model,
-                completion_kwargs=self._completion_kwargs(max_tokens=self._responding_max_tokens),
+                completion_kwargs=completion_kwargs,
                 binding=self.binding,
                 tool_schemas=tool_schemas,
                 stream=stream,
@@ -441,12 +460,11 @@ class AgenticChatPipeline:
                 max_iterations=max(1, self._max_iterations),
                 host=host,
                 usage=self._usage,
-                # Reasoning models that natively emit ``<think>...</think>``
-                # without parroting back ``\`\`THINK\`\``` are gracefully
-                # accepted as a THINK iteration rather than treated as a
-                # protocol violation (which would burn budget on repair
-                # retries that the model can't actually satisfy).
-                implicit_think_label=LABEL_THINK,
+                # Thinking traces are trace data, not loop-control actions.
+                # The formal content stream must still begin with FINISH /
+                # TOOL / THINK / PAUSE so protocol repair can catch missing
+                # labels instead of silently treating answers as THINK.
+                implicit_think_label=None,
             )
 
         if outcome.sources:
@@ -1132,7 +1150,7 @@ class AgenticChatPipeline:
                 system_prompt=system_prompt,
                 user_content=original_user_message,
             )
-            messages, _ = self._prepare_messages_with_attachments(messages, context)
+            messages = self._prepare_messages_with_attachments(messages, context)
             if partial_response:
                 messages.append({"role": "assistant", "content": partial_response})
             messages.append(
@@ -1326,6 +1344,41 @@ class AgenticChatPipeline:
         )
         return append_language_directive(system, self.language)
 
+    def _append_reasoner_protocol_note(self, system_prompt: str) -> str:
+        """Append a note for reasoning models that support native tool calling.
+
+        Reasoning models (e.g. Qwen3.6-Plus) emit reasoning via
+        ``reasoning_content`` and tool calls via native ``tool_calls``
+        deltas. The reasoning stream is displayed separately, but the
+        formal ``content`` stream still controls the agent loop through the
+        standard first-line label.
+        """
+        if self.language == "zh":
+            note = (
+                "\n\n# 推理模型特别说明\n"
+                "你是一个原生支持推理和工具调用的模型。"
+                "你的推理过程会自动在独立的思考轨迹区域显示；"
+                "但正式回复正文仍然必须遵守上面的「输出协议」，第一行写且只写一个标签："
+                "``FINISH``、``TOOL``、``THINK`` 或 ``PAUSE``。"
+                "需要调用工具时，正式正文第一行写 ``TOOL``，并在同一次回复里通过原生 tool_calls 发起调用；"
+                "不要把工具调用写成 JSON 文本。"
+                "准备给最终答案时，正式正文第一行写 ``FINISH``。"
+            )
+        else:
+            note = (
+                "\n\n# Reasoning Model Special Instructions\n"
+                "You are a model with native reasoning and tool-calling support. "
+                "Your reasoning is automatically displayed in a separate trace, "
+                "but your formal content stream must still follow the Output "
+                "Protocol above: the first line must be exactly one label, "
+                "``FINISH``, ``TOOL``, ``THINK``, or ``PAUSE``. "
+                "When you need a tool, put ``TOOL`` on the first line and emit "
+                "real native tool_calls in the same reply; do NOT write tool-call "
+                "JSON as text. When you are ready to answer, put ``FINISH`` on "
+                "the first line."
+            )
+        return system_prompt + note
+
     def _build_messages(
         self,
         *,
@@ -1365,14 +1418,17 @@ class AgenticChatPipeline:
         self,
         messages: list[dict[str, Any]],
         context: UnifiedContext,
-    ) -> tuple[list[dict[str, Any]], bool]:
+    ) -> list[dict[str, Any]]:
+        # Stage-1: images are injected for every model. A model that cannot
+        # actually handle them degrades to text-only via the Stage-2 fallback
+        # in ``labeled_step`` (it strips images and retries) rather than here.
         mm_result = prepare_multimodal_messages(
             messages,
             context.attachments,
             binding=self.binding,
             model=self.model,
         )
-        return mm_result.messages, mm_result.images_stripped
+        return mm_result.messages
 
     # ------------------------------------------------------------------
     # Tool selection + scheme construction

@@ -24,6 +24,9 @@ export interface NotebookSummary {
   record_count?: number;
   created_at?: number;
   updated_at?: number;
+  source?: "admin" | "user";
+  read_only?: boolean;
+  provenance_label?: string;
 }
 
 export interface NotebookRecordItem {
@@ -217,12 +220,16 @@ export async function lookupNotebookEntry(
   const params = new URLSearchParams({
     session_id: sessionId,
     question_id: questionId,
+    // Probe quietly: a not-yet-saved question returns 204 instead of 404, so
+    // it stays out of the server error log and the browser network console.
+    missing_ok: "true",
   });
   if (turnId) params.set("turn_id", turnId);
   const response = await apiFetch(
     apiUrl(`/api/v1/question-notebook/entries/lookup/by-question?${params}`),
   );
-  if (response.status === 404) return null;
+  // 204 (missing_ok hit) and 404 (older servers) both mean "no entry yet".
+  if (response.status === 204 || response.status === 404) return null;
   return expectJson<NotebookEntry>(response);
 }
 

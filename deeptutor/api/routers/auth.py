@@ -25,14 +25,6 @@ from deeptutor.multi_user.context import (
 from deeptutor.multi_user.models import CurrentUser
 from deeptutor.multi_user.paths import local_admin_user
 from deeptutor.services.config import load_auth_settings
-
-# SameSite=None lets the cookie work when the browser accesses the frontend via
-# 127.0.0.1 and the backend via localhost (different origins on the same machine).
-# Browsers require Secure=True for SameSite=None, but that needs HTTPS — so in
-# local dev we fall back to SameSite=Lax and tell users to use localhost:// URLs.
-_SECURE = bool(load_auth_settings()["cookie_secure"])
-_SAMESITE = "none" if _SECURE else "lax"
-
 from deeptutor.services.auth import (
     AUTH_ENABLED,
     POCKETBASE_ENABLED,
@@ -49,6 +41,13 @@ from deeptutor.services.auth import (
     register_pb,
     set_role,
 )
+
+# SameSite=None lets the cookie work when the browser accesses the frontend via
+# 127.0.0.1 and the backend via localhost (different origins on the same machine).
+# Browsers require Secure=True for SameSite=None, but that needs HTTPS — so in
+# local dev we fall back to SameSite=Lax and tell users to use localhost:// URLs.
+_SECURE = bool(load_auth_settings()["cookie_secure"])
+_SAMESITE = "none" if _SECURE else "lax"
 
 logger = logging.getLogger(__name__)
 
@@ -164,6 +163,27 @@ def _extract_token(authorization: str | None, dt_token: str | None) -> str | Non
 # ---------------------------------------------------------------------------
 
 
+def _install_current_user(payload: TokenPayload | None) -> Token[CurrentUser | None]:
+    """Install the request-local current-user ContextVar from an auth result.
+
+    Single point of truth for ``payload → CurrentUser`` so HTTP and WebSocket
+    entry points produce identical user objects. ``payload is None`` means
+    "no JWT was required" (AUTH_ENABLED=false) and resolves to the local
+    admin user; a non-None payload resolves through ``user_from_token_payload``.
+
+    Returns the ContextVar reset token. HTTP generator dependencies reset it in
+    their ``finally`` block; WebSocket callers keep it and call
+    ``reset_current_user`` in their own ``finally`` block because a WS
+    connection outlives dependency resolution.
+
+    Invariant: every authenticated entry point MUST call this before the
+    handler runs. Skipping it leaves ``get_current_path_service()`` falling
+    back to the admin workspace — the silent-routing root cause of #481.
+    """
+    user = local_admin_user() if payload is None else user_from_token_payload(payload)
+    return set_current_user(user)
+
+
 async def require_auth(
     authorization: str | None = Header(default=None, alias="Authorization"),
     dt_token: str | None = Cookie(default=None),
@@ -175,16 +195,25 @@ async def require_auth(
       - Authorization: Bearer <token> header
       - dt_token cookie
 
-    Works on both HTTP and WebSocket routes — ``Header`` and ``Cookie`` are
-    WS-compatible, while ``HTTPBearer`` (which we used to use here) is not.
+    ``Header`` and ``Cookie`` are kept here in place of ``HTTPBearer`` so the
+    function stays usable from WebSocket call sites that don't go through
+    FastAPI's standard HTTP request lifecycle.
 
     Returns the authenticated TokenPayload, or None if auth is disabled.
     Raises HTTP 401 if auth is enabled but the token is missing or invalid.
+
+    Declared ``async def`` so the ``set_current_user`` call runs in the same
+    asyncio context as the endpoint. A sync dependency is dispatched via
+    ``anyio.to_thread.run_sync``, which executes the function in a worker
+    thread under a *copy* of the request context; any ``ContextVar.set``
+    inside that thread is discarded when the thread returns, leaving the
+    endpoint to read the unset default. That regression was the root cause
+    of #481.
     """
     context_token: Token[CurrentUser | None] | None = None
     try:
         if not AUTH_ENABLED:
-            context_token = set_current_user(local_admin_user())
+            context_token = _install_current_user(None)
             yield None
             return
 
@@ -205,7 +234,7 @@ async def require_auth(
                 headers={"WWW-Authenticate": "Bearer"},
             )
 
-        context_token = set_current_user(user_from_token_payload(payload))
+        context_token = _install_current_user(payload)
         yield payload
     finally:
         if context_token is not None:
@@ -240,12 +269,8 @@ async def ws_require_auth(ws: WebSocket) -> Token[CurrentUser | None] | _WsAuthF
         finally:
             reset_current_user(user_token)
     """
-    from deeptutor.multi_user.context import set_current_user, user_from_token_payload
-    from deeptutor.multi_user.paths import local_admin_user
-    from deeptutor.services.auth import AUTH_ENABLED, decode_token
-
     if not AUTH_ENABLED:
-        return set_current_user(local_admin_user())
+        return _install_current_user(None)
 
     token = ws.query_params.get("token") or ws.cookies.get("dt_token")
     payload = decode_token(token) if token else None
@@ -253,10 +278,10 @@ async def ws_require_auth(ws: WebSocket) -> Token[CurrentUser | None] | _WsAuthF
         await ws.close(code=4001)
         return ws_auth_failed
 
-    return set_current_user(user_from_token_payload(payload))
+    return _install_current_user(payload)
 
 
-def require_admin(
+async def require_admin(
     payload: TokenPayload | None = Depends(require_auth),
 ) -> TokenPayload:
     """
@@ -264,9 +289,13 @@ def require_admin(
 
     Raises HTTP 403 if the authenticated user is not an admin.
     When AUTH_ENABLED=false, all requests are treated as admin.
+
+    ``async def`` mirrors ``require_auth`` so the dependency chain stays on
+    the event loop and the user ContextVar set by ``require_auth`` is visible
+    to the endpoint.
     """
     if not AUTH_ENABLED:
-        return TokenPayload(username="local", role="admin", user_id="local-admin")
+        return _local_admin_token_payload()
 
     if payload is None or payload.role != "admin":
         raise HTTPException(
@@ -274,6 +303,23 @@ def require_admin(
             detail="Admin access required",
         )
     return payload
+
+
+def _local_admin_token_payload() -> TokenPayload:
+    """Synthetic admin payload used when AUTH_ENABLED=false.
+
+    Mirrors the local admin identity (LOCAL_ADMIN_USERNAME / LOCAL_ADMIN_ID)
+    so audit logs and self-reference checks behave the same as in multi-user
+    mode. Values are kept aligned with ``local_admin_user()`` in
+    ``deeptutor/multi_user/paths.py``.
+    """
+    from deeptutor.multi_user.models import LOCAL_ADMIN_ID, LOCAL_ADMIN_USERNAME
+
+    return TokenPayload(
+        username=LOCAL_ADMIN_USERNAME,
+        role="admin",
+        user_id=LOCAL_ADMIN_ID,
+    )
 
 
 # ---------------------------------------------------------------------------

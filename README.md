@@ -44,16 +44,20 @@
 
 ### 📦 Releases
 
+> **[2026.5.28]** [v1.4.2](https://github.com/HKUDS/DeepTutor/releases/tag/v1.4.2) — Stability + polish on v1.4.1: Gemini 2.5+ unblocked across Visualize and Chat, ContextVar auth-routing fix (#485), reasoning + native-tools label protocol hardened, smooth-streaming UX on every chat surface, new collapsible Recents sidebar, and Lemonade local-provider support.
+
+> **[2026.5.27]** [v1.4.1](https://github.com/HKUDS/DeepTutor/releases/tag/v1.4.1) — Security + stability patch: TutorBot tool sandbox locked down, per-user resource isolation, multimodal image fallback for vision-capable providers, an HTTP/SSE API for talking to a TutorBot, and a v1.4.0 chat regression fix.
+
 > **[2026.5.22]** [v1.4.0](https://github.com/HKUDS/DeepTutor/releases/tag/v1.4.0) — GA cut of v1.4: Auto Mode, three-layer Memory, agentic Deep Research / Solve / Question, LlamaIndex RAG refactor, Visualize/Animator merge, plus reasoning-effort normalization, tool-schema fallback, and restart-safe turn runtime.
 
 > **[2026.5.21]** [v1.4.0-beta](https://github.com/HKUDS/DeepTutor/releases/tag/v1.4.0-beta) — Three-layer Memory workbench (L1/L2/L3), every chat capability rebuilt on a single agentic engine, LlamaIndex-only RAG, and a unified Settings + Capabilities surface.
 
+<details>
+<summary><b>Past releases (more than 2 weeks ago)</b></summary>
+
 > **[2026.5.10]** [v1.3.10](https://github.com/HKUDS/DeepTutor/releases/tag/v1.3.10) — Remote Docker CORS recovery, `DISABLE_SSL_VERIFY` across SDK providers, safer code-block citations, and optional Matrix E2EE add-on.
 
 > **[2026.5.9]** [v1.3.9](https://github.com/HKUDS/DeepTutor/releases/tag/v1.3.9) — TutorBot Zulip and NVIDIA NIM support, safer thinking-model routing, `deeptutor start`, sidebar tooltips, and session-store parity.
-
-<details>
-<summary><b>Past releases (more than 2 weeks ago)</b></summary>
 
 > **[2026.5.8]** [v1.3.8](https://github.com/HKUDS/DeepTutor/releases/tag/v1.3.8) — Optional multi-user deployments with isolated user workspaces, admin grants, auth routes, and scoped runtime access.
 
@@ -166,7 +170,7 @@
 
 DeepTutor ships four installation paths. They all share one workspace layout: settings live in `data/user/settings/` under the directory you launch from (or under `DEEPTUTOR_HOME` / `deeptutor start --home` if you set one explicitly). For the full app, the recommended flow is **pick a workspace directory → install → `deeptutor init` → `deeptutor start`**.
 
-> ✨ **v1.4.0 is live.** `pip install -U deeptutor` picks up the latest stable. Pre-releases (when available) opt in with `pip install --pre -U deeptutor`.
+> ✨ **v1.4.2 is live.** `pip install -U deeptutor` picks up the latest stable. Pre-releases (when available) opt in with `pip install --pre -U deeptutor`.
 
 ### Option 1 — Install From PyPI
 
@@ -266,8 +270,29 @@ Open [http://127.0.0.1:3782](http://127.0.0.1:3782). The container creates `/app
 - **Different host ports:** change the left side of each `-p host:container` mapping (e.g. `-p 127.0.0.1:8088:3782`). If you change container-side ports in `/app/data/user/settings/system.json`, restart and update the right side of each mapping to match.
 - **Detached:** add `-d`, then `docker logs -f deeptutor` to follow, `docker stop deeptutor` to stop, `docker rm deeptutor` before reusing the name. The `deeptutor-data` volume keeps your settings and workspace across restarts.
 
+**Remote Docker / reverse proxy:** the Web UI runs in the browser, so the
+browser needs a backend URL it can reach. For remote servers, open
+**Settings -> Network** or edit `data/user/settings/system.json`:
+
+```json
+{
+  "next_public_api_base_external": "https://deeptutor.example.com"
+}
+```
+
+`public_api_base` is accepted as a compatibility alias and is normalized into
+`next_public_api_base_external` on save. CORS uses frontend **origins**, not API
+URLs. With auth disabled, DeepTutor permits normal HTTP/HTTPS browser origins by
+default. With auth enabled, add exact frontend origins:
+
+```json
+{
+  "cors_origins": ["https://deeptutor.example.com"]
+}
+```
+
 <details>
-<summary><b>Connecting to Ollama / LM Studio / llama.cpp / vLLM on the host</b></summary>
+<summary><b>Connecting to Ollama / LM Studio / llama.cpp / vLLM / Lemonade on the host</b></summary>
 
 Inside Docker, `localhost` is the container itself, not your host machine. To reach a model service running on the host, use the host gateway (recommended):
 
@@ -285,6 +310,7 @@ Then in **Settings → Models**, point the provider Base URL at `host.docker.int
 - Ollama embedding: `http://host.docker.internal:11434/api/embed`
 - LM Studio: `http://host.docker.internal:1234/v1`
 - llama.cpp: `http://host.docker.internal:8080/v1`
+- Lemonade: `http://host.docker.internal:13305/api/v1`
 
 Docker Desktop (macOS/Windows) usually resolves `host.docker.internal` without `--add-host`. On Linux, the flag is the portable way to create that hostname on modern Docker Engine.
 
@@ -653,6 +679,7 @@ Flip on authentication and DeepTutor turns into a multi-tenant deployment with *
 ```bash
 # 1. Enable auth in data/user/settings/auth.json:
 #    {"enabled": true, "token_expire_hours": 24, "cookie_secure": false}
+#    Use cookie_secure=true for HTTPS deployments where Web and API are cross-site.
 
 # 2. Restart the web stack.
 deeptutor start
@@ -706,8 +733,9 @@ multi-user/
 | `data/user/settings/auth.json: enabled` | Yes | Set to `true` to enable multi-user auth. Default `false` (single-user mode — admin paths everywhere). |
 | `multi-user/_system/auth/auth_secret` | Recommended | JWT signing secret. Auto-generated on first authenticated boot if missing. |
 | `data/user/settings/auth.json: token_expire_hours` | No | JWT lifetime; defaults to `24`. |
+| `data/user/settings/auth.json: cookie_secure` | HTTPS / cross-site auth | Set `true` for HTTPS deployments that need `SameSite=None` cookies. Keep `false` for local HTTP. |
 | `data/user/settings/auth.json: username/password_hash` | No | Optional headless single-user bootstrap credential. Leave blank when using browser registration. |
-| `data/user/settings/system.json` | No | `deeptutor start` derives frontend auth flags and API base from runtime settings. |
+| `data/user/settings/system.json` | No | `deeptutor start` derives frontend auth flags, public API base, and CORS origins from runtime settings. |
 
 > ⚠️ **PocketBase mode (`integrations.pocketbase_url` set) is single-user only.** The default PocketBase schema has no `role` field on `users` (every login resolves to `role=user`, no admin can be created), and `sessions` / `messages` / `turns` queries are not filtered by `user_id`. Multi-user deployments must keep `integrations.pocketbase_url` blank and use the default JSON/SQLite backend.
 
