@@ -19,6 +19,8 @@ const ImagePreview = dynamic(() => import("./previewers/ImagePreview"));
 const SvgPreview = dynamic(() => import("./previewers/SvgPreview"));
 const MarkdownPreview = dynamic(() => import("./previewers/MarkdownPreview"));
 const TextPreview = dynamic(() => import("./previewers/TextPreview"));
+const DocxPreview = dynamic(() => import("./previewers/DocxPreview"));
+const XlsxPreview = dynamic(() => import("./previewers/XlsxPreview"));
 const OfficeTextPreview = dynamic(
   () => import("./previewers/OfficeTextPreview"),
 );
@@ -259,6 +261,15 @@ const PreviewBody = memo(function PreviewBody({
   kind: ReturnType<typeof previewKindFor> | null;
 }) {
   const filename = source.filename;
+  const rawExtractedTextUrl = source.extractedTextUrl;
+  let extractedTextUrl: string | null = null;
+  if (rawExtractedTextUrl) {
+    extractedTextUrl =
+      rawExtractedTextUrl.startsWith("http") ||
+      rawExtractedTextUrl.startsWith("blob:")
+        ? rawExtractedTextUrl
+        : apiUrl(rawExtractedTextUrl);
+  }
 
   // Office docs lean on extracted_text and degrade gracefully via the
   // OfficeTextPreview, even when previewUrl is missing (legacy messages).
@@ -267,6 +278,7 @@ const PreviewBody = memo(function PreviewBody({
       <OfficeTextPreview
         filename={filename}
         extractedText={source.extractedText}
+        extractedTextUrl={extractedTextUrl}
         url={previewUrl}
       />
     );
@@ -280,6 +292,10 @@ const PreviewBody = memo(function PreviewBody({
   switch (kind) {
     case "pdf":
       return <PdfPreview url={previewUrl} filename={filename} />;
+    case "docx":
+      return <DocxPreview url={previewUrl} />;
+    case "xlsx":
+      return <XlsxPreview url={previewUrl} />;
     case "image":
       return <ImagePreview url={previewUrl} filename={filename} />;
     case "svg":

@@ -269,9 +269,7 @@ export default function MemoryGraph() {
             />
           )}
 
-          {hover && (
-            <HoverCard hover={hover} view={view} containerRef={containerRef} />
-          )}
+          {hover && <HoverCard hover={hover} view={view} />}
         </div>
 
         {graph && !loading && <Legend graph={graph} />}
@@ -301,7 +299,7 @@ function Header({
           {t("Memory")}
         </Link>
         <div className="flex flex-col">
-          <h1 className="text-[16px] font-semibold tracking-tight text-[var(--foreground)]">
+          <h1 className="font-serif text-[16px] font-semibold tracking-tight text-[var(--foreground)]">
             {t("Memory graph")}
           </h1>
           <p className="text-[11.5px] text-[var(--muted-foreground)]">
@@ -905,11 +903,9 @@ function Legend({ graph }: { graph: MemoryGraph }) {
 function HoverCard({
   hover,
   view,
-  containerRef,
 }: {
   hover: HoverState;
   view: ViewState;
-  containerRef: React.RefObject<HTMLDivElement | null>;
 }) {
   const { t } = useTranslation();
   const { node } = hover;
@@ -917,9 +913,8 @@ function HoverCard({
   // cursor), so we don't have to handle mousemove for every dot. The
   // card is offset down-right of the node so the user can still read
   // the dot underneath the cursor.
-  const rect = containerRef.current?.getBoundingClientRect();
-  const screenX = (rect?.left ?? 0) + node.x * view.scale + view.tx;
-  const screenY = (rect?.top ?? 0) + node.y * view.scale + view.ty;
+  const screenX = node.x * view.scale + view.tx;
+  const screenY = node.y * view.scale + view.ty;
   const offset = Math.max(node.r * view.scale + 14, 18);
   const style: CSSProperties = {
     left: screenX + offset,
@@ -928,7 +923,7 @@ function HoverCard({
   const meta = nodeMeta(node, t);
   return (
     <div
-      className="pointer-events-none fixed z-50 max-w-sm rounded-lg border border-[var(--border)] bg-[var(--card)] p-3 text-[12px] shadow-lg"
+      className="pointer-events-none absolute z-50 max-w-sm rounded-lg border border-[var(--border)] bg-[var(--card)] p-3 text-[12px] shadow-lg"
       style={style}
     >
       <div className="mb-1 flex items-center gap-2 text-[10.5px] uppercase tracking-wider text-[var(--muted-foreground)]">

@@ -48,6 +48,8 @@ export default function MemorySettingsPage() {
   }, []);
 
   useEffect(() => {
+    // Initial async fetch populates the settings page after mount.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     void load();
   }, [load]);
 
@@ -59,7 +61,9 @@ export default function MemorySettingsPage() {
   // Latest-save ref so the closure handed to registerExtension always
   // reflects the current settings without re-registering on each render.
   const settingsRef = useRef(settings);
-  settingsRef.current = settings;
+  useEffect(() => {
+    settingsRef.current = settings;
+  }, [settings]);
   const save = useCallback(async () => {
     const current = settingsRef.current;
     if (!current) return;

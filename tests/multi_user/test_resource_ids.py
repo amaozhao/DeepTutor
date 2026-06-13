@@ -5,9 +5,9 @@ from pathlib import Path
 import pytest
 
 from deeptutor.multi_user.resource_ids import safe_resolve_under
+from deeptutor.partners.config import paths as partner_paths
 from deeptutor.services.path_service import get_path_service
-from deeptutor.services.tutorbot.manager import TutorBotManager
-from deeptutor.tutorbot.config import paths as tutorbot_paths
+from deeptutor.services.partners.manager import PartnerManager
 
 
 def test_path_service_rejects_unsafe_resource_ids(as_multi_user) -> None:
@@ -51,15 +51,14 @@ def test_safe_resolve_under_rejects_escape(tmp_path: Path) -> None:
         safe_resolve_under(root, "../outside")
 
 
-def test_tutorbot_path_helpers_reject_unsafe_bot_ids(as_multi_user) -> None:
+def test_partner_path_helpers_reject_unsafe_partner_ids(as_multi_user) -> None:
     with as_multi_user("u_alpha"):
         with pytest.raises(ValueError):
-            tutorbot_paths.get_bot_dir("../other-user")
+            partner_paths.get_partner_dir("../other-user")
 
 
-def test_tutorbot_manager_rejects_unsafe_bot_ids(tmp_path: Path) -> None:
-    manager = TutorBotManager()
-    manager._tutorbot_root = tmp_path / "tutorbot"  # type: ignore[attr-defined]
+def test_partner_manager_rejects_unsafe_partner_ids() -> None:
+    manager = PartnerManager()
 
     with pytest.raises(ValueError):
-        manager._bot_dir("../other-user")
+        manager._partner_dir("../other-user")

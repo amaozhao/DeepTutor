@@ -1,6 +1,5 @@
 """Auth router — login, logout, status, registration, and user-management endpoints."""
 
-from collections.abc import AsyncIterator
 from contextvars import Token
 import logging
 import re
@@ -187,7 +186,7 @@ def _install_current_user(payload: TokenPayload | None) -> Token[CurrentUser | N
 async def require_auth(
     authorization: str | None = Header(default=None, alias="Authorization"),
     dt_token: str | None = Cookie(default=None),
-) -> AsyncIterator[TokenPayload | None]:
+) -> TokenPayload | None:
     """
     FastAPI dependency that enforces authentication when AUTH_ENABLED=true.
 
@@ -210,35 +209,29 @@ async def require_auth(
     endpoint to read the unset default. That regression was the root cause
     of #481.
     """
-    context_token: Token[CurrentUser | None] | None = None
-    try:
-        if not AUTH_ENABLED:
-            context_token = _install_current_user(None)
-            yield None
-            return
+    if not AUTH_ENABLED:
+        _install_current_user(None)
+        return None
 
-        token = _extract_token(authorization, dt_token)
+    token = _extract_token(authorization, dt_token)
 
-        if not token:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Not authenticated",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
 
-        payload = decode_token(token)
-        if not payload:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid or expired token",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
+    payload = decode_token(token)
+    if not payload:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
 
-        context_token = _install_current_user(payload)
-        yield payload
-    finally:
-        if context_token is not None:
-            reset_current_user(context_token)
+    _install_current_user(payload)
+    return payload
 
 
 class _WsAuthFailed:

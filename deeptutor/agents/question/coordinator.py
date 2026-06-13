@@ -148,6 +148,24 @@ class AgentCoordinator:
             logger.exception("Legacy AgentCoordinator.generate_from_exam failed: %s", exc)
             return {"success": False, "error": str(exc), "results": []}
 
+    async def _parse_exam_to_templates(
+        self,
+        *,
+        exam_paper_path: str,
+        max_questions: int = 10,
+        paper_mode: str = "upload",
+    ):
+        """Compatibility wrapper for older tests and internal call sites."""
+        paper_path = Path(str(exam_paper_path or "").strip())
+        if paper_mode == "parsed" and not paper_path.is_absolute():
+            paper_path = get_path_service().get_question_dir() / paper_path
+        return await parse_exam_paper_to_templates(
+            paper_path,
+            max_questions=max(1, int(max_questions or 1)),
+            paper_mode=paper_mode,
+            output_dir=self._resolve_output_dir(),
+        )
+
     def _build_context(self, *, user_message: str) -> UnifiedContext:
         kb_name = self._active_kb_name()
         return UnifiedContext(

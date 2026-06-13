@@ -1,4 +1,9 @@
-"""Server-side model grant resolution and redacted model views."""
+"""Server-side model grant resolution and redacted model views.
+
+Grants carry LLM assignments only (grant v2): embedding and search always
+resolve from the deployment's active profiles, so per-user grants for them
+were never enforced and are not stored.
+"""
 
 from __future__ import annotations
 
@@ -18,7 +23,9 @@ LLM_SOURCE_USER = "user"
 
 
 def admin_catalog_service() -> ModelCatalogService:
-    return ModelCatalogService(path=get_admin_path_service().get_settings_file("model_catalog"))
+    from deeptutor.services.config import get_model_catalog_service
+
+    return get_model_catalog_service()
 
 
 def admin_catalog() -> dict[str, Any]:
@@ -60,45 +67,32 @@ def redacted_model_access(user_id: str | None = None) -> dict[str, list[dict[str
         user_id = user.id
     grant = load_grant(user_id)
     catalog = admin_catalog()
-    result: dict[str, list[dict[str, Any]]] = {"llm": [], "embedding": [], "search": []}
-    for service in SERVICES:
-        for item in grant.get("models", {}).get(service, []) or []:
-            profile_id = str(item.get("profile_id") or item.get("id") or "")
-            profile = _profile_by_id(catalog, service, profile_id)
-            if not profile:
-                result[service].append(
-                    {
-                        "profile_id": profile_id,
-                        "name": item.get("name") or profile_id or "Unavailable profile",
-                        "source": "admin",
-                        "available": False,
-                    }
-                )
-                continue
-            model_ids = item.get("model_ids") or []
-            if service == "search":
-                result[service].append(
-                    {
-                        "profile_id": profile_id,
-                        "name": profile.get("name") or profile.get("provider") or profile_id,
-                        "provider": profile.get("provider", ""),
-                        "source": "admin",
-                        "available": True,
-                    }
-                )
-                continue
-            for model_id in model_ids:
-                model = _model_by_id(profile, str(model_id))
-                result[service].append(
-                    {
-                        "profile_id": profile_id,
-                        "model_id": str(model_id),
-                        "name": (model or {}).get("name") or str(model_id),
-                        "model": (model or {}).get("model") or "",
-                        "source": "admin",
-                        "available": model is not None,
-                    }
-                )
+    result: dict[str, list[dict[str, Any]]] = {"llm": []}
+    for item in grant.get("models", {}).get("llm", []) or []:
+        profile_id = str(item.get("profile_id") or item.get("id") or "")
+        profile = _profile_by_id(catalog, "llm", profile_id)
+        if not profile:
+            result["llm"].append(
+                {
+                    "profile_id": profile_id,
+                    "name": item.get("name") or profile_id or "Unavailable profile",
+                    "source": "admin",
+                    "available": False,
+                }
+            )
+            continue
+        for model_id in item.get("model_ids") or []:
+            model = _model_by_id(profile, str(model_id))
+            result["llm"].append(
+                {
+                    "profile_id": profile_id,
+                    "model_id": str(model_id),
+                    "name": (model or {}).get("name") or str(model_id),
+                    "model": (model or {}).get("model") or "",
+                    "source": "admin",
+                    "available": model is not None,
+                }
+            )
     return result
 
 

@@ -98,15 +98,15 @@ async def _chat_repl(state: ChatState) -> None:
     console.print(
         Panel(
             "[bold]DeepTutor CLI[/]\n"
-            "Type a message to chat. Commands:\n"
-            "  /quit  /session  /new\n"
+            "Type a message to chat. Ctrl-C interrupts a running turn. Commands:\n"
+            "  /quit  /session  /status  /new  /clear\n"
             "  /regenerate (alias /retry) — re-run the last user message\n"
             "  /tool on|off <name>\n"
             "  /cap <name>\n"
             "  /kb <name>|none\n"
             "  /history add <id> | /history clear\n"
             "  /notebook add <ref> | /notebook clear\n"
-            "  /show last|<n> — expand a truncated tool result\n"
+            "  /show last|<n> — expand a tool result or captured thinking\n"
             "  /refs  /config show|set|clear",
             title="deeptutor chat",
         )
@@ -172,7 +172,10 @@ def _apply_command(raw: str, state: ChatState) -> bool:
     if command == "/session":
         console.print(f"session={state.session_id or '(new)'}")
         return True
-    if command == "/new":
+    if command == "/status":
+        _print_state(state)
+        return True
+    if command in {"/new", "/clear"}:
         state.session_id = None
         console.print("[dim]Started a new chat context.[/]")
         return True
@@ -333,7 +336,7 @@ def _parse_notebook_refs(values: list[str]) -> list[dict[str, Any]]:
 def _parse_config_value(raw_value: str) -> Any:
     try:
         return json.loads(raw_value)
-    except json.JSONDecodeError:
+    except (json.JSONDecodeError, TypeError):
         lowered = raw_value.lower()
         if lowered == "true":
             return True

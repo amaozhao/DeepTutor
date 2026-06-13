@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useState } from "react";
 import {
   ChevronDown,
   Plus,
@@ -34,22 +34,18 @@ export default function ResearchOutlineEditor({
   // re-expand by clicking the summary header. While editing, stays open.
   // ``userToggled`` latches on the first user click so subsequent
   // status-change re-renders don't keep slamming the card closed.
-  const [collapsed, setCollapsed] = useState(false);
-  const userToggledRef = useRef(false);
+  const [collapsedOverride, setCollapsedOverride] = useState<boolean | null>(null);
 
   const locked =
     externalStatus === "researching" ||
     externalStatus === "done" ||
     localConfirmed;
 
-  useEffect(() => {
-    if (locked && !userToggledRef.current) setCollapsed(true);
-  }, [locked]);
+  const collapsed = collapsedOverride ?? locked;
 
   const toggleCollapsed = useCallback(() => {
-    userToggledRef.current = true;
-    setCollapsed((c) => !c);
-  }, []);
+    setCollapsedOverride(!collapsed);
+  }, [collapsed]);
 
   const updateItem = useCallback(
     (index: number, field: keyof OutlineItem, value: string) => {

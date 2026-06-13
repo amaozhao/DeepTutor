@@ -431,10 +431,7 @@ function TypeMultiSelect({ value, onChange }: TypeMultiSelectProps) {
   // for viewport changes that would move the trigger relative to the
   // page, so the portal-rendered menu follows.
   useLayoutEffect(() => {
-    if (!open) {
-      setMenuPos(null);
-      return;
-    }
+    if (!open) return;
     recomputePosition();
   }, [open, recomputePosition]);
 
@@ -495,30 +492,31 @@ function TypeMultiSelect({ value, onChange }: TypeMultiSelectProps) {
     onChange(has ? value.filter((x) => x !== qt) : [...value, qt]);
   };
 
+  const activeMenuPos = open ? menuPos : null;
   const menu =
-    open && menuPos && typeof document !== "undefined"
+    activeMenuPos && typeof document !== "undefined"
       ? createPortal(
           <div
             ref={menuRef}
             style={{
               position: "fixed",
               top:
-                menuPos.direction === "down" ? menuPos.anchorOffset : undefined,
+                activeMenuPos.direction === "down" ? activeMenuPos.anchorOffset : undefined,
               bottom:
-                menuPos.direction === "up" ? menuPos.anchorOffset : undefined,
+                activeMenuPos.direction === "up" ? activeMenuPos.anchorOffset : undefined,
               // Anchor to the trigger's right edge — the menu grows
               // leftward into the panel so long English labels never
               // push it off the viewport.
-              right: menuPos.rightCss,
+              right: activeMenuPos.rightCss,
               // Let the menu grow past the (narrow) trigger button so
               // long English labels like "Fill in the Blank" don't get
               // ellipsized. The leftward growth is capped to whatever
               // viewport space exists to the left of the trigger's
               // right edge (minus a small breathing margin).
-              minWidth: menuPos.triggerWidth,
+              minWidth: activeMenuPos.triggerWidth,
               maxWidth: Math.min(
                 240,
-                Math.max(menuPos.triggerWidth, menuPos.triggerRightX - 8),
+                Math.max(activeMenuPos.triggerWidth, activeMenuPos.triggerRightX - 8),
               ),
               maxHeight: 260,
               zIndex: 1000,

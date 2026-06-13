@@ -26,11 +26,23 @@ Multi-user setup (recommended):
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 import logging
+import os
 from typing import Any
 
 from deeptutor.services.config import load_auth_settings, load_integrations_settings
 
 logger = logging.getLogger(__name__)
+
+
+def _int_env(name: str, default: int) -> int:
+    """Backward-compatible integer env parser used by older tests/callers."""
+    raw = os.getenv(name, "").strip()
+    if not raw:
+        return default
+    try:
+        return int(raw)
+    except ValueError:
+        return default
 
 # ---------------------------------------------------------------------------
 # Configuration — read once at import time from runtime JSON settings

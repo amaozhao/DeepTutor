@@ -5,6 +5,7 @@ SQLite-backed unified chat session store.
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 import json
@@ -19,7 +20,10 @@ from deeptutor.services.path_service import get_path_service
 
 
 def _json_dumps(value: Any) -> str:
-    return json.dumps(value, ensure_ascii=False)
+    # default=str: a single non-serializable object inside an event payload
+    # (e.g. a dataclass smuggled into tool args) must degrade to its repr,
+    # never kill message/event persistence for the whole turn.
+    return json.dumps(value, ensure_ascii=False, default=str)
 
 
 # Sentinel so ``add_message`` can distinguish "caller wants the legacy
@@ -378,7 +382,13 @@ class SQLiteSessionStore:
             return await asyncio.to_thread(fn, *args)
 
     @contextmanager
-    def _connect(self):
+    def _connect(self) -> Iterator[sqlite3.Connection]:
+        # sqlite3.Connection's own context manager commits/rolls back but does
+        # NOT close the connection — so naked `with sqlite3.connect(...)` leaks
+        # one FD per call until GC. Wrap it so each call site gets both
+        # transaction semantics and deterministic close. The inner `with conn`
+        # commits on clean exit and rolls back on exception, so call sites do
+        # NOT need an explicit conn.commit() (any remaining ones are no-ops).
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA foreign_keys = ON")

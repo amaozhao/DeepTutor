@@ -27,7 +27,7 @@ async def _request_user_payload() -> dict[str, str]:
 
 
 @pytest.mark.asyncio
-async def test_require_auth_resets_request_local_user(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_require_auth_installs_request_local_user(monkeypatch: pytest.MonkeyPatch) -> None:
     previous = _current_user("admin-before", "admin")
     token = set_current_user(previous)
     try:
@@ -38,17 +38,14 @@ async def test_require_auth_resets_request_local_user(monkeypatch: pytest.Monkey
             lambda _token: TokenPayload(username="zhaoruoshui", role="user", user_id="child-1"),
         )
 
-        dependency = auth.require_auth(authorization="Bearer token", dt_token=None)
-        payload = await dependency.__anext__()
+        payload = await auth.require_auth(authorization="Bearer token", dt_token=None)
 
         assert payload is not None
         assert payload.username == "zhaoruoshui"
         assert get_current_user().id == "child-1"
         assert get_current_user().role == "user"
 
-        with pytest.raises(StopAsyncIteration):
-            await dependency.__anext__()
-
+        set_current_user(previous)
         assert get_current_user().id == "admin-before"
         assert get_current_user().role == "admin"
     finally:

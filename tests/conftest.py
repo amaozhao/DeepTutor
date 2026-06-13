@@ -19,6 +19,30 @@ from deeptutor.multi_user.models import CurrentUser, UserScope
 from deeptutor.services.path_service import PathService
 
 # ---------------------------------------------------------------------------
+# Multi-user legacy migration guard
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(autouse=True)
+def _guard_legacy_multi_user_migration(monkeypatch):
+    """Tests must never migrate the developer's real ``multi-user/`` tree.
+
+    ``migrate_legacy_multi_user_tree`` runs on the auth/grants/workspace read
+    paths, so any test that exercises those without full path isolation would
+    otherwise move a real sibling ``multi-user/`` into ``data/``. Point the
+    legacy root at a path that cannot exist and reset the once-flag;
+    migration tests opt back in by patching the constants themselves.
+    """
+    from deeptutor.multi_user import paths
+
+    monkeypatch.setattr(
+        paths, "LEGACY_MULTI_USER_ROOT", Path("/nonexistent/deeptutor-legacy-multi-user")
+    )
+    monkeypatch.setattr(paths, "_legacy_migration_done", False)
+    yield
+
+
+# ---------------------------------------------------------------------------
 # StreamBus
 # ---------------------------------------------------------------------------
 

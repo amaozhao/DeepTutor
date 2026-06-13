@@ -214,6 +214,22 @@ Modes: `hybrid` (default; semantic + keyword), `vector` (semantic only), `keywor
 
 Re-indexing isn't a CLI command — it's done from the **Web UI** (Knowledge → pick KB → **Index versions** tab → **Re-index now**). Useful after changing embedding models.
 
+## `deeptutor skill` — skill library & hubs
+
+```bash
+deeptutor skill list                              # Local skills, with hub provenance
+deeptutor skill search "git release notes"        # Semantic search on a hub (default: clawhub)
+deeptutor skill install clawhub:gh-release-notes  # Verify → fetch → register
+deeptutor skill install some-skill@1.2.0          # Hub prefix defaults to clawhub; @ pins a version
+deeptutor skill remove gh-release-notes
+```
+
+Hub references use `<hub>:<slug>[@version]`. Every install runs the same import gate: the hub's security verdict is checked first (flagged packages are refused unless you pass `--allow-unverified`), archives are extracted with zip-slip / zip-bomb guards, support files pass a text/script suffix whitelist so binaries never land in the workspace, and `always:` frontmatter is stripped so a downloaded package can't inject itself into every system prompt. Provenance (hub, version, verdict) is recorded in `.hub-lock.json` beside the skill.
+
+`install` flags: `--name` installs under a different local name, `--force` replaces an existing skill, `--allow-unverified` proceeds past a suspicious verdict.
+
+Registries beyond ClawHub are declared in `settings/skill_hubs.json` — `type: "clawhub"` points at any compatible HTTP API, `type: "command"` wraps a fetch CLI that drops the package into `{dest}`. In a multi-user deployment this CLI operates the admin workspace: an installed skill stays invisible to other users until a grant assigns it.
+
 ## `deeptutor session` — session inspection
 
 ### `session list`
@@ -316,23 +332,23 @@ Manual consolidation isn't a CLI command — fire it from the **Memory Workbench
 curl -X POST http://localhost:8001/api/v1/memory/runs/start
 ```
 
-## `deeptutor bot` — TutorBot lifecycle
+## `deeptutor partner` — Partner lifecycle
 
 ```bash
-deeptutor bot list
+deeptutor partner list
 
-deeptutor bot create my-bot \
+deeptutor partner create math-tutor \
   --name "Math Mentor" \
-  --persona "Socratic tutor specializing in algebra and calculus" \
+  --soul "Socratic tutor specializing in algebra and calculus" \
   --model gpt-4o
 
-# `create` starts the bot immediately. Use start later if it was stopped.
-deeptutor bot stop my-bot
+deeptutor partner stop math-tutor
+deeptutor partner start math-tutor
 ```
 
-Subcommands: `list`, `create`, `start`, `stop`. `create` writes the bot config and starts it in one step. Delete a bot by removing its workspace directory at `data/tutorbot/<bot_id>/` while it's stopped.
+Subcommands: `list`, `create`, `start`, `stop`. `create` writes partner config and attempts to start the partner. The Web UI is the recommended place to configure channel schemas, assets, tools, and secrets; the CLI is best for listing, creating, starting, and stopping.
 
-Channel configs (Telegram, Slack, etc.) live in the bot's YAML under `data/tutorbot/<bot_id>/`. See [**Explore TutorBot**](/docs/tutorbot/) for per-channel setup.
+Partners run inside `data/partners/<partner_id>/workspace/`. See [**Partners & Channels**](/docs/partners/) for channel setup.
 
 ## `deeptutor config show`
 

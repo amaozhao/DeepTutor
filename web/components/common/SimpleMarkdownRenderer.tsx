@@ -6,6 +6,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
   citationAnchorIdFor,
+  markdownUrlTransform,
   normalizeMarkdownForDisplay,
 } from "@/lib/markdown-display";
 import type { MarkdownRendererProps } from "./MarkdownRenderer";
@@ -499,7 +500,11 @@ export default function SimpleMarkdownRenderer({
 
   return (
     <div className={`${rootClasses} ${className}`}>
-      <ReactMarkdown remarkPlugins={remarkPlugins} components={components}>
+      <ReactMarkdown
+        remarkPlugins={remarkPlugins}
+        components={components}
+        urlTransform={markdownUrlTransform}
+      >
         {normalizedContent}
       </ReactMarkdown>
     </div>

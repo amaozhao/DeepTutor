@@ -126,6 +126,8 @@ GET    /api/v1/knowledge/default                      获取默认 KB
 PUT    /api/v1/knowledge/default/{kb_name}            设置默认 KB
 GET    /api/v1/knowledge/supported-file-types         支持的上传格式
 GET    /api/v1/knowledge/{kb_name}/files              列源文件
+GET    /api/v1/knowledge/{kb_name}/files/{filename}   取单个源文件（预览/下载）
+GET    /api/v1/knowledge/{kb_name}/file-preview-text/{filename}  提取的纯文本预览
 GET    /api/v1/knowledge/{kb_name}/progress           索引进度
 WS     /api/v1/knowledge/{kb_name}/progress/ws        进度流
 ```
@@ -193,22 +195,36 @@ POST /api/v1/system/test/search
 
 Provider profile 通过 catalog endpoint 编辑；当前 API 里没有单独的 `/settings/llm` 或 `/settings/embedding` 路由。
 
-## TutorBot Manager
+## Partners Manager
 
 ```text
-GET    /api/v1/tutorbot
-POST   /api/v1/tutorbot
-GET    /api/v1/tutorbot/recent
-GET    /api/v1/tutorbot/channels/schema
-GET    /api/v1/tutorbot/{bot_id}
-PATCH  /api/v1/tutorbot/{bot_id}
-DELETE /api/v1/tutorbot/{bot_id}
-DELETE /api/v1/tutorbot/{bot_id}/destroy
-GET    /api/v1/tutorbot/{bot_id}/files
-PUT    /api/v1/tutorbot/{bot_id}/files/{filename}
-GET    /api/v1/tutorbot/{bot_id}/history
-WS     /api/v1/tutorbot/{bot_id}/ws
+GET    /api/v1/partners
+POST   /api/v1/partners
+GET    /api/v1/partners/recent
+GET    /api/v1/partners/channels/schema
+GET    /api/v1/partners/tool-options
+GET    /api/v1/partners/souls
+POST   /api/v1/partners/souls
+GET    /api/v1/partners/soul-sources
+GET    /api/v1/partners/{partner_id}
+PATCH  /api/v1/partners/{partner_id}
+POST   /api/v1/partners/{partner_id}/start
+POST   /api/v1/partners/{partner_id}/stop
+DELETE /api/v1/partners/{partner_id}
+POST   /api/v1/partners/{partner_id}/channels/reload
+GET    /api/v1/partners/{partner_id}/soul
+PUT    /api/v1/partners/{partner_id}/soul
+GET    /api/v1/partners/{partner_id}/assets
+POST   /api/v1/partners/{partner_id}/assets
+DELETE /api/v1/partners/{partner_id}/assets/{asset_type}/{name}
+GET    /api/v1/partners/{partner_id}/history
+GET    /api/v1/partners/{partner_id}/sessions
+POST   /api/v1/partners/{partner_id}/chat
+POST   /api/v1/partners/{partner_id}/chat/execute-stream
+WS     /api/v1/partners/{partner_id}/ws
 ```
+
+Partners API 由 admin 权限保护，因为 partner workspace 和 channel credentials 属于部署级资源。Secret 默认会被 mask；编辑表单只有在需要时才请求 `include_secrets=true`。
 
 ## Book Engine
 
