@@ -8,6 +8,7 @@ import logging
 from typing import Any
 
 from deeptutor.core.tool_protocol import BaseTool, ToolDefinition, ToolParameter, ToolResult
+from deeptutor.loop_plugins.mastery import MASTERY_TOOL_TYPES
 from deeptutor.tools.exec_tool import ExecTool
 from deeptutor.tools.prompting import load_prompt_hints
 
@@ -1463,6 +1464,9 @@ BUILTIN_TOOL_TYPES: tuple[type[BaseTool], ...] = (
     GithubTool,
     AskUserTool,
     CronTool,
+    # Mastery Path tools — globally registered so schemas/API stay stable;
+    # the chat loop plugin decides when to auto-mount them for a turn.
+    *MASTERY_TOOL_TYPES,
 )
 
 # Tools whose implementation is parked while we redesign them. NOT loaded

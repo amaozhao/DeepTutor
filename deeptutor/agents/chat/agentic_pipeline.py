@@ -33,6 +33,7 @@ from deeptutor.core.trace import (
     merge_trace_metadata,
     new_call_id,
 )
+from deeptutor.loop_plugins import LoopPlugin, active_loop_plugins
 from deeptutor.runtime.registry.deferred_tools import (
     DeferredToolLoader,
     render_deferred_tools_manifest,
@@ -270,6 +271,7 @@ class AgenticChatPipeline:
             ),
             notebook_manifest=self._build_notebook_manifest(),
             workspace_note=self._workspace_system_note(context),
+            plugin_blocks=self._plugin_system_blocks(context),
             include_tool_manifest=include_tool_manifest,
         )
 
@@ -440,7 +442,37 @@ class AgenticChatPipeline:
                 has_exec=getattr(self, "_exec_enabled", False),
                 has_code=getattr(self, "_exec_enabled", False),
             ),
+            extra_auto_tools=self._plugin_tool_names(context),
         )
+
+    def _active_loop_plugins(self, context: UnifiedContext) -> tuple[LoopPlugin, ...]:
+        return active_loop_plugins(context)
+
+    def _plugin_tool_names(self, context: UnifiedContext) -> tuple[str, ...]:
+        names: list[str] = []
+        for plugin in self._active_loop_plugins(context):
+            names.extend(plugin.tool_types(context))
+        return tuple(names)
+
+    def _plugin_system_blocks(self, context: UnifiedContext):
+        blocks = []
+        for plugin in self._active_loop_plugins(context):
+            block = plugin.system_block(
+                context,
+                language=self.language,
+                prompts=self._prompts,
+            )
+            if block is not None:
+                blocks.append(block)
+        return blocks
+
+    def _plugin_pre_loop_seed(self, context: UnifiedContext) -> str:
+        seeds = [
+            seed.strip()
+            for plugin in self._active_loop_plugins(context)
+            if (seed := plugin.pre_loop_seed(context))
+        ]
+        return "\n\n".join(seed for seed in seeds if seed)
 
     def _build_llm_tool_schemas(
         self,
@@ -765,6 +797,8 @@ class AgenticChatPipeline:
                     mime = getattr(first_image, "mime_type", "") or "image/png"
                     kwargs["image_base64"] = f"data:{mime};base64,{raw_b64}"
             kwargs["language"] = context.language or "zh"
+        for plugin in self._active_loop_plugins(context):
+            kwargs = plugin.augment_kwargs(tool_name, kwargs, context)
         return kwargs
 
     def _retrieve_trace_metadata(
