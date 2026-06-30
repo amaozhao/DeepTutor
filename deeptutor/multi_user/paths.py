@@ -127,7 +127,7 @@ def ensure_scope_workspace(scope: UserScope) -> Path:
 
 def ensure_system_dirs() -> None:
     migrate_legacy_multi_user_tree()
-    for child in ("auth", "grants", "audit", "indexes"):
+    for child in ("auth", "grants", "audit", "indexes", "usage"):
         (SYSTEM_ROOT / child).mkdir(parents=True, exist_ok=True)
     # Per-owner secrets (see ``get_owner_secrets_dir``). Declared here, and its
     # mode set once at startup, so the per-request path only has to create the

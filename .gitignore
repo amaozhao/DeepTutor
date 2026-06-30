@@ -11,7 +11,9 @@ data/
 run_code_workspace/
 deeptutor/agents/question/reference_papers/
 deeptutor/services/rag/eg_only_for_analysis/
-/docs/
+/docs/*
+!/docs/SAAS_READINESS_REVIEW.md
+!/docs/SAAS_TASK_PLAN.md
 /site/
 .claude
 .agents/

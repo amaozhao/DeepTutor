@@ -35,7 +35,7 @@ import json
 import logging
 from typing import Any
 
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -44,7 +44,8 @@ logger = logging.getLogger(__name__)
 @router.websocket("/ws")
 async def unified_websocket(ws: WebSocket) -> None:
     from deeptutor.api.routers.auth import ws_auth_failed, ws_require_auth
-    from deeptutor.multi_user.context import reset_current_user
+    from deeptutor.api.security import require_rate_limit, websocket_ip
+    from deeptutor.multi_user.context import get_current_user, reset_current_user
 
     user_token = await ws_require_auth(ws)
     if user_token is ws_auth_failed:
@@ -53,6 +54,7 @@ async def unified_websocket(ws: WebSocket) -> None:
     await ws.accept()
     closed = False
     subscription_tasks: dict[str, asyncio.Task[None]] = {}
+    ws_ip = websocket_ip(ws)
 
     async def safe_send(data: dict[str, Any]) -> None:
         nonlocal closed
@@ -75,6 +77,20 @@ async def unified_websocket(ws: WebSocket) -> None:
             await task
         except asyncio.CancelledError:
             pass
+
+    async def allow_turn_start(kind: str) -> bool:
+        user = get_current_user()
+        principal = user.id or user.username or "local"
+        try:
+            require_rate_limit(
+                f"llm-turn:{kind}:{ws_ip}:{principal}",
+                limit=30,
+                window_seconds=60,
+            )
+        except HTTPException as exc:
+            await safe_send({"type": "error", "content": str(exc.detail), "status": 429})
+            return False
+        return True
 
     async def subscribe_turn(turn_id: str, after_seq: int = 0) -> None:
         from deeptutor.services.session import get_turn_runtime_manager
@@ -111,6 +127,8 @@ async def unified_websocket(ws: WebSocket) -> None:
             msg_type = msg.get("type")
 
             if msg_type in {"message", "start_turn"}:
+                if not await allow_turn_start("start"):
+                    continue
                 from deeptutor.services.session import get_turn_runtime_manager
 
                 runtime = get_turn_runtime_manager()
@@ -259,6 +277,8 @@ async def unified_websocket(ws: WebSocket) -> None:
                 continue
 
             if msg_type == "regenerate":
+                if not await allow_turn_start("regenerate"):
+                    continue
                 session_id = str(msg.get("session_id") or "").strip()
                 if not session_id:
                     await safe_send({"type": "error", "content": "Missing session_id."})

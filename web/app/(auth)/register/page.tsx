@@ -13,6 +13,11 @@ export default function RegisterPage() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [termsAccepted, setTermsAccepted] = useState(false);
+  const [inviteCode, setInviteCode] = useState(() => {
+    if (typeof window === "undefined") return "";
+    return new URLSearchParams(window.location.search).get("invite") ?? "";
+  });
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [isFirst, setIsFirst] = useState(false);
@@ -41,7 +46,18 @@ export default function RegisterPage() {
     }
 
     setLoading(true);
-    const result = await register(username, password);
+    if (!isFirst && !termsAccepted) {
+      setError(t("Please accept the terms to continue"));
+      setLoading(false);
+      return;
+    }
+
+    const result = await register(
+      username,
+      password,
+      !isFirst && termsAccepted,
+      inviteCode.trim(),
+    );
 
     if (result.ok) {
       router.replace("/login?registered=1");
@@ -76,17 +92,17 @@ export default function RegisterPage() {
       {/* Card */}
       <div className="bg-[var(--card)] border border-[var(--border)] rounded-2xl shadow-sm px-8 py-8">
         <form onSubmit={handleSubmit} className="space-y-5">
-          {/* Email or username */}
+          {/* Email */}
           <div>
             <label
               htmlFor="username"
               className="block text-sm font-medium text-[var(--foreground)] mb-1.5"
             >
-              {t("Email or username")}
+              {t("Email")}
             </label>
             <input
               id="username"
-              type="text"
+              type="email"
               autoComplete="username"
               required
               value={username}
@@ -150,6 +166,42 @@ export default function RegisterPage() {
               placeholder="••••••••"
             />
           </div>
+
+          {!isFirst && (
+            <label className="flex items-start gap-2 text-sm text-[var(--muted-foreground)]">
+              <input
+                type="checkbox"
+                checked={termsAccepted}
+                onChange={(e) => setTermsAccepted(e.target.checked)}
+                className="mt-1"
+              />
+              <span>{t("I accept the terms and privacy policy")}</span>
+            </label>
+          )}
+
+          {!isFirst && (
+            <details
+              className="rounded-lg border border-[var(--border)] px-3 py-2"
+              open={Boolean(inviteCode)}
+            >
+              <summary className="cursor-pointer text-sm font-medium text-[var(--foreground)]">
+                {t("Have an invite code?")}
+              </summary>
+              <input
+                id="inviteCode"
+                type="text"
+                autoComplete="off"
+                value={inviteCode}
+                onChange={(e) => setInviteCode(e.target.value)}
+                className="mt-3 w-full px-3.5 py-2.5 rounded-lg border border-[var(--border)]
+                           bg-[var(--background)] text-[var(--foreground)]
+                           placeholder:text-[var(--muted-foreground)]
+                           focus:outline-none focus:ring-2 focus:ring-[var(--primary)] focus:border-transparent
+                           transition-shadow text-sm"
+                placeholder={t("Invite code")}
+              />
+            </details>
+          )}
 
           {/* Error message */}
           {error && (

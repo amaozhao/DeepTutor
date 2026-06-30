@@ -3,9 +3,19 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useTranslation } from "react-i18next";
-import { ChevronRight, Rocket, type LucideIcon } from "lucide-react";
+import {
+  BookOpen,
+  Brain,
+  ChevronRight,
+  Rocket,
+  ShieldCheck,
+  UserRound,
+  type LucideIcon,
+} from "lucide-react";
 
 import { apiFetch, apiUrl } from "@/lib/api";
+import { fetchAuthStatus, type AuthStatus } from "@/lib/auth";
+import { UserAvatar } from "@/components/UserAvatar";
 import {
   serviceReadiness,
   useSettings,
@@ -21,11 +31,12 @@ import {
 /**
  * Settings hub — the landing page of `/settings`.
  *
- * Six category blocks and a resident Status module, nothing else. The blocks
- * are intentionally calmer than the Learning Space tiles (monochrome inline
- * icons, a chevron, a quiet preview line instead of a focal count) so Settings
- * reads as a control surface rather than a dashboard. Categories with several
- * settings (Models, Chat) open a sub-hub; the rest link straight to their leaf.
+ * A resident Status module plus one continuous grid of account/workspace and
+ * settings blocks. The blocks are intentionally calmer than the Learning Space
+ * tiles (monochrome inline icons, a chevron, a quiet preview line instead of a
+ * focal count) so Settings reads as a control surface rather than a dashboard.
+ * Categories with several settings (Models, Chat) open a sub-hub; the rest link
+ * straight to their leaf.
  */
 
 type NetworkPreview = {
@@ -36,6 +47,13 @@ export default function SettingsHub() {
   const { i18n } = useTranslation();
   const zh = i18n.language?.toLowerCase().startsWith("zh");
   const tr = useCallback((l: Lang) => (zh ? l.zh : l.en), [zh]);
+  const [authStatus, setAuthStatus] = useState<AuthStatus | null>(null);
+  const primaryCategories = SETTINGS_CATEGORIES.filter(
+    (category) => category.key !== "network",
+  );
+  const networkCategory = SETTINGS_CATEGORIES.find(
+    (category) => category.key === "network",
+  );
 
   const { catalog, catalogEditable, diagnosticsResults, startTour } =
     useSettings();
@@ -88,6 +106,16 @@ export default function SettingsHub() {
     };
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+    fetchAuthStatus().then((status) => {
+      if (!cancelled) setAuthStatus(status);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   return (
     <div>
       <header className="mb-7 flex items-start justify-between gap-4">
@@ -115,17 +143,133 @@ export default function SettingsHub() {
       <SettingsStatusPanel />
 
       <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {SETTINGS_CATEGORIES.map((category) => (
+        <AccountCards authStatus={authStatus} tr={tr} />
+
+        {primaryCategories.map((category) => (
           <CategoryBlock
             key={category.key}
             category={category}
             tr={tr}
             modelStats={category.key === "models" ? modelStats : undefined}
-            network={category.key === "network" ? network : undefined}
           />
         ))}
+
+        <SettingsActionLink
+          href="/settings/memory-center"
+          icon={Brain}
+          label={tr({ zh: "记忆中心", en: "Memory Center" })}
+          description={tr({
+            zh: "长期记忆、画像与时间线",
+            en: "Long-term memory, profile, and timeline.",
+          })}
+        />
+        <SettingsActionLink
+          href="/settings/knowledge-center"
+          icon={BookOpen}
+          label={tr({ zh: "知识中心", en: "Knowledge Center" })}
+          description={tr({
+            zh: "知识库与检索内容",
+            en: "Knowledge bases and retrieval content.",
+          })}
+        />
+
+        {networkCategory ? (
+          <CategoryBlock
+            category={networkCategory}
+            tr={tr}
+            network={network}
+          />
+        ) : null}
       </div>
     </div>
+  );
+}
+
+function AccountCards({
+  authStatus,
+  tr,
+}: {
+  authStatus: AuthStatus | null;
+  tr: (l: Lang) => string;
+}) {
+  const signedIn = Boolean(authStatus?.enabled && authStatus.authenticated);
+  const isAdmin = authStatus?.role === "admin" || authStatus?.is_admin;
+
+  return (
+    <>
+      {signedIn && authStatus?.username ? (
+        <SettingsActionLink
+          href="/settings/profile"
+          icon={UserRound}
+          label={tr({ zh: "个人资料", en: "Profile" })}
+          description={authStatus.username}
+          avatar={
+            <UserAvatar
+              username={authStatus.username}
+              userId={authStatus.user_id}
+              avatar={authStatus.avatar}
+              role={authStatus.role}
+              size={24}
+            />
+          }
+        />
+      ) : null}
+      {signedIn && isAdmin ? (
+        <SettingsActionLink
+          href="/settings/admin/users"
+          icon={ShieldCheck}
+          label={tr({ zh: "管理后台", en: "Admin" })}
+          description={tr({
+            zh: "用户与权限管理",
+            en: "User and access management.",
+          })}
+        />
+      ) : null}
+    </>
+  );
+}
+
+function SettingsActionLink({
+  href,
+  icon,
+  label,
+  description,
+  avatar,
+}: {
+  href: string;
+  icon: LucideIcon;
+  label: string;
+  description: string;
+  avatar?: React.ReactNode;
+}) {
+  const Icon = icon;
+  return (
+    <Link
+      href={href}
+      className="group relative flex min-h-[120px] flex-col justify-between rounded-2xl border border-[var(--border)]/70 bg-[var(--card)] p-5 transition-all duration-150 hover:border-[var(--foreground)]/20 hover:shadow-[0_4px_24px_-16px_rgba(0,0,0,0.3)]"
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-2.5">
+          {avatar ?? (
+            <Icon
+              size={19}
+              strokeWidth={1.6}
+              className="shrink-0 text-[var(--muted-foreground)] transition-colors group-hover:text-[var(--foreground)]"
+            />
+          )}
+          <h3 className="truncate text-[15.5px] font-medium tracking-tight text-[var(--foreground)]">
+            {label}
+          </h3>
+        </div>
+        <ChevronRight
+          size={16}
+          className="mt-0.5 shrink-0 text-[var(--muted-foreground)]/30 transition-all group-hover:translate-x-0.5 group-hover:text-[var(--muted-foreground)]"
+        />
+      </div>
+      <p className="mt-4 truncate text-[12.5px] leading-relaxed text-[var(--muted-foreground)]">
+        {description}
+      </p>
+    </Link>
   );
 }
 

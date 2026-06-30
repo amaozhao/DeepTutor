@@ -1,9 +1,9 @@
 """Voice endpoints — text-to-speech and speech-to-text.
 
 These are thin HTTP surfaces over :mod:`deeptutor.services.voice`. Config comes
-from the admin-managed model catalog (``services.tts`` / ``services.stt``), so
-voice is shared infrastructure like embedding/search — any authenticated user
-may call it; it is not gated by per-user LLM grants.
+from the admin-managed model catalog (``services.tts`` / ``services.stt``).
+Authenticated non-admin calls are checked against the same user quota ledger as
+LLM turns and are recorded as one call after the provider succeeds.
 """
 
 from __future__ import annotations
@@ -15,6 +15,16 @@ import wave
 from fastapi import APIRouter, File, Form, HTTPException, Response, UploadFile, status
 from pydantic import BaseModel, Field
 
+from deeptutor.multi_user.context import get_current_user_or_none
+from deeptutor.multi_user.usage import (
+    UsageQuotaExceeded,
+    enforce_current_user_quota,
+    record_current_user_usage,
+)
+from deeptutor.services.config.provider_runtime import (
+    resolve_stt_runtime_config,
+    resolve_tts_runtime_config,
+)
 from deeptutor.services.voice import (
     VoiceProviderError,
     synthesize_speech,
@@ -75,9 +85,48 @@ def _pcm16_to_wav(audio: bytes, *, sample_rate: int, channels: int) -> bytes:
     return buffer.getvalue()
 
 
+def _enforce_voice_quota() -> None:
+    try:
+        enforce_current_user_quota()
+    except UsageQuotaExceeded as exc:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=str(exc),
+        ) from exc
+
+
+def _voice_usage_identity(kind: str) -> tuple[str, str]:
+    try:
+        config = resolve_tts_runtime_config() if kind == "tts" else resolve_stt_runtime_config()
+    except Exception:
+        return "voice", "unknown"
+    return str(config.provider_name or ""), str(config.model or "")
+
+
+def _record_voice_usage(kind: str) -> None:
+    # Unit tests and local single-user mode often mount this router without the
+    # main auth dependency. In that case there is no real per-user identity to
+    # bill, so avoid writing meaningless local-admin rows.
+    if get_current_user_or_none() is None:
+        return
+    provider, model = _voice_usage_identity(kind)
+    try:
+        record_current_user_usage(
+            session_id="",
+            turn_id="",
+            capability=kind,
+            provider=provider,
+            model=model,
+            summary={"total_calls": 1},
+        )
+    except Exception:
+        logger.warning("Failed to record %s usage", kind, exc_info=True)
+
+
 @router.post("/tts")
 async def text_to_speech(payload: TTSRequest) -> Response:
     """Synthesize ``text`` to audio using the active TTS provider."""
+    _enforce_voice_quota()
     try:
         audio, content_type = await synthesize_speech(
             payload.text,
@@ -94,6 +143,7 @@ async def text_to_speech(payload: TTSRequest) -> Response:
         sample_rate, channels = pcm_info
         audio = _pcm16_to_wav(audio, sample_rate=sample_rate, channels=channels)
         content_type = "audio/wav"
+    _record_voice_usage("tts")
     return Response(
         content=audio,
         media_type=content_type,
@@ -107,12 +157,13 @@ async def speech_to_text(
     language: str | None = Form(default=None),
 ) -> dict[str, str]:
     """Transcribe an uploaded audio clip using the active STT provider."""
+    _enforce_voice_quota()
     audio = await file.read()
     if not audio:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Empty audio upload.")
     if len(audio) > _MAX_AUDIO_BYTES:
         raise HTTPException(
-            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            status_code=status.HTTP_413_CONTENT_TOO_LARGE,
             detail="Audio exceeds the 25 MB limit.",
         )
     try:
@@ -127,4 +178,5 @@ async def speech_to_text(
     except VoiceProviderError as exc:
         logger.warning("STT provider error: %s", exc)
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+    _record_voice_usage("stt")
     return {"text": text}

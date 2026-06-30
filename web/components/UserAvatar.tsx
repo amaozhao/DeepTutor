@@ -142,7 +142,7 @@ export function UserAvatar({
     >
       {isImage ? (
         /* Dynamic backend URL with cookie auth; next/image cannot optimize it. */
-        // eslint-disable-next-line @next/next/no-img-element
+
         <img
           src={avatarImageUrl(userId as string, avatar)}
           alt=""

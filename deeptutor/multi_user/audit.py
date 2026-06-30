@@ -6,24 +6,68 @@ from datetime import datetime, timezone
 import json
 from typing import Any
 
+from . import paths
 from .context import get_current_user
-from .paths import SYSTEM_ROOT, ensure_system_dirs
+
+MAX_AUDIT_QUERY_LIMIT = 500
 
 
 def _audit_file():
     # Resolved per call so monkey-patched SYSTEM_ROOT (e.g. in tests) takes
     # effect without a module reload.
-    return SYSTEM_ROOT / "audit" / "usage.jsonl"
+    return paths.SYSTEM_ROOT / "audit" / "usage.jsonl"
 
 
 def _write(payload: dict[str, Any]) -> None:
     try:
-        ensure_system_dirs()
+        paths.ensure_system_dirs()
         with _audit_file().open("a", encoding="utf-8") as handle:
             handle.write(json.dumps(payload, ensure_ascii=False) + "\n")
     except Exception:
         # Auditing must never break a request.
         return
+
+
+def _read_events() -> list[dict[str, Any]]:
+    try:
+        paths.ensure_system_dirs()
+        target = _audit_file()
+        if not target.exists():
+            return []
+        events: list[dict[str, Any]] = []
+        for line in target.read_text(encoding="utf-8").splitlines():
+            try:
+                item = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(item, dict):
+                events.append(item)
+        return events
+    except Exception:
+        return []
+
+
+def query_audit_events(
+    *,
+    action: str | None = None,
+    actor_id: str | None = None,
+    target_user_id: str | None = None,
+    limit: int = 100,
+) -> list[dict[str, Any]]:
+    """Return newest matching audit events from the file-backed audit log."""
+    limit = max(1, min(int(limit or 100), MAX_AUDIT_QUERY_LIMIT))
+    events = reversed(_read_events())
+
+    def matches(event: dict[str, Any]) -> bool:
+        if action and str(event.get("action") or "") != action:
+            return False
+        if actor_id and str(event.get("actor_id") or "") != actor_id:
+            return False
+        if target_user_id and str(event.get("target_user_id") or "") != target_user_id:
+            return False
+        return True
+
+    return [event for event in events if matches(event)][:limit]
 
 
 def log_usage(

@@ -70,6 +70,32 @@ def _assert_provider_supported(provider_name: str) -> None:
         )
 
 
+def _enforce_search_quota() -> None:
+    from deeptutor.multi_user.usage import enforce_current_user_quota
+
+    enforce_current_user_quota()
+
+
+def _record_search_usage(provider_name: str) -> None:
+    from deeptutor.multi_user.context import get_current_user_or_none
+
+    if get_current_user_or_none() is None:
+        return
+    try:
+        from deeptutor.multi_user.usage import record_current_user_usage
+
+        record_current_user_usage(
+            session_id="",
+            turn_id="",
+            capability="web_search",
+            provider=provider_name,
+            model="web_search",
+            summary={"total_calls": 1},
+        )
+    except Exception:
+        _logger.warning("Failed to record web_search usage", exc_info=True)
+
+
 def web_search(
     query: str,
     output_dir: str | None = None,
@@ -109,6 +135,7 @@ def web_search(
             "search_results": [],
             "provider": "none",
         }
+    _enforce_search_quota()
 
     if provider_name in {"brave", "tavily", "jina"}:
         api_key = _resolve_provider_key(provider_name, resolved.api_key)
@@ -167,6 +194,7 @@ def web_search(
         if answer:
             _logger.info(f"Answer: {answer[:200]}..." if len(answer) > 200 else f"Answer: {answer}")
         _logger.info(f"Citations: {len(result.get('citations', []))}")
+    _record_search_usage(provider_name)
     return result
 
 

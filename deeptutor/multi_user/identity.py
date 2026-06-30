@@ -38,6 +38,13 @@ def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _token_version(value: Any) -> int:
+    try:
+        return max(1, int(value or 1))
+    except (TypeError, ValueError):
+        return 1
+
+
 def _canonical_record(
     username: str,
     value: Any,
@@ -51,7 +58,13 @@ def _canonical_record(
             "role": default_role,
             "created_at": utc_now(),
             "disabled": False,
+            "disabled_reason": "",
             "avatar": "",
+            "token_version": 1,
+            "terms_accepted": False,
+            "terms_accepted_at": "",
+            "terms_version": "",
+            "privacy_version": "",
         }
     if not isinstance(value, dict):
         return None
@@ -67,7 +80,13 @@ def _canonical_record(
         "role": role,
         "created_at": str(value.get("created_at") or utc_now()),
         "disabled": bool(value.get("disabled", False)),
+        "disabled_reason": str(value.get("disabled_reason") or ""),
         "avatar": str(value.get("avatar") or ""),
+        "token_version": _token_version(value.get("token_version")),
+        "terms_accepted": bool(value.get("terms_accepted", False)),
+        "terms_accepted_at": str(value.get("terms_accepted_at") or ""),
+        "terms_version": str(value.get("terms_version") or ""),
+        "privacy_version": str(value.get("privacy_version") or ""),
     }
 
 
@@ -163,6 +182,13 @@ def load_users(  # nosec B107 - empty defaults mean "no env fallback supplied".
                 "role": "admin",
                 "created_at": "",
                 "disabled": False,
+                "disabled_reason": "",
+                "avatar": "",
+                "token_version": 1,
+                "terms_accepted": False,
+                "terms_accepted_at": "",
+                "terms_version": "",
+                "privacy_version": "",
             }
         }
 
@@ -183,11 +209,37 @@ def save_user(username: str, hashed_password: str, role: Role = "user") -> dict[
             "role": effective_role,
             "created_at": str(existing.get("created_at") or utc_now()),
             "disabled": bool(existing.get("disabled", False)),
+            "disabled_reason": str(existing.get("disabled_reason") or ""),
             "avatar": str(existing.get("avatar") or ""),
+            "token_version": _token_version(existing.get("token_version")),
+            "terms_accepted": bool(existing.get("terms_accepted", False)),
+            "terms_accepted_at": str(existing.get("terms_accepted_at") or ""),
+            "terms_version": str(existing.get("terms_version") or ""),
+            "privacy_version": str(existing.get("privacy_version") or ""),
         }
         users[username] = record
         _write_users(users)
     return record
+
+
+def record_terms_acceptance(
+    username: str,
+    *,
+    terms_version: str = "",
+    privacy_version: str = "",
+) -> bool:
+    if not USERS_FILE.exists():
+        return False
+    with _USERS_WRITE_LOCK:
+        users = load_users()
+        if username not in users:
+            return False
+        users[username]["terms_accepted"] = True
+        users[username]["terms_accepted_at"] = utc_now()
+        users[username]["terms_version"] = terms_version
+        users[username]["privacy_version"] = privacy_version
+        _write_users(users)
+    return True
 
 
 def list_user_info(  # nosec B107 - empty defaults mean "no env fallback supplied".
@@ -201,6 +253,7 @@ def list_user_info(  # nosec B107 - empty defaults mean "no env fallback supplie
             "role": record.get("role", "user"),
             "created_at": record.get("created_at", ""),
             "disabled": bool(record.get("disabled", False)),
+            "disabled_reason": str(record.get("disabled_reason") or ""),
             "avatar": str(record.get("avatar") or ""),
         }
         for username, record in load_users(env_username, env_password_hash).items()
@@ -226,6 +279,59 @@ def delete_user(username: str) -> bool:
         return False
     users.pop(username, None)
     _write_users(users)
+    return True
+
+
+def _bump_token_version(record: dict[str, Any]) -> None:
+    record["token_version"] = _token_version(record.get("token_version")) + 1
+
+
+def update_password(username: str, hashed_password: str) -> bool:
+    """Replace a user's password hash and invalidate existing JWTs."""
+    if not USERS_FILE.exists():
+        return False
+    with _USERS_WRITE_LOCK:
+        users = load_users()
+        if username not in users:
+            return False
+        users[username]["hash"] = hashed_password
+        _bump_token_version(users[username])
+        _write_users(users)
+    return True
+
+
+def set_disabled(username: str, disabled: bool, reason: str = "") -> bool:
+    """Enable or disable a user and invalidate existing JWTs."""
+    if not USERS_FILE.exists():
+        return False
+    with _USERS_WRITE_LOCK:
+        users = load_users()
+        if username not in users:
+            return False
+        changed = False
+        if bool(users[username].get("disabled", False)) != disabled:
+            users[username]["disabled"] = disabled
+            _bump_token_version(users[username])
+            changed = True
+        next_reason = reason.strip()[:500] if disabled else ""
+        if str(users[username].get("disabled_reason") or "") != next_reason:
+            users[username]["disabled_reason"] = next_reason
+            changed = True
+        if changed:
+            _write_users(users)
+    return True
+
+
+def revoke_sessions(username: str) -> bool:
+    """Invalidate existing JWTs without changing account fields."""
+    if not USERS_FILE.exists():
+        return False
+    with _USERS_WRITE_LOCK:
+        users = load_users()
+        if username not in users:
+            return False
+        _bump_token_version(users[username])
+        _write_users(users)
     return True
 
 
@@ -292,11 +398,13 @@ def set_role(username: str, role: Role) -> bool:
         raise ValueError("role must be 'admin' or 'user'")
     if not USERS_FILE.exists():
         return False
-    users = load_users()
-    if username not in users:
-        return False
-    users[username]["role"] = role
-    _write_users(users)
+    with _USERS_WRITE_LOCK:
+        users = load_users()
+        if username not in users:
+            return False
+        users[username]["role"] = role
+        _bump_token_version(users[username])
+        _write_users(users)
     return True
 
 

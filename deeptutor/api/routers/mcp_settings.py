@@ -21,6 +21,7 @@ from pydantic import BaseModel, Field, ValidationError
 
 from deeptutor.api.routers.auth import require_admin
 from deeptutor.core.i18n import t
+from deeptutor.multi_user.audit import log_admin_action
 from deeptutor.services.mcp import (
     MCPConfig,
     MCPServerConfig,
@@ -54,6 +55,13 @@ def _validate_servers(config: MCPConfig) -> None:
                 )
 
 
+def _mcp_audit_summary(config: MCPConfig) -> dict[str, Any]:
+    return {
+        "server_count": len(config.servers),
+        "servers": sorted(config.servers),
+    }
+
+
 @router.get("")
 async def get_mcp_settings() -> dict[str, Any]:
     config = load_mcp_config()
@@ -75,6 +83,7 @@ async def update_mcp_settings(payload: MCPSettingsPayload) -> dict[str, Any]:
     save_mcp_config(config)
     manager = get_mcp_manager()
     await manager.reload()
+    log_admin_action("mcp_settings_update", summary=_mcp_audit_summary(config))
     return {"status": manager.status()}
 
 
