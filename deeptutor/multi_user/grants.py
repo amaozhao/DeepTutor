@@ -9,6 +9,7 @@ from typing import Any
 
 from .identity import get_user_by_id
 from .paths import SYSTEM_ROOT, ensure_system_dirs
+from .usage import empty_quota, normalize_quota
 
 GRANTS_DIR = SYSTEM_ROOT / "grants"
 
@@ -37,6 +38,8 @@ def empty_grant(user_id: str) -> dict[str, Any]:
         "enabled_tools": None,
         "mcp_tools": None,
         "exec_enabled": None,
+        # Per-user LLM usage caps. Zero means unlimited.
+        "quota": empty_quota(),
     }
 
 
@@ -76,6 +79,7 @@ def normalize_grant(user_id: str, payload: dict[str, Any] | None) -> dict[str, A
         base[key] = _normalize_tool_list(payload.get(key))
     exec_enabled = payload.get("exec_enabled")
     base["exec_enabled"] = bool(exec_enabled) if isinstance(exec_enabled, bool) else None
+    base["quota"] = normalize_quota(payload.get("quota"))
     return base
 
 

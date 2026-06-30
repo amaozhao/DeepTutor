@@ -1,4 +1,6 @@
 import { apiFetch, apiUrl } from "@/lib/api";
+import { filenameFromContentDisposition } from "@/features/multi-user/download";
+import type { DeleteDataAction } from "@/features/multi-user/types";
 
 export interface ProfileInfo {
   id: string;
@@ -68,6 +70,63 @@ export async function removeAvatarImage(): Promise<void> {
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
     throw new Error(extractDetail(data, "Failed to remove avatar"));
+  }
+}
+
+/** Change the signed-in user's password. */
+export async function changePassword(
+  currentPassword: string,
+  newPassword: string,
+): Promise<void> {
+  const res = await apiFetch(apiUrl("/api/v1/auth/profile/password"), {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      current_password: currentPassword,
+      new_password: newPassword,
+    }),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(extractDetail(data, "Failed to change password"));
+  }
+}
+
+/** Download the signed-in user's own data export zip. */
+export async function downloadMyData(): Promise<void> {
+  const res = await apiFetch(apiUrl("/api/v1/auth/profile/export"));
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(extractDetail(data, "Failed to export account data"));
+  }
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filenameFromContentDisposition(
+    res.headers.get("content-disposition"),
+    "deeptutor-user-data.zip",
+  );
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
+/** Delete the signed-in user's own account after password confirmation. */
+export async function deleteMyAccount(
+  password: string,
+  dataAction: DeleteDataAction,
+): Promise<void> {
+  const res = await apiFetch(apiUrl("/api/v1/auth/profile"), {
+    method: "DELETE",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ password, data_action: dataAction }),
+    skipAuthRedirect: true,
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(extractDetail(data, "Failed to delete account"));
   }
 }
 

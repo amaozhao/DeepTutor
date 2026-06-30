@@ -4,8 +4,15 @@ import sys
 
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
+from deeptutor.api.security import (
+    client_ip,
+    production_security_warnings,
+    require_rate_limit,
+    require_trusted_origin,
+)
 from deeptutor.logging import configure_logging
 from deeptutor.services.config import (
     ensure_runtime_settings_files,
@@ -124,6 +131,8 @@ async def lifespan(app: FastAPI):
 
     # Validate configuration consistency
     validate_tool_consistency()
+    for warning in production_security_warnings():
+        logger.warning("Production security warning: %s", warning)
 
     # Initialize LLM client early so OPENAI_* env vars are available before
     # any downstream provider integrations start.
@@ -248,6 +257,40 @@ if not any(getattr(h, "_deeptutor_access_handler", False) for h in _access_logge
     _access_logger.addHandler(_access_handler)
     _access_logger.setLevel(logging.INFO)
     _access_logger.propagate = False
+
+
+@app.middleware("http")
+async def security_guard(request, call_next):
+    auth_settings = load_auth_settings()
+    if auth_settings["enabled"]:
+        try:
+            require_trusted_origin(
+                request,
+                allowed_origins=_cors_settings["allow_origins"],
+                enabled=bool(auth_settings.get("csrf_protection_enabled", True)),
+            )
+            if (
+                request.method.upper() in {"POST", "PUT", "PATCH", "DELETE"}
+                and request.url.path.startswith("/api/v1/")
+                and not request.url.path.startswith("/api/v1/auth/")
+            ):
+                from deeptutor.services.auth import decode_token
+
+                token = request.headers.get("authorization", "")
+                if token.lower().startswith("bearer "):
+                    token = token.split(None, 1)[1]
+                else:
+                    token = request.cookies.get("dt_token", "")
+                payload = decode_token(token) if token else None
+                principal = payload.user_id or payload.username if payload else "anon"
+                require_rate_limit(
+                    f"api-write:{client_ip(request)}:{principal}",
+                    limit=120,
+                    window_seconds=60,
+                )
+        except HTTPException as exc:
+            return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
+    return await call_next(request)
 
 
 @app.middleware("http")

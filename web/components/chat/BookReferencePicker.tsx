@@ -70,7 +70,6 @@ export default function BookReferencePicker({
     if (!open) return;
     let mounted = true;
     // Re-seed selection each time the picker opens.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     setSelected(initialReferences);
     setLoadingBooks(true);
     void bookApi
@@ -95,7 +94,6 @@ export default function BookReferencePicker({
     if (!open || !activeBookId || details[activeBookId]) return;
     let mounted = true;
     // Show detail loading before the async book lookup resolves.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     setLoadingDetail(true);
     void bookApi
       .get(activeBookId)

@@ -102,6 +102,34 @@ def _artifact_attachments(event: StreamEvent) -> list[dict[str, Any]]:
     return attachments
 
 
+def _event_usage_summary(event: StreamEvent) -> dict[str, Any] | None:
+    if event.type != StreamEventType.RESULT:
+        return None
+    metadata = event.metadata or {}
+    nested = metadata.get("metadata")
+    if isinstance(nested, dict) and isinstance(nested.get("cost_summary"), dict):
+        return nested["cost_summary"]
+    if isinstance(metadata.get("cost_summary"), dict):
+        return metadata["cost_summary"]
+    return None
+
+
+def _merge_usage_summary(
+    current: dict[str, Any] | None,
+    incoming: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    if not incoming:
+        return current
+    keys = ("prompt_tokens", "completion_tokens", "total_tokens", "total_calls", "total_cost_usd")
+    merged = dict(current or {})
+    for key in keys:
+        left = float(merged.get(key) or 0)
+        right = float(incoming.get(key) or 0)
+        value = left + right
+        merged[key] = round(value, 8) if key.endswith("_usd") else int(value)
+    return merged
+
+
 def _clip_text(value: str, limit: int = 4000) -> str:
     text = str(value or "").strip()
     if len(text) <= limit:
@@ -1161,6 +1189,7 @@ class TurnRuntimeManager:
         attachment_records = []
         assistant_events: list[dict[str, Any]] = []
         assistant_content = ""
+        turn_usage_summary: dict[str, Any] | None = None
         # Per-round content segments + narration call_ids: a chat-loop round's
         # text is captured live but a round that resolves as narration is
         # dropped from the persisted answer (mirrors the frontend bubble).
@@ -1371,10 +1400,12 @@ class TurnRuntimeManager:
             from deeptutor.multi_user.context import get_current_user
             from deeptutor.multi_user.paths import get_admin_path_service
             from deeptutor.multi_user.skill_access import assigned_skill_ids
+            from deeptutor.multi_user.usage import enforce_current_user_quota
             from deeptutor.services.persona import PersonaService, get_persona_service
             from deeptutor.services.skill.service import SkillService, render_skills_manifest
 
             current_user = get_current_user()
+            enforce_current_user_quota()
             requested_persona = str(payload.get("persona") or "").strip()
             persona_context = ""
             if requested_persona:
@@ -1661,6 +1692,10 @@ class TurnRuntimeManager:
             orch = ChatOrchestrator()
             pending_done_event: StreamEvent | None = None
             async for event in orch.handle(context):
+                turn_usage_summary = _merge_usage_summary(
+                    turn_usage_summary,
+                    _event_usage_summary(event),
+                )
                 if event.type == StreamEventType.SESSION:
                     continue
                 if event.type == StreamEventType.DONE:
@@ -1718,6 +1753,19 @@ class TurnRuntimeManager:
                     events=assistant_events,
                     attachments=generated_attachments or None,
                 )
+            try:
+                from deeptutor.multi_user.usage import record_current_user_usage
+
+                record_current_user_usage(
+                    session_id=session_id,
+                    turn_id=turn_id,
+                    capability=capability_name,
+                    provider=str(getattr(llm_config, "provider_name", "") or ""),
+                    model=str(getattr(llm_config, "model", "") or ""),
+                    summary=turn_usage_summary,
+                )
+            except Exception:
+                logger.warning("Failed to record usage for turn %s", turn_id, exc_info=True)
             await self._flush_buffered_events(execution)
             await self.store.update_turn_status(turn_id, "completed")
             if pending_done_event is None:

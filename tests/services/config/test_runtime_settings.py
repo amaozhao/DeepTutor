@@ -24,6 +24,13 @@ RUNTIME_ENV_KEYS = (
     "AUTH_PASSWORD_HASH",
     "AUTH_TOKEN_EXPIRE_HOURS",
     "AUTH_COOKIE_SECURE",
+    "AUTH_PUBLIC_REGISTRATION_ENABLED",
+    "AUTH_REGISTRATION_REVIEW_REQUIRED",
+    "AUTH_REQUIRE_TERMS_ACCEPTANCE",
+    "AUTH_TERMS_VERSION",
+    "AUTH_PRIVACY_VERSION",
+    "AUTH_CSRF_PROTECTION_ENABLED",
+    "AUTH_MAX_USERS",
     "POCKETBASE_URL",
     "POCKETBASE_PORT",
     "POCKETBASE_EXTERNAL_URL",
@@ -113,8 +120,88 @@ def test_render_environment_uses_json_backed_runtime_names(monkeypatch, tmp_path
     assert env["DEEPTUTOR_AUTH_ENABLED"] == "true"
     assert env["DEEPTUTOR_API_BASE_URL"] == "http://localhost:8010"
     assert env["AUTH_TOKEN_EXPIRE_HOURS"] == "12"
+    assert env["AUTH_PUBLIC_REGISTRATION_ENABLED"] == "false"
+    assert env["AUTH_REGISTRATION_REVIEW_REQUIRED"] == "false"
+    assert env["AUTH_REQUIRE_TERMS_ACCEPTANCE"] == "true"
+    assert env["AUTH_TERMS_VERSION"] == "v1"
+    assert env["AUTH_PRIVACY_VERSION"] == "v1"
+    assert env["AUTH_CSRF_PROTECTION_ENABLED"] == "true"
+    assert env["AUTH_MAX_USERS"] == "0"
     assert env["POCKETBASE_URL"] == "http://pocketbase:8090"
     assert "AUTH_SECRET" not in env
+
+
+def test_auth_max_users_normalizes_and_exports(tmp_path: Path) -> None:
+    service = RuntimeSettingsService(tmp_path / "settings", process_env={})
+
+    saved = service.save_auth({"max_users": "12"})
+    assert saved["max_users"] == 12
+    assert service.render_environment()["AUTH_MAX_USERS"] == "12"
+    assert service.save_auth({"max_users": "-5"})["max_users"] == 0
+
+
+def test_auth_max_users_process_env_override(tmp_path: Path) -> None:
+    service = RuntimeSettingsService(
+        tmp_path / "settings",
+        process_env={"AUTH_MAX_USERS": "7"},
+    )
+    service.save_auth({"max_users": 2})
+
+    assert service.load_auth()["max_users"] == 7
+    assert _read_json(service.path_for("auth"))["max_users"] == 2
+
+
+def test_auth_registration_review_normalizes_and_exports(tmp_path: Path) -> None:
+    service = RuntimeSettingsService(tmp_path / "settings", process_env={})
+
+    saved = service.save_auth({"registration_review_required": "true"})
+
+    assert saved["registration_review_required"] is True
+    assert service.render_environment()["AUTH_REGISTRATION_REVIEW_REQUIRED"] == "true"
+
+
+def test_auth_registration_review_process_env_override(tmp_path: Path) -> None:
+    service = RuntimeSettingsService(
+        tmp_path / "settings",
+        process_env={"AUTH_REGISTRATION_REVIEW_REQUIRED": "true"},
+    )
+    service.save_auth({"registration_review_required": False})
+
+    assert service.load_auth()["registration_review_required"] is True
+    assert _read_json(service.path_for("auth"))["registration_review_required"] is False
+
+
+def test_auth_agreement_versions_normalize_and_export(tmp_path: Path) -> None:
+    service = RuntimeSettingsService(tmp_path / "settings", process_env={})
+
+    saved = service.save_auth(
+        {"terms_version": "terms-2026-06", "privacy_version": "privacy-2026-06"}
+    )
+
+    assert saved["terms_version"] == "terms-2026-06"
+    assert saved["privacy_version"] == "privacy-2026-06"
+    env = service.render_environment()
+    assert env["AUTH_TERMS_VERSION"] == "terms-2026-06"
+    assert env["AUTH_PRIVACY_VERSION"] == "privacy-2026-06"
+    assert service.save_auth({"terms_version": "", "privacy_version": ""})["terms_version"] == "v1"
+
+
+def test_auth_agreement_versions_process_env_override(tmp_path: Path) -> None:
+    service = RuntimeSettingsService(
+        tmp_path / "settings",
+        process_env={
+            "AUTH_TERMS_VERSION": "terms-env",
+            "AUTH_PRIVACY_VERSION": "privacy-env",
+        },
+    )
+    service.save_auth({"terms_version": "terms-file", "privacy_version": "privacy-file"})
+
+    loaded = service.load_auth()
+    assert loaded["terms_version"] == "terms-env"
+    assert loaded["privacy_version"] == "privacy-env"
+    persisted = _read_json(service.path_for("auth"))
+    assert persisted["terms_version"] == "terms-file"
+    assert persisted["privacy_version"] == "privacy-file"
 
 
 def test_system_settings_accept_public_api_base_alias_and_normalize_origins(

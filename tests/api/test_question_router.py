@@ -54,10 +54,29 @@ def _load_question_router_module(monkeypatch: pytest.MonkeyPatch):
     fake_logging.current_log_context = lambda: {}
     monkeypatch.setitem(sys.modules, "deeptutor.logging", fake_logging)
 
-    fake_config = types.ModuleType("deeptutor.services.config")
+    fake_config = _package("deeptutor.services.config")
     fake_config.PROJECT_ROOT = Path.cwd()
     fake_config.load_config_with_main = lambda *_args, **_kwargs: {}
+    fake_config.load_auth_settings = lambda: {
+        "enabled": False,
+        "username": "admin",
+        "password_hash": "",
+        "token_expire_hours": 24,
+        "cookie_secure": False,
+        "public_registration_enabled": False,
+        "require_terms_acceptance": True,
+        "csrf_protection_enabled": True,
+    }
+    fake_config.load_integrations_settings = lambda: {"pocketbase_url": ""}
+    fake_config.load_system_settings = lambda: {"cors_origin": "", "cors_origins": []}
     monkeypatch.setitem(sys.modules, "deeptutor.services.config", fake_config)
+
+    fake_origins = types.ModuleType("deeptutor.services.config.origins")
+    fake_origins.normalize_origins = lambda values: [
+        item for item in values if isinstance(item, str) and item
+    ]
+    fake_config.origins = fake_origins
+    monkeypatch.setitem(sys.modules, "deeptutor.services.config.origins", fake_origins)
 
     fake_llm_package = _package("deeptutor.services.llm")
     fake_llm_config = types.ModuleType("deeptutor.services.llm.config")
@@ -101,6 +120,9 @@ def test_mimic_websocket_accepts_config_and_returns_messages(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     question_router_module = _load_question_router_module(monkeypatch)
+    import deeptutor.api.routers.auth as auth_router
+
+    monkeypatch.setattr(auth_router, "AUTH_ENABLED", False)
 
     async def _fake_mimic_exam_questions(*_args, **_kwargs):
         return {"success": False, "error": "stub mimic failure"}

@@ -6,6 +6,7 @@ import {
   useCallback,
   useEffect,
   useImperativeHandle,
+  useMemo,
   useRef,
   useState,
   type RefObject,
@@ -161,11 +162,15 @@ export const ComposerInput = memo(
     // Main chat passes ``onSelectAgent`` → ``@`` picks a connected agent. Other
     // surfaces (quiz follow-up) omit it and keep the @ Space menu.
     const agentMentionMode = Boolean(onSelectAgent);
-    const filteredAgents = agentMentionMode
-      ? connectedAgents.filter((a) =>
-          a.name.toLowerCase().includes(atQuery.toLowerCase()),
-        )
-      : [];
+    const filteredAgents = useMemo(
+      () =>
+        agentMentionMode
+          ? connectedAgents.filter((a) =>
+              a.name.toLowerCase().includes(atQuery.toLowerCase()),
+            )
+          : [],
+      [agentMentionMode, connectedAgents, atQuery],
+    );
 
     // Latest text mirrored into a ref by the change handlers (never updated
     // during render). The @space handlers and the imperative handle read
@@ -488,7 +493,6 @@ export const ComposerInput = memo(
                   className="shrink-0 text-[var(--muted-foreground)]"
                 />
                 {/* Command syntax token — must not be localized. */}
-                {/* eslint-disable-next-line i18n/no-literal-ui-text */}
                 <span className="font-medium text-[var(--foreground)]">
                   /persona
                 </span>

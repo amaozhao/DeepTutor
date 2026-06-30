@@ -72,6 +72,7 @@ class TokenPayload:
     username: str
     role: str
     user_id: str = ""
+    token_version: int = 1
 
 
 # ---------------------------------------------------------------------------
@@ -111,6 +112,7 @@ def _make_user_record(hashed: str, role: str = "user", created_at: str = "") -> 
         "role": role,
         "created_at": created_at or datetime.now(timezone.utc).isoformat(),
         "disabled": False,
+        "disabled_reason": "",
         "avatar": "",
     }
 
@@ -152,6 +154,16 @@ def add_user(username: str, plain_password: str, role: str = "user") -> None:
     logger.info("User '%s' saved with role=%r", username, record.get("role", "user"))
 
 
+def update_password(username: str, plain_password: str) -> bool:
+    """Update a user's password and invalidate existing JWTs."""
+    from deeptutor.multi_user.identity import update_password as _update_password
+
+    if not _update_password(username, hash_password(plain_password)):
+        return False
+    logger.info("User '%s' password updated", username)
+    return True
+
+
 def list_users() -> list[dict]:
     """Return a list of user info dicts (username, role, created_at) — no hashes."""
     from deeptutor.multi_user.identity import list_user_info
@@ -189,6 +201,26 @@ def set_role(username: str, role: str) -> bool:
     return True
 
 
+def set_disabled(username: str, disabled: bool, reason: str = "") -> bool:
+    """Enable/disable a user and invalidate existing JWTs."""
+    from deeptutor.multi_user.identity import set_disabled as _set_disabled
+
+    if not _set_disabled(username, disabled, reason=reason):
+        return False
+    logger.info("User '%s' disabled=%s", username, disabled)
+    return True
+
+
+def revoke_sessions(username: str) -> bool:
+    """Invalidate a user's existing JWTs without changing their account."""
+    from deeptutor.multi_user.identity import revoke_sessions as _revoke_sessions
+
+    if not _revoke_sessions(username):
+        return False
+    logger.info("User '%s' sessions revoked", username)
+    return True
+
+
 def set_avatar(username: str, avatar: str) -> bool:
     """
     Update the avatar marker for an existing user. Returns True on success.
@@ -221,14 +253,15 @@ def create_token(username: str, role: str = "user", user_id: str | None = None) 
     """Create a signed JWT for the given username and role."""
     from jose import jwt
 
+    record = _load_users().get(username) or {}
     if not user_id:
-        record = _load_users().get(username) or {}
         user_id = str(record.get("id") or "")
 
     payload = {
         "sub": username,
         "role": role,
         "uid": user_id,
+        "tv": int(record.get("token_version") or 1),
         "exp": datetime.now(timezone.utc) + timedelta(hours=TOKEN_EXPIRE_HOURS),
         "iat": datetime.now(timezone.utc),
     }
@@ -271,11 +304,23 @@ def decode_token(token: str) -> TokenPayload | None:
         username = payload.get("sub")
         if not username:
             return None
+        record = _load_users().get(str(username))
+        if not record or bool(record.get("disabled", False)):
+            return None
         user_id = str(payload.get("uid") or "")
         if not user_id:
-            record = _load_users().get(str(username)) or {}
             user_id = str(record.get("id") or "")
-        return TokenPayload(username=username, role=payload.get("role", "user"), user_id=user_id)
+        if user_id and str(record.get("id") or "") and user_id != str(record.get("id")):
+            return None
+        token_version = int(payload.get("tv") or 1)
+        if token_version != int(record.get("token_version") or 1):
+            return None
+        return TokenPayload(
+            username=str(username),
+            role=str(record.get("role") or "user"),
+            user_id=str(record.get("id") or user_id),
+            token_version=token_version,
+        )
     except JWTError:
         return None
 
@@ -370,9 +415,17 @@ def authenticate(username: str, password: str) -> TokenPayload | None:
         return None
 
     hashed = record.get("hash", "") if isinstance(record, dict) else record
+    if isinstance(record, dict) and bool(record.get("disabled", False)):
+        return None
     if not verify_password(password, hashed):
         return None
 
     role = record.get("role", "user") if isinstance(record, dict) else "user"
     user_id = str(record.get("id") or "") if isinstance(record, dict) else ""
-    return TokenPayload(username=username, role=role, user_id=user_id)
+    token_version = int(record.get("token_version") or 1) if isinstance(record, dict) else 1
+    return TokenPayload(
+        username=username,
+        role=role,
+        user_id=user_id,
+        token_version=token_version,
+    )

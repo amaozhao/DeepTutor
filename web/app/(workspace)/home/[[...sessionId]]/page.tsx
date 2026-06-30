@@ -1407,6 +1407,66 @@ export default function ChatPage() {
     [fileToAttachment, filterAndReportFiles],
   );
 
+  // Connected subagents are stored as ``type: subagent`` KBs (so selection
+  // rides the same knowledge_bases path), but in the composer they get their
+  // own single-select Bot chip — distinct from real knowledge bases.
+  const agentNameSet = useMemo(
+    () =>
+      new Set(
+        knowledgeBases
+          .filter((kb) => kb.metadata?.type === "subagent")
+          .map((kb) => kb.name),
+      ),
+    [knowledgeBases],
+  );
+  const kbOptions = useMemo(
+    () => knowledgeBases.filter((kb) => kb.metadata?.type !== "subagent"),
+    [knowledgeBases],
+  );
+  const agentOptions = useMemo(
+    () =>
+      knowledgeBases
+        .filter((kb) => kb.metadata?.type === "subagent")
+        .map((kb) => ({ name: kb.name, kind: kb.metadata?.agent_kind })),
+    [knowledgeBases],
+  );
+  const selectedKbOnly = useMemo(
+    () => state.knowledgeBases.filter((n) => !agentNameSet.has(n)),
+    [state.knowledgeBases, agentNameSet],
+  );
+  const selectedAgent = useMemo(
+    () => state.knowledgeBases.find((n) => agentNameSet.has(n)) ?? null,
+    [state.knowledgeBases, agentNameSet],
+  );
+  const handleSelectAgent = useCallback(
+    (name: string | null) => {
+      // Single-select: clear any selected agent, then set the new one (if any).
+      const withoutAgents = state.knowledgeBases.filter(
+        (n) => !agentNameSet.has(n),
+      );
+      setKBs(name ? [...withoutAgents, name] : withoutAgents);
+    },
+    [setKBs, state.knowledgeBases, agentNameSet],
+  );
+  // Honor `?agent=<name>` once its connection KB has loaded: preselect it so a
+  // partner opened from the partner list starts the chat already targeting it.
+  useEffect(() => {
+    if (agentPreselectDoneRef.current) return;
+    const name = pendingAgentRef.current;
+    if (!name || !agentNameSet.has(name)) return;
+    agentPreselectDoneRef.current = true;
+    handleSelectAgent(name);
+  }, [agentNameSet, handleSelectAgent]);
+  // How many times DeepTutor may consult the selected agent this turn. Seeded
+  // from the configured default; the composer's stepper overrides it per turn
+  // (sent in the request config, read by the subagent capability).
+  const [subagentBudget, setSubagentBudget] = useState<number | null>(null);
+  useEffect(() => {
+    void getSubagentSettings()
+      .then((s) => setSubagentBudget(s.consult_budget))
+      .catch(() => undefined);
+  }, []);
+
   const handleSend = useCallback(
     async (content: string) => {
       if (
@@ -1510,6 +1570,7 @@ export default function ChatPage() {
       researchValidation,
       selectedHistorySessions.length,
       selectedAgentSessions.length,
+      selectedAgent,
       selectedMemoryFiles.length,
       selectedBookReferences.length,
       selectedNotebookRecords.length,
@@ -1517,6 +1578,7 @@ export default function ChatPage() {
       sendMessage,
       shouldAutoScrollRef,
       state.isStreaming,
+      subagentBudget,
       t,
       visualizeConfig,
     ],
@@ -1582,65 +1644,6 @@ export default function ChatPage() {
     [setKBs, state.knowledgeBases],
   );
 
-  // Connected subagents are stored as ``type: subagent`` KBs (so selection
-  // rides the same knowledge_bases path), but in the composer they get their
-  // own single-select Bot chip — distinct from real knowledge bases.
-  const agentNameSet = useMemo(
-    () =>
-      new Set(
-        knowledgeBases
-          .filter((kb) => kb.metadata?.type === "subagent")
-          .map((kb) => kb.name),
-      ),
-    [knowledgeBases],
-  );
-  const kbOptions = useMemo(
-    () => knowledgeBases.filter((kb) => kb.metadata?.type !== "subagent"),
-    [knowledgeBases],
-  );
-  const agentOptions = useMemo(
-    () =>
-      knowledgeBases
-        .filter((kb) => kb.metadata?.type === "subagent")
-        .map((kb) => ({ name: kb.name, kind: kb.metadata?.agent_kind })),
-    [knowledgeBases],
-  );
-  const selectedKbOnly = useMemo(
-    () => state.knowledgeBases.filter((n) => !agentNameSet.has(n)),
-    [state.knowledgeBases, agentNameSet],
-  );
-  const selectedAgent = useMemo(
-    () => state.knowledgeBases.find((n) => agentNameSet.has(n)) ?? null,
-    [state.knowledgeBases, agentNameSet],
-  );
-  const handleSelectAgent = useCallback(
-    (name: string | null) => {
-      // Single-select: clear any selected agent, then set the new one (if any).
-      const withoutAgents = state.knowledgeBases.filter(
-        (n) => !agentNameSet.has(n),
-      );
-      setKBs(name ? [...withoutAgents, name] : withoutAgents);
-    },
-    [setKBs, state.knowledgeBases, agentNameSet],
-  );
-  // Honor `?agent=<name>` once its connection KB has loaded: preselect it so a
-  // partner opened from the partner list starts the chat already targeting it.
-  useEffect(() => {
-    if (agentPreselectDoneRef.current) return;
-    const name = pendingAgentRef.current;
-    if (!name || !agentNameSet.has(name)) return;
-    agentPreselectDoneRef.current = true;
-    handleSelectAgent(name);
-  }, [agentNameSet, handleSelectAgent]);
-  // How many times DeepTutor may consult the selected agent this turn. Seeded
-  // from the configured default; the composer's stepper overrides it per turn
-  // (sent in the request config, read by the subagent capability).
-  const [subagentBudget, setSubagentBudget] = useState<number | null>(null);
-  useEffect(() => {
-    void getSubagentSettings()
-      .then((s) => setSubagentBudget(s.consult_budget))
-      .catch(() => undefined);
-  }, []);
   const handleSelectNotebookPicker = useCallback(() => {
     setShowNotebookPicker(true);
   }, []);

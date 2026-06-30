@@ -47,7 +47,7 @@ def test_delete_knowledge_base_clears_config_when_rmtree_fails(
     the raised OSError aborted the delete and the entry was stuck forever.
     """
     manager = KnowledgeBaseManager(base_dir=str(tmp_path))
-    _create_kb(manager, "broken")
+    kb_dir = _create_kb(manager, "broken")
 
     import shutil as _shutil
 
@@ -56,14 +56,19 @@ def test_delete_knowledge_base_clears_config_when_rmtree_fails(
         if onerror is not None:
             onerror(_shutil.rmtree, str(path), (OSError, OSError("busy"), None))
 
-    monkeypatch.setattr(_shutil, "rmtree", _rmtree_always_errors)
-    # The manager imports shutil at module level, so patch there too.
     from deeptutor.knowledge import manager as manager_mod
 
-    monkeypatch.setattr(manager_mod.shutil, "rmtree", _rmtree_always_errors)
+    with monkeypatch.context() as m:
+        m.setattr(_shutil, "rmtree", _rmtree_always_errors)
+        # The manager imports shutil at module level, so patch there too.
+        m.setattr(manager_mod.shutil, "rmtree", _rmtree_always_errors)
 
-    assert manager.delete_knowledge_base("broken", confirm=True) is True
+        assert manager.delete_knowledge_base("broken", confirm=True) is True
     assert "broken" not in _read_config(manager.config_file).get("knowledge_bases", {})
+    for item in sorted(kb_dir.rglob("*"), reverse=True):
+        item.chmod(0o700)
+    kb_dir.chmod(0o700)
+    _shutil.rmtree(kb_dir, ignore_errors=True)
 
 
 def test_delete_knowledge_base_removes_orphan_config_when_directory_missing(

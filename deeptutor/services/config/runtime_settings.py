@@ -36,6 +36,13 @@ DEFAULT_AUTH_SETTINGS: dict[str, Any] = {
     "password_hash": "",
     "token_expire_hours": 24,
     "cookie_secure": False,
+    "public_registration_enabled": False,
+    "registration_review_required": False,
+    "require_terms_acceptance": True,
+    "terms_version": "v1",
+    "privacy_version": "v1",
+    "csrf_protection_enabled": True,
+    "max_users": 0,
 }
 
 DEFAULT_INTEGRATIONS_SETTINGS: dict[str, Any] = {
@@ -512,6 +519,13 @@ class RuntimeSettingsService:
             "AUTH_PASSWORD_HASH": auth["password_hash"],
             "AUTH_TOKEN_EXPIRE_HOURS": str(auth["token_expire_hours"]),
             "AUTH_COOKIE_SECURE": _bool_env(auth["cookie_secure"]),
+            "AUTH_PUBLIC_REGISTRATION_ENABLED": _bool_env(auth["public_registration_enabled"]),
+            "AUTH_REGISTRATION_REVIEW_REQUIRED": _bool_env(auth["registration_review_required"]),
+            "AUTH_REQUIRE_TERMS_ACCEPTANCE": _bool_env(auth["require_terms_acceptance"]),
+            "AUTH_TERMS_VERSION": auth["terms_version"],
+            "AUTH_PRIVACY_VERSION": auth["privacy_version"],
+            "AUTH_CSRF_PROTECTION_ENABLED": _bool_env(auth["csrf_protection_enabled"]),
+            "AUTH_MAX_USERS": str(auth["max_users"]),
             "NEXT_PUBLIC_AUTH_ENABLED": _bool_env(auth["enabled"]),
             # Consumed server-side by the Next.js middleware (web/proxy.ts) at
             # request time — NOT inlined into the browser bundle. The proxy
@@ -637,6 +651,20 @@ class RuntimeSettingsService:
             payload["token_expire_hours"] = value
         if value := self._process_env_value("AUTH_COOKIE_SECURE"):
             payload["cookie_secure"] = value
+        if value := self._process_env_value("AUTH_PUBLIC_REGISTRATION_ENABLED"):
+            payload["public_registration_enabled"] = value
+        if value := self._process_env_value("AUTH_REGISTRATION_REVIEW_REQUIRED"):
+            payload["registration_review_required"] = value
+        if value := self._process_env_value("AUTH_REQUIRE_TERMS_ACCEPTANCE"):
+            payload["require_terms_acceptance"] = value
+        if value := self._process_env_value("AUTH_TERMS_VERSION"):
+            payload["terms_version"] = value
+        if value := self._process_env_value("AUTH_PRIVACY_VERSION"):
+            payload["privacy_version"] = value
+        if value := self._process_env_value("AUTH_CSRF_PROTECTION_ENABLED"):
+            payload["csrf_protection_enabled"] = value
+        if value := self._process_env_value("AUTH_MAX_USERS"):
+            payload["max_users"] = value
         return self._normalize_auth(payload)
 
     def _apply_integrations_process_overrides(self, settings: dict[str, Any]) -> dict[str, Any]:
@@ -877,6 +905,19 @@ class RuntimeSettingsService:
             "password_hash": _string(settings.get("password_hash")),
             "token_expire_hours": max(1, _coerce_int(settings.get("token_expire_hours"), 24)),
             "cookie_secure": _coerce_bool(settings.get("cookie_secure"), False),
+            "public_registration_enabled": _coerce_bool(
+                settings.get("public_registration_enabled"), False
+            ),
+            "registration_review_required": _coerce_bool(
+                settings.get("registration_review_required"), False
+            ),
+            "require_terms_acceptance": _coerce_bool(
+                settings.get("require_terms_acceptance"), True
+            ),
+            "terms_version": _string(settings.get("terms_version")) or "v1",
+            "privacy_version": _string(settings.get("privacy_version")) or "v1",
+            "csrf_protection_enabled": _coerce_bool(settings.get("csrf_protection_enabled"), True),
+            "max_users": max(0, _coerce_int(settings.get("max_users"), 0)),
         }
 
     def _normalize_integrations(self, settings: dict[str, Any]) -> dict[str, Any]:

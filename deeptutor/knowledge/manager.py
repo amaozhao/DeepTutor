@@ -1311,7 +1311,7 @@ class KnowledgeBaseManager:
                 # leaving the KB stuck in the list is worse than orphan files on
                 # disk (issue #370).
                 try:
-                    os.chmod(path, stat.S_IWRITE)
+                    os.chmod(path, stat.S_IRWXU)
                     func(path)
                 except Exception as retry_exc:
                     logger.warning(

@@ -43,6 +43,8 @@ def _coerce_float(value: Any, default: float) -> float:
 
 @dataclass
 class TestRun:
+    __test__ = False
+
     id: str
     service: str
     status: str = "running"

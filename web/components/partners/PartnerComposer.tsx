@@ -420,7 +420,7 @@ export const PartnerComposer = memo(function PartnerComposer({
                   className="group relative"
                 >
                   <div className="h-14 w-14 overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--muted)]/35">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    { }
                     <img
                       src={attachment.previewUrl}
                       alt={attachment.filename || t("Attachment preview")}

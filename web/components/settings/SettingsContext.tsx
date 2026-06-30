@@ -116,6 +116,12 @@ export type SystemStatus = {
   llm: { status: string; model?: string; error?: string };
   embeddings: { status: string; model?: string; error?: string };
   search: { status: string; provider?: string; error?: string };
+  deployment?: {
+    status: string;
+    multi_replica_ready: boolean;
+    shared_state?: Record<string, string>;
+    blocking_reasons?: string[];
+  };
 };
 
 export type EmbeddingCapabilities = {
@@ -505,7 +511,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   // a "version" counter to trigger re-renders for `hasUnsavedChanges`
   // when an extension's dirty flag flips.
   const extensionsRef = useRef<Map<string, SettingsExtension>>(new Map());
-  const [extensionsVersion, setExtensionsVersion] = useState(0);
+  const [, setExtensionsVersion] = useState(0);
   const registerExtension = useCallback(
     (key: string, ext: SettingsExtension | null) => {
       const map = extensionsRef.current;
@@ -933,22 +939,20 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     draft.services.embedding.active_model_id,
   ]);
 
+  const activeLlmProfileId = draft.services.llm.active_profile_id;
+  const activeLlmModelId = draft.services.llm.active_model_id;
   useEffect(() => {
     setLlmContextDetection((current) => {
       if (!current) return null;
-      const llm = draft.services.llm;
       if (
-        current.profileId === llm.active_profile_id &&
-        current.modelId === llm.active_model_id
+        current.profileId === activeLlmProfileId &&
+        current.modelId === activeLlmModelId
       ) {
         return current;
       }
       return null;
     });
-  }, [
-    draft.services.llm.active_profile_id,
-    draft.services.llm.active_model_id,
-  ]);
+  }, [activeLlmProfileId, activeLlmModelId]);
 
   const runDetailedTest = useCallback(
     async (service: ServiceName) => {
@@ -1137,18 +1141,17 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   }, [tourStepIndex, router]);
 
   // ── Derived ─────────────────────────────────────────────────────────────
-  const hasUnsavedChanges = useMemo(() => {
-    const catalogDirty =
-      catalogEditable === true &&
-      JSON.stringify(catalog) !== JSON.stringify(draft);
-    if (catalogDirty) return true;
-    // Any registered extension dirty also counts. Reading from the ref is
-    // safe because `extensionsVersion` invalidates this memo on flip.
+  const catalogDirty =
+    catalogEditable === true && JSON.stringify(catalog) !== JSON.stringify(draft);
+  let hasUnsavedChanges = catalogDirty;
+  if (!hasUnsavedChanges) {
     for (const ext of extensionsRef.current.values()) {
-      if (ext.dirty) return true;
+      if (ext.dirty) {
+        hasUnsavedChanges = true;
+        break;
+      }
     }
-    return false;
-  }, [catalog, catalogEditable, draft, extensionsVersion]);
+  }
 
   const settingsLoading = catalogEditable === null;
 
