@@ -9,17 +9,13 @@ from typing import Any
 from . import paths
 from .context import get_current_user
 
-# Keep the legacy module-level hook for callers and tests that redirect the
-# audit root directly; path resolution remains dynamic per call.
-SYSTEM_ROOT = paths.SYSTEM_ROOT
-_DEFAULT_SYSTEM_ROOT = SYSTEM_ROOT
+MAX_AUDIT_QUERY_LIMIT = 500
 
 
 def _audit_file():
     # Resolved per call so monkey-patched SYSTEM_ROOT (e.g. in tests) takes
     # effect without a module reload.
-    root = SYSTEM_ROOT if SYSTEM_ROOT != _DEFAULT_SYSTEM_ROOT else paths.SYSTEM_ROOT
-    return root / "audit" / "usage.jsonl"
+    return paths.SYSTEM_ROOT / "audit" / "usage.jsonl"
 
 
 def _write(payload: dict[str, Any]) -> None:
@@ -30,6 +26,48 @@ def _write(payload: dict[str, Any]) -> None:
     except Exception:
         # Auditing must never break a request.
         return
+
+
+def _read_events() -> list[dict[str, Any]]:
+    try:
+        paths.ensure_system_dirs()
+        target = _audit_file()
+        if not target.exists():
+            return []
+        events: list[dict[str, Any]] = []
+        for line in target.read_text(encoding="utf-8").splitlines():
+            try:
+                item = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(item, dict):
+                events.append(item)
+        return events
+    except Exception:
+        return []
+
+
+def query_audit_events(
+    *,
+    action: str | None = None,
+    actor_id: str | None = None,
+    target_user_id: str | None = None,
+    limit: int = 100,
+) -> list[dict[str, Any]]:
+    """Return newest matching audit events from the file-backed audit log."""
+    limit = max(1, min(int(limit or 100), MAX_AUDIT_QUERY_LIMIT))
+    events = reversed(_read_events())
+
+    def matches(event: dict[str, Any]) -> bool:
+        if action and str(event.get("action") or "") != action:
+            return False
+        if actor_id and str(event.get("actor_id") or "") != actor_id:
+            return False
+        if target_user_id and str(event.get("target_user_id") or "") != target_user_id:
+            return False
+        return True
+
+    return [event for event in events if matches(event)][:limit]
 
 
 def log_usage(
@@ -81,28 +119,6 @@ def log_admin_action(
     }
     if target_user_id:
         payload["target_user_id"] = target_user_id
-    if summary:
-        payload["summary"] = summary
-    _write(payload)
-
-
-def log_guardian_action(
-    action: str,
-    guardian_user_id: str,
-    learner_user_id: str,
-    summary: dict[str, Any] | None = None,
-) -> None:
-    """Record an action performed through an explicit guardian relationship."""
-    user = get_current_user()
-    payload: dict[str, Any] = {
-        "time": datetime.now(timezone.utc).isoformat(),
-        "actor_id": user.id,
-        "actor_username": user.username,
-        "actor_role": user.role,
-        "action": action,
-        "guardian_user_id": guardian_user_id,
-        "learner_user_id": learner_user_id,
-    }
     if summary:
         payload["summary"] = summary
     _write(payload)

@@ -130,6 +130,8 @@ function extractDetail(detail: unknown): string {
 export async function register(
   username: string,
   password: string,
+  termsAccepted = false,
+  inviteCode = "",
 ): Promise<{
   ok: boolean;
   role?: string;
@@ -140,7 +142,12 @@ export async function register(
     const res = await apiFetch(apiUrl("/api/auth/register"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username, password }),
+      body: JSON.stringify({
+        username,
+        password,
+        terms_accepted: termsAccepted,
+        invite_code: inviteCode || undefined,
+      }),
       // Registration validation failures (e.g. 400/401) should surface inline
       // rather than bounce the user through the global login redirect.
       skipAuthRedirect: true,

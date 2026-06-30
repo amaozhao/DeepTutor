@@ -1,3 +1,40 @@
+export type UserQuota = {
+  daily_token_limit: number;
+  monthly_token_limit: number;
+  daily_call_limit: number;
+  monthly_call_limit: number;
+  daily_cost_limit_usd: number;
+  monthly_cost_limit_usd: number;
+};
+
+export type UsageMetrics = {
+  prompt_tokens: number;
+  completion_tokens: number;
+  total_tokens: number;
+  total_calls: number;
+  total_cost_usd: number;
+};
+
+export type UserUsageResponse = {
+  quota: UserQuota;
+  usage: {
+    today: UsageMetrics;
+    month: UsageMetrics;
+    all: UsageMetrics;
+  };
+};
+
+export type DeleteDataAction = "keep" | "archive" | "delete";
+
+export type AuditEvent = {
+  time?: string;
+  action?: string;
+  actor_username?: string;
+  actor_role?: string;
+  target_user_id?: string;
+  summary?: Record<string, unknown>;
+};
+
 export type GrantPayload = {
   version: number;
   user_id: string;
@@ -14,20 +51,8 @@ export type GrantPayload = {
   mcp_tools: string[] | null;
   /** null = follow deployment exec policy, false = always disabled. */
   exec_enabled: boolean | null;
-  learning_policy: LearningPolicy | null;
-};
-
-export type LearningPolicy = {
-  age_band: "6-8" | "9-12" | "13-15";
-  locked_persona: "teacher";
-  allowed_capabilities: Array<"chat" | "immersive_reading">;
-  default_capability: "chat" | "immersive_reading";
-  allowed_surfaces: Array<"chat" | "reading">;
-  reading: {
-    allow_upload: boolean;
-    material_ids: string[];
-    extensions: string[];
-  };
+  /** Zero means unlimited. */
+  quota: UserQuota;
 };
 
 export type ToolOption = { name: string; description?: string };
@@ -57,32 +82,6 @@ export type MultiUserResources = {
   }>;
   skills: Array<{ name: string; description?: string; tags?: string[] }>;
   partners: Array<{ partner_id: string; name: string; description?: string }>;
-  reading_materials: Array<{
-    material_id: string;
-    title: string;
-    filename: string;
-    render_mode: string;
-  }>;
-  reading_extensions: Array<{
-    id: string;
-    name: string;
-    version: string;
-  }>;
   tools: ToolOption[];
   mcp_tools: McpToolOption[];
-};
-
-export type BookPermissionLevel = "none" | "read" | "edit";
-
-export type BookPermission = {
-  create: boolean;
-  default: "none" | "read";
-  books: Record<string, BookPermissionLevel>;
-};
-
-export type AdminBook = {
-  book_id: string;
-  title: string;
-  status: string;
-  updated_at: number;
 };

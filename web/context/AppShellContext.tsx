@@ -32,13 +32,11 @@ import {
   normalizeCodeBlockTheme,
   normalizeCodeBlockWrapLongLines,
   normalizeLanguage,
-  resolveResponseLanguage,
   readStoredActiveSessionId,
   readStoredCodeBlockShowLineNumbers,
   readStoredCodeBlockTheme,
   readStoredCodeBlockWrapLongLines,
   readStoredLanguage,
-  writeStoredResponseLanguage,
   readStoredSidebarCollapsed,
   writeStoredActiveSessionId,
   writeStoredCodeBlockShowLineNumbers,
@@ -53,7 +51,6 @@ interface AppShellContextValue {
   theme: Theme;
   setTheme: (theme: Theme) => void;
   language: AppLanguage;
-  languageReady: boolean;
   setLanguage: (language: AppLanguage) => void;
   activeSessionId: string | null;
   setActiveSessionId: (sessionId: string | null) => void;
@@ -75,7 +72,6 @@ export function AppShellProvider({ children }: { children: React.ReactNode }) {
   });
   // Always start with "en" to match SSR; hydrate from localStorage after mount
   const [language, setLanguageState] = useState<AppLanguage>("en");
-  const [languageReady, setLanguageReady] = useState(false);
   const [activeSessionId, setActiveSessionIdState] = useState<string | null>(
     () => readStoredActiveSessionId(),
   );
@@ -92,6 +88,7 @@ export function AppShellProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     // Hydrate client-only preferences after SSR-safe first render.
+    setLanguageState(readStoredLanguage());
     setSidebarCollapsedState(readStoredSidebarCollapsed());
     setCodeBlockThemeState(readStoredCodeBlockTheme());
     setCodeBlockShowLineNumbersState(readStoredCodeBlockShowLineNumbers());
@@ -99,67 +96,29 @@ export function AppShellProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
-    // The saved languages live in the backend's ui settings, but only the
-    // settings route ever read them, so every other page started in English
-    // until the user changed it again in this browser. Adopt them once, and
-    // only when this browser has made no choice of its own — a local selection
-    // is the more specific signal and must win.
-    //
-    // One fetch carries both fields: the interface locale and the
-    // reader-facing output language are stored together and are gated by the
-    // same "has this browser chosen yet?" question, so splitting them into two
-    // bootstraps would only give them a chance to disagree.
+    // The saved interface language lives in the backend's ui settings, but
+    // only the settings route ever read it, so every other page started in
+    // English until the user changed it again in this browser. Adopt it once,
+    // and only when this browser has made no choice of its own — a local
+    // selection is the more specific signal and must win.
+    if (hasStoredLanguage()) return;
     const controller = new AbortController();
-    let cancelled = false;
-    let fallbackTimer: ReturnType<typeof setTimeout> | undefined;
     void (async () => {
-      if (hasStoredLanguage()) {
-        if (!cancelled) {
-          setLanguageState(readStoredLanguage());
-          setLanguageReady(true);
-        }
-        return;
-      }
-      fallbackTimer = setTimeout(() => {
-        controller.abort();
-        if (!cancelled) setLanguageReady(true);
-      }, 1_500);
       try {
-        const response = await apiFetch(apiUrl("/api/settings/ui"), {
+        const response = await apiFetch(apiUrl("/api/v1/settings/ui"), {
           signal: controller.signal,
           skipAuthRedirect: true,
         });
         if (!response.ok) return;
-        const payload = (await response.json()) as {
-          language?: unknown;
-          response_language?: unknown;
-        };
+        const payload = (await response.json()) as { language?: unknown };
         if (payload.language !== "zh" && payload.language !== "en") return;
         writeStoredLanguage(payload.language);
-        // A backend that predates the split sends no response_language;
-        // resolveResponseLanguage inherits the interface locale, matching what
-        // the server does for a legacy interface.json.
-        writeStoredResponseLanguage(
-          resolveResponseLanguage(
-            typeof payload.response_language === "string"
-              ? payload.response_language
-              : null,
-            payload.language,
-          ),
-        );
-        if (!cancelled) setLanguageState(payload.language);
+        setLanguageState(payload.language);
       } catch {
         // Offline or unauthenticated: keep the local default.
-      } finally {
-        if (fallbackTimer) clearTimeout(fallbackTimer);
-        if (!cancelled) setLanguageReady(true);
       }
     })();
-    return () => {
-      cancelled = true;
-      if (fallbackTimer) clearTimeout(fallbackTimer);
-      controller.abort();
-    };
+    return () => controller.abort();
   }, []);
 
   useEffect(() => {
@@ -260,7 +219,6 @@ export function AppShellProvider({ children }: { children: React.ReactNode }) {
   const setLanguage = useCallback((nextLanguage: AppLanguage) => {
     writeStoredLanguage(nextLanguage);
     setLanguageState(nextLanguage);
-    setLanguageReady(true);
   }, []);
 
   const setActiveSessionId = useCallback((sessionId: string | null) => {
@@ -294,7 +252,6 @@ export function AppShellProvider({ children }: { children: React.ReactNode }) {
       theme,
       setTheme,
       language,
-      languageReady,
       setLanguage,
       activeSessionId,
       setActiveSessionId,
@@ -313,7 +270,6 @@ export function AppShellProvider({ children }: { children: React.ReactNode }) {
       codeBlockTheme,
       codeBlockWrapLongLines,
       language,
-      languageReady,
       setActiveSessionId,
       setCodeBlockShowLineNumbers,
       setCodeBlockTheme,

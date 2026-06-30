@@ -31,6 +31,14 @@ def _fake_persona_service() -> SimpleNamespace:
     )
 
 
+@pytest.fixture(autouse=True)
+def _skip_title_llm(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def skip_title(*_args, **_kwargs) -> None:
+        return None
+
+    monkeypatch.setattr(TurnRuntimeManager, "_maybe_generate_session_title", skip_title)
+
+
 def _model_catalog() -> dict:
     return {
         "version": 1,

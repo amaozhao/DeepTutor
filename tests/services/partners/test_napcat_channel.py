@@ -609,6 +609,7 @@ class TestDispatchFrame:
     async def test_self_id_captured_from_event(self):
         ch = _make_channel()
         with patch.object(ch, "_create_background_task") as mock_bg:
+            mock_bg.side_effect = lambda coro, _kind: coro.close()
             await ch._dispatch_frame('{"post_type": "message", "self_id": 999}')
         assert ch._self_id == 999
         mock_bg.assert_called_once()

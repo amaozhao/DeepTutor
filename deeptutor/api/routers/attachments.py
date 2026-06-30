@@ -12,7 +12,8 @@ URL shape::
 
 The session id functions as the ACL boundary, mirroring how the rest of
 the app treats sessions today (single-tenant, session ownership is local
-trust). Once multi-user auth lands we should swap this for signed URLs.
+trust). The router also confirms the session exists in the current user's
+session store before serving the file.
 """
 
 from __future__ import annotations
@@ -23,7 +24,7 @@ import mimetypes
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse
 
-from deeptutor.api.utils.http_headers import content_disposition
+from deeptutor.services.session import get_session_store
 from deeptutor.services.storage import (
     LocalDiskAttachmentStore,
     get_attachment_store,
@@ -32,9 +33,6 @@ from deeptutor.services.storage import (
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
-
-
-_content_disposition = content_disposition
 
 
 @router.get("/{session_id}/{attachment_id}/{filename:path}")
@@ -50,6 +48,10 @@ async def get_attachment(
     the browser still falls back to download, which is fine for the
     drawer's "Download" button path.
     """
+    session = await get_session_store().get_session(session_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail="Attachment not found")
+
     store = get_attachment_store()
     if not isinstance(store, LocalDiskAttachmentStore):
         # Future remote backends should issue a redirect to the signed URL
@@ -72,7 +74,7 @@ async def get_attachment(
     # ``inline`` lets the browser preview the file when possible while still
     # honouring the suggested filename for the drawer's download action.
     headers = {
-        "Content-Disposition": _content_disposition(target.name),
+        "Content-Disposition": f'inline; filename="{target.name}"',
         # User-uploaded data; do not let intermediaries cache it.
         "Cache-Control": "private, max-age=0, must-revalidate",
     }

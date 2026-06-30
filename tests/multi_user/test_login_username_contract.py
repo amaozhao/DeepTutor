@@ -1,11 +1,4 @@
-"""Contract: auth accepts a plain username, not just an email address.
-
-The admin "Add user" dialog and the login/register forms let an operator use a
-bare username (no ``@``). These tests lock the backend half of that contract so
-a future change (e.g. swapping the field for ``pydantic.EmailStr``) can't
-silently make username login impossible again — which is exactly the bug the
-frontend ``type="text"`` fix was paired with.
-"""
+"""Contract: new registrations are email/password, while login stays legacy-safe."""
 
 from __future__ import annotations
 
@@ -15,7 +8,7 @@ import pytest
 from deeptutor.api.routers.auth import LoginRequest, RegisterRequest
 
 # ---------------------------------------------------------------------------
-# RegisterRequest.username — the real validator
+# RegisterRequest.username — email/password account creation
 # ---------------------------------------------------------------------------
 
 
@@ -24,15 +17,9 @@ from deeptutor.api.routers.auth import LoginRequest, RegisterRequest
     [
         "admin@admin.com",  # standard email (PocketBase mode)
         "user.name@sub.example.co",  # email with dotted local/sub-domain
-        "admin",  # bare username (SQLite/JSON mode) — the regression guard
-        "john_doe",
-        "user.name",
-        "a-b-c",
-        "abc",  # minimum length (3)
-        "x" * 64,  # maximum length (64)
     ],
 )
-def test_register_accepts_email_or_plain_username(username: str) -> None:
+def test_register_accepts_email(username: str) -> None:
     assert RegisterRequest(username=username, password="password1234").username == username
 
 
@@ -41,12 +28,14 @@ def test_register_accepts_email_or_plain_username(username: str) -> None:
     [
         "",  # empty
         "   ",  # whitespace only
-        "ab",  # too short for a plain username and not an email
-        "x" * 65,  # too long
-        "has space",  # spaces allowed in neither form
-        "@nodomain",  # has '@' but is not a valid email
-        "bad@",  # malformed email, '@' disqualifies it as a plain username
-        "no-at-but-bad!",  # '!' is outside the plain-username charset
+        "admin",
+        "john_doe",
+        "user.name",
+        "a-b-c",
+        "has space",
+        "@nodomain",
+        "bad@",
+        "no-at-but-bad!",
     ],
 )
 def test_register_rejects_invalid_username(username: str) -> None:
@@ -55,17 +44,20 @@ def test_register_rejects_invalid_username(username: str) -> None:
 
 
 def test_register_username_is_trimmed() -> None:
-    assert RegisterRequest(username="  admin  ", password="password1234").username == "admin"
+    assert (
+        RegisterRequest(username="  ADMIN@Example.COM  ", password="password1234").username
+        == "admin@example.com"
+    )
 
 
 @pytest.mark.parametrize("password", ["", "short", "1234567"])  # all < 8 chars
 def test_register_rejects_short_password(password: str) -> None:
     with pytest.raises(ValidationError):
-        RegisterRequest(username="admin", password=password)
+        RegisterRequest(username="admin@example.com", password=password)
 
 
 def test_register_accepts_eight_char_password() -> None:
-    assert RegisterRequest(username="admin", password="12345678").password == "12345678"
+    assert RegisterRequest(username="admin@example.com", password="12345678").password == "12345678"
 
 
 # ---------------------------------------------------------------------------
@@ -75,9 +67,7 @@ def test_register_accepts_eight_char_password() -> None:
 
 @pytest.mark.parametrize("username", ["admin", "admin@admin.com", "john_doe"])
 def test_login_accepts_plain_username(username: str) -> None:
-    """Login must accept whatever identity a user registered with — including a
-    bare username. It also must not re-validate the password length, or existing
-    accounts with legacy short passwords could no longer sign in."""
+    """Login must accept legacy bare usernames and must not re-validate password length."""
     req = LoginRequest(username=username, password="x")
     assert req.username == username
     assert req.password == "x"
