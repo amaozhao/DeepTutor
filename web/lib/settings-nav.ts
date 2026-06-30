@@ -293,16 +293,6 @@ export const SETTINGS_CATEGORIES: SettingsCategory[] = [
     href: "/settings/appearance",
   },
   {
-    key: "network",
-    label: { zh: "网络", en: "Network" },
-    blurb: {
-      zh: "端口、浏览器 API 地址与 CORS",
-      en: "Ports, browser API base, and CORS",
-    },
-    icon: Network,
-    href: "/settings/network",
-  },
-  {
     key: "models",
     label: { zh: "模型", en: "Models" },
     blurb: {
@@ -312,13 +302,6 @@ export const SETTINGS_CATEGORIES: SettingsCategory[] = [
     icon: Boxes,
     href: "/settings/models",
     children: MODEL_CHILDREN,
-  },
-  {
-    key: "knowledge",
-    label: { zh: "知识库", en: "Knowledge Base" },
-    blurb: { zh: "文档解析引擎", en: "Document parsing engine" },
-    icon: Library,
-    href: "/settings/document-parsing",
   },
   {
     key: "chat",
@@ -332,6 +315,23 @@ export const SETTINGS_CATEGORIES: SettingsCategory[] = [
     children: CHAT_CHILDREN,
   },
   {
+    key: "knowledge",
+    label: { zh: "知识库", en: "Knowledge Base" },
+    blurb: { zh: "文档解析引擎", en: "Document parsing engine" },
+    icon: Library,
+    href: "/settings/document-parsing",
+  },
+  {
+    key: "memory",
+    label: { zh: "记忆设置", en: "Memory Settings" },
+    blurb: {
+      zh: "分块、预算、去重与引用策略",
+      en: "Chunking, budget, dedup, and reference policies",
+    },
+    icon: BrainCircuit,
+    href: "/settings/memory",
+  },
+  {
     key: "agents",
     label: { zh: "伙伴和智能体", en: "Partners & Agents" },
     blurb: {
@@ -343,14 +343,14 @@ export const SETTINGS_CATEGORIES: SettingsCategory[] = [
     children: AGENT_CHILDREN,
   },
   {
-    key: "memory",
-    label: { zh: "记忆", en: "Memory" },
+    key: "network",
+    label: { zh: "网络", en: "Network" },
     blurb: {
-      zh: "分块、预算、去重与引用策略",
-      en: "Chunking, budget, dedup, and reference policies",
+      zh: "端口、浏览器 API 地址与 CORS",
+      en: "Ports, browser API base, and CORS",
     },
-    icon: BrainCircuit,
-    href: "/settings/memory",
+    icon: Network,
+    href: "/settings/network",
   },
 ];
 
@@ -361,6 +361,10 @@ const HUB_LABEL: Lang = { zh: "设置", en: "Settings" };
 const NAV_ONLY_ROUTES = new Set<string>([
   SETTINGS_HUB_HREF,
   ...SETTINGS_CATEGORIES.filter((c) => c.children).map((c) => c.href),
+  "/settings/profile",
+  "/settings/admin/users",
+  "/settings/memory-center",
+  "/settings/knowledge-center",
 ]);
 
 export function isNavOnlyRoute(pathname: string): boolean {
@@ -413,6 +417,17 @@ export interface Crumb {
 export function breadcrumbFor(pathname: string): Crumb[] {
   const root: Crumb = { label: HUB_LABEL, href: SETTINGS_HUB_HREF };
   if (pathname === SETTINGS_HUB_HREF) return [{ label: HUB_LABEL }];
+
+  const workspaceRoutes: Record<string, Lang> = {
+    "/settings/profile": { zh: "个人资料", en: "Profile" },
+    "/settings/admin/users": { zh: "管理后台", en: "Admin" },
+    "/settings/memory-center": { zh: "记忆中心", en: "Memory Center" },
+    "/settings/knowledge-center": {
+      zh: "知识中心",
+      en: "Knowledge Center",
+    },
+  };
+  if (workspaceRoutes[pathname]) return [root, { label: workspaceRoutes[pathname] }];
 
   // Direct-leaf or sub-hub category landed on its own href.
   const category = SETTINGS_CATEGORIES.find((c) => c.href === pathname);

@@ -14,6 +14,11 @@ def test_cors_allows_remote_http_origins_when_auth_disabled(
     monkeypatch.delenv("CORS_ORIGIN", raising=False)
     monkeypatch.delenv("CORS_ORIGINS", raising=False)
     monkeypatch.setenv("FRONTEND_PORT", "3782")
+    monkeypatch.setattr(
+        api_main,
+        "load_auth_settings",
+        lambda: {"enabled": False},
+    )
 
     settings = api_main._build_cors_settings()
 
@@ -28,6 +33,11 @@ def test_cors_requires_explicit_origins_when_auth_enabled(monkeypatch) -> None:
     monkeypatch.setenv(
         "CORS_ORIGINS",
         "https://foo.example.com, https://bar.example.com\nhttps://foo.example.com",
+    )
+    monkeypatch.setattr(
+        api_main,
+        "load_auth_settings",
+        lambda: {"enabled": True},
     )
 
     settings = api_main._build_cors_settings()
@@ -46,6 +56,11 @@ def test_cors_normalizes_common_origin_input_mistakes(monkeypatch) -> None:
         "172.26.0.10:3782; https://learn.example.com/app/",
     )
     monkeypatch.setenv("CORS_ORIGINS", "http://localhost:3000;api.example.com")
+    monkeypatch.setattr(
+        api_main,
+        "load_auth_settings",
+        lambda: {"enabled": True},
+    )
 
     settings = api_main._build_cors_settings()
 

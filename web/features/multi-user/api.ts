@@ -1,5 +1,11 @@
 import { apiFetch, apiUrl } from "@/lib/api";
-import type { GrantPayload, MultiUserResources } from "./types";
+import type {
+  AuditEvent,
+  GrantPayload,
+  MultiUserResources,
+  UserUsageResponse,
+} from "./types";
+import { filenameFromContentDisposition } from "./download";
 
 async function readError(res: Response, fallback: string): Promise<string> {
   try {
@@ -45,4 +51,45 @@ export async function saveUserGrant(
     throw new Error(await readError(res, "Failed to save user grant"));
   const data = await res.json();
   return data.grant as GrantPayload;
+}
+
+export async function fetchUserUsage(
+  userId: string,
+): Promise<UserUsageResponse> {
+  const res = await apiFetch(
+    apiUrl(`/api/v1/multi-user/users/${encodeURIComponent(userId)}/usage`),
+  );
+  if (!res.ok)
+    throw new Error(await readError(res, "Failed to load user usage"));
+  return (await res.json()) as UserUsageResponse;
+}
+
+export async function fetchAdminAuditEvents(limit = 50): Promise<AuditEvent[]> {
+  const res = await apiFetch(
+    apiUrl(`/api/v1/multi-user/admin/audit?limit=${limit}`),
+  );
+  if (!res.ok)
+    throw new Error(await readError(res, "Failed to load audit events"));
+  const data = await res.json();
+  return (data.events ?? []) as AuditEvent[];
+}
+
+export async function downloadUserExport(userId: string): Promise<void> {
+  const res = await apiFetch(
+    apiUrl(`/api/v1/multi-user/users/${encodeURIComponent(userId)}/export`),
+  );
+  if (!res.ok)
+    throw new Error(await readError(res, "Failed to export user data"));
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filenameFromContentDisposition(
+    res.headers.get("content-disposition"),
+    `deeptutor-user-${userId}.zip`,
+  );
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
 }

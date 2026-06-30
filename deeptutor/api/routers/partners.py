@@ -1006,7 +1006,8 @@ async def partner_chat_ws(ws: WebSocket, partner_id: str):
     * ``{"type": "done"}`` / ``{"type": "error"}`` / ``{"type": "proactive"}``.
     """
     from deeptutor.api.routers.auth import ws_auth_failed, ws_require_auth
-    from deeptutor.multi_user.context import reset_current_user
+    from deeptutor.api.security import require_rate_limit, websocket_ip
+    from deeptutor.multi_user.context import get_current_user, reset_current_user
 
     user_token = await ws_require_auth(ws)
     if user_token is ws_auth_failed:
@@ -1014,6 +1015,7 @@ async def partner_chat_ws(ws: WebSocket, partner_id: str):
 
     mgr = get_partner_manager()
     disconnected = asyncio.Event()
+    ws_ip = websocket_ip(ws)
 
     async def _safe_send(payload: dict) -> bool:
         try:
@@ -1107,6 +1109,17 @@ async def partner_chat_ws(ws: WebSocket, partner_id: str):
                 continue
 
             if not content and not attachments:
+                continue
+            user = get_current_user()
+            try:
+                require_rate_limit(
+                    f"llm-turn:partner:{ws_ip}:{user.id or user.username or 'local'}",
+                    limit=30,
+                    window_seconds=60,
+                )
+            except HTTPException as exc:
+                if not await _safe_send({"type": "error", "content": str(exc.detail)}):
+                    break
                 continue
             try:
                 media_paths = _materialize_partner_attachments(partner_id, attachments)

@@ -19,6 +19,7 @@ from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
 
+from deeptutor.multi_user.audit import log_admin_action
 from deeptutor.multi_user.context import get_current_user
 from deeptutor.multi_user.model_access import allowed_llm_options
 from deeptutor.services.config import (
@@ -329,6 +330,23 @@ def _require_settings_admin() -> None:
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Model configuration is managed by an administrator.",
         )
+
+
+def _catalog_audit_summary(catalog: dict[str, Any]) -> dict[str, Any]:
+    services: dict[str, dict[str, int]] = {}
+    for name, state in (catalog.get("services") or {}).items():
+        profiles = state.get("profiles") if isinstance(state, dict) else []
+        if not isinstance(profiles, list):
+            profiles = []
+        model_count = 0
+        for profile in profiles:
+            if isinstance(profile, dict) and isinstance(profile.get("models"), list):
+                model_count += len(profile["models"])
+        services[str(name)] = {
+            "profile_count": len(profiles),
+            "model_count": model_count,
+        }
+    return {"service_count": len(services), "services": services}
 
 
 def _provider_choices() -> dict[str, list[dict[str, str]]]:
@@ -957,6 +975,7 @@ async def update_catalog(payload: CatalogPayload):
     _require_settings_admin()
     catalog = get_model_catalog_service().save(payload.catalog)
     _invalidate_runtime_caches()
+    log_admin_action("model_catalog_update", summary=_catalog_audit_summary(catalog))
     return {"catalog": catalog}
 
 
@@ -966,6 +985,7 @@ async def apply_catalog(payload: CatalogPayload | None = None):
     catalog = payload.catalog if payload is not None else get_model_catalog_service().load()
     applied = get_model_catalog_service().apply(catalog)
     _invalidate_runtime_caches()
+    log_admin_action("model_catalog_apply", summary=_catalog_audit_summary(catalog))
     return {
         "message": "Catalog applied to runtime settings.",
         "catalog": get_model_catalog_service().load(),

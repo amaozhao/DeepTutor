@@ -1,8 +1,11 @@
 """Auth router — login, logout, status, registration, profile, and user-management endpoints."""
 
 from contextvars import Token as _CtxToken
+import csv
+import io
 import logging
 import re
+from typing import Literal
 
 from fastapi import (
     APIRouter,
@@ -11,13 +14,14 @@ from fastapi import (
     File,
     Header,
     HTTPException,
+    Request,
     Response,
     UploadFile,
     WebSocket,
     status,
 )
 from fastapi.responses import FileResponse
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, ValidationError, field_validator
 
 from deeptutor.services.config import load_auth_settings
 
@@ -28,7 +32,16 @@ from deeptutor.services.config import load_auth_settings
 _SECURE = bool(load_auth_settings()["cookie_secure"])
 _SAMESITE = "none" if _SECURE else "lax"
 
+from deeptutor.api.security import client_ip, require_rate_limit, websocket_ip
+from deeptutor.multi_user.audit import log_admin_action
 from deeptutor.multi_user.context import set_current_user, user_from_token_payload
+from deeptutor.multi_user.data_governance import apply_user_delete_policy, export_user_data
+from deeptutor.multi_user.invites import (
+    consume_invite,
+    create_invite,
+    delete_invite,
+    list_invites,
+)
 from deeptutor.multi_user.paths import local_admin_user
 from deeptutor.services.auth import (
     AUTH_ENABLED,
@@ -45,8 +58,12 @@ from deeptutor.services.auth import (
     is_first_user,
     list_users,
     register_pb,
+    revoke_sessions,
     set_avatar,
+    set_disabled,
     set_role,
+    update_password,
+    verify_password,
 )
 
 logger = logging.getLogger(__name__)
@@ -55,6 +72,7 @@ router = APIRouter()
 
 _COOKIE_NAME = "dt_token"
 _COOKIE_MAX_AGE = TOKEN_EXPIRE_HOURS * 3600
+_CSV_IMPORT_MAX_BYTES = 1_000_000
 
 
 def _cookie_attrs() -> dict:
@@ -88,24 +106,21 @@ class LoginRequest(BaseModel):
 
 
 class RegisterRequest(BaseModel):
-    """Payload for the POST /register endpoint."""
+    """Payload for email/password account creation endpoints."""
 
     username: str
     password: str
+    terms_accepted: bool = False
+    captcha_token: str | None = None
+    invite_code: str | None = None
 
     @field_validator("username")
     @classmethod
     def username_valid(cls, v: str) -> str:
-        import re
-
-        v = v.strip()
+        v = v.strip().lower()
         if not v:
             raise ValueError("Email cannot be empty")
-        # Accept standard email addresses (used by PocketBase mode) or plain
-        # usernames (used by the built-in SQLite/JSON auth mode).
-        email_re = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
-        plain_re = re.compile(r"^[A-Za-z0-9_\-.]{3,64}$")
-        if not email_re.match(v) and not plain_re.match(v):
+        if not re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", v):
             raise ValueError("Enter a valid email address")
         return v
 
@@ -115,6 +130,29 @@ class RegisterRequest(BaseModel):
         if len(v) < 8:
             raise ValueError("Password must be at least 8 characters")
         return v
+
+
+class InviteCreateRequest(BaseModel):
+    """Payload for admin-created one-use registration invites."""
+
+    email: str = ""
+
+    @field_validator("email")
+    @classmethod
+    def email_valid(cls, v: str) -> str:
+        v = v.strip().lower()
+        if v and not re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", v):
+            raise ValueError("Enter a valid email address")
+        return v
+
+
+class InviteInfo(BaseModel):
+    code: str
+    email: str = ""
+    created_by: str = ""
+    created_at: str = ""
+    used_by: str = ""
+    used_at: str = ""
 
 
 class SetRoleRequest(BaseModel):
@@ -128,6 +166,44 @@ class SetRoleRequest(BaseModel):
         if v not in ("admin", "user"):
             raise ValueError("Role must be 'admin' or 'user'")
         return v
+
+
+class PasswordChangeRequest(BaseModel):
+    current_password: str
+    new_password: str
+
+    @field_validator("new_password")
+    @classmethod
+    def new_password_valid(cls, v: str) -> str:
+        if len(v) < 8:
+            raise ValueError("Password must be at least 8 characters")
+        return v
+
+
+class PasswordResetRequest(BaseModel):
+    password: str
+
+    @field_validator("password")
+    @classmethod
+    def password_valid(cls, v: str) -> str:
+        if len(v) < 8:
+            raise ValueError("Password must be at least 8 characters")
+        return v
+
+
+class DisabledRequest(BaseModel):
+    disabled: bool
+    reason: str = ""
+
+    @field_validator("reason")
+    @classmethod
+    def reason_valid(cls, v: str) -> str:
+        return v.strip()[:500]
+
+
+class AccountDeleteRequest(BaseModel):
+    password: str
+    data_action: Literal["keep", "archive", "delete"] = "keep"
 
 
 class AuthStatusResponse(BaseModel):
@@ -150,7 +226,14 @@ class UserInfo(BaseModel):
     role: str
     created_at: str
     disabled: bool = False
+    disabled_reason: str = ""
     avatar: str = ""
+
+
+class UserImportResult(BaseModel):
+    ok: bool = True
+    created: int
+    usernames: list[str]
 
 
 # Markers settable through PUT /profile. Image markers ("img:<version>") are
@@ -203,6 +286,114 @@ def _bearer_token_from_header(authorization: str | None) -> str | None:
 
 def _extract_token(authorization: str | None, dt_token: str | None) -> str | None:
     return _bearer_token_from_header(authorization) or dt_token
+
+
+def _rate_key(prefix: str, request: Request, identity: str) -> str:
+    return f"{prefix}:{client_ip(request)}:{identity.strip().lower()}"
+
+
+def _is_email(value: str) -> bool:
+    return bool(re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", value.strip()))
+
+
+def _csv_bool(value: str) -> bool:
+    return value.strip().lower() in {"1", "true", "yes", "y", "on"}
+
+
+def _parse_user_import_csv(data: bytes) -> list[dict[str, str | bool]]:
+    try:
+        text = data.decode("utf-8-sig")
+    except UnicodeDecodeError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="CSV must be UTF-8 encoded.",
+        ) from exc
+
+    reader = csv.DictReader(io.StringIO(text))
+    headers = {str(name or "").strip().lower() for name in (reader.fieldnames or [])}
+    if not headers:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="CSV is empty.")
+    if "password" not in headers or "email" not in headers:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="CSV must include email,password columns.",
+        )
+
+    rows: list[dict[str, str | bool]] = []
+    seen: set[str] = set()
+    for row_index, raw in enumerate(reader, start=2):
+        row = {
+            str(key or "").strip().lower(): str(value or "").strip() for key, value in raw.items()
+        }
+        if not any(row.values()):
+            continue
+        email = row.get("email", "").lower()
+        password = row.get("password") or ""
+        try:
+            RegisterRequest(username=email, password=password)
+        except ValidationError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail=f"Row {row_index}: {exc.errors()[0]['msg']}",
+            ) from exc
+        if email in seen:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Row {row_index}: duplicate email in CSV.",
+            )
+        seen.add(email)
+        disabled = _csv_bool(row.get("disabled", ""))
+        reason = DisabledRequest(
+            disabled=disabled,
+            reason=row.get("disabled_reason", ""),
+        ).reason
+        rows.append(
+            {
+                "email": email,
+                "password": password,
+                "disabled": disabled,
+                "disabled_reason": reason if disabled else "",
+            }
+        )
+
+    if not rows:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="CSV contains no users."
+        )
+    return rows
+
+
+def _public_registration_enabled() -> bool:
+    return bool(load_auth_settings().get("public_registration_enabled", False))
+
+
+def _registration_review_required() -> bool:
+    return bool(load_auth_settings().get("registration_review_required", False))
+
+
+def _terms_required() -> bool:
+    return bool(load_auth_settings().get("require_terms_acceptance", True))
+
+
+def _agreement_versions() -> dict[str, str]:
+    auth = load_auth_settings()
+    return {
+        "terms_version": str(auth.get("terms_version") or ""),
+        "privacy_version": str(auth.get("privacy_version") or ""),
+    }
+
+
+# ponytail: file-backed seat checks are best-effort; external user DB for multi-replica exactness.
+def _enforce_user_seats(additional: int = 1) -> None:
+    try:
+        max_users = max(0, int(load_auth_settings().get("max_users") or 0))
+    except (TypeError, ValueError):
+        max_users = 0
+    if max_users > 0 and len(list_users()) + additional > max_users:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"User seat limit reached ({max_users}).",
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -318,6 +509,16 @@ async def ws_require_auth(ws: WebSocket) -> _CtxToken | _WsAuthFailed:
         await ws.close(code=4001)
         return ws_auth_failed
 
+    try:
+        require_rate_limit(
+            f"ws:{websocket_ip(ws)}:{payload.username.lower()}",
+            limit=60,
+            window_seconds=60,
+        )
+    except HTTPException:
+        await ws.close(code=4008)
+        return ws_auth_failed
+
     return _install_current_user(payload)
 
 
@@ -402,10 +603,12 @@ async def auth_status(
 
 
 @router.post("/login")
-async def login(body: LoginRequest, response: Response) -> dict:
+async def login(body: LoginRequest, response: Response, request: Request) -> dict:
     """Validate credentials and set a JWT cookie."""
     if not AUTH_ENABLED:
         return {"ok": True, "message": "Auth is disabled — no login required."}
+
+    require_rate_limit(_rate_key("login", request, body.username), limit=10, window_seconds=300)
 
     if POCKETBASE_ENABLED:
         # PocketBase mode: email = username field for backwards-compat with the
@@ -460,7 +663,7 @@ async def logout(response: Response) -> dict:
 
 
 @router.post("/register", status_code=status.HTTP_201_CREATED)
-async def register(body: RegisterRequest) -> dict:
+async def register(body: RegisterRequest, request: Request) -> dict:
     """
     Bootstrap-only registration.
 
@@ -476,6 +679,8 @@ async def register(body: RegisterRequest) -> dict:
             detail="Auth is disabled — registration is not available.",
         )
 
+    require_rate_limit(_rate_key("register", request, body.username), limit=5, window_seconds=300)
+
     if POCKETBASE_ENABLED:
         # PocketBase deployments are documented as single-user. Keep registration
         # closed and require admins to provision users in the PocketBase admin UI.
@@ -484,6 +689,7 @@ async def register(body: RegisterRequest) -> dict:
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Self-registration is closed. Ask an administrator to create your account.",
             )
+        _enforce_user_seats()
         result = register_pb(username=body.username, email=body.username, password=body.password)
         if not result:
             raise HTTPException(
@@ -500,12 +706,60 @@ async def register(body: RegisterRequest) -> dict:
             "is_admin": False,
         }
 
-    # Standard mode — only allowed before the first admin exists.
+    # Standard mode — first account bootstraps admin; later public signups are
+    # email-only and opt-in through auth.public_registration_enabled.
     if not is_first_user():
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Self-registration is closed. Ask an administrator to create your account.",
+        public_registration = _public_registration_enabled()
+        invite_code = (body.invite_code or "").strip()
+        if not public_registration and not invite_code:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Self-registration is closed. Ask an administrator to create your account.",
+            )
+        if not _is_email(body.username):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="Public registration requires an email address.",
+            )
+        if _terms_required() and not body.terms_accepted:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="You must accept the terms to create an account.",
+            )
+
+        existing = {u["username"].lower() for u in list_users()}
+        if body.username.lower() in existing:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Username already taken",
+            )
+        _enforce_user_seats()
+        if invite_code and not consume_invite(invite_code, email=body.username):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Invalid or already used invite code.",
+            )
+        review_required = (
+            public_registration and not invite_code and _registration_review_required()
         )
+        add_user(body.username, body.password, role="user")
+        if review_required:
+            set_disabled(body.username, True, reason="pending registration review")
+        if body.terms_accepted:
+            from deeptutor.multi_user.identity import record_terms_acceptance
+
+            record_terms_acceptance(body.username, **_agreement_versions())
+        user = next((u for u in list_users() if u.get("username") == body.username), {})
+        logger.info("Public user registered: '%s'", body.username)
+        return {
+            "ok": True,
+            "user_id": str(user.get("id") or ""),
+            "username": body.username,
+            "role": "user",
+            "is_first_user": False,
+            "is_admin": False,
+            "requires_review": review_required,
+        }
 
     existing = {u["username"] for u in list_users()}
     if body.username in existing:
@@ -514,6 +768,7 @@ async def register(body: RegisterRequest) -> dict:
             detail="Username already taken",
         )
 
+    _enforce_user_seats()
     add_user(body.username, body.password)
     user_id = ""
     role = "user"
@@ -574,6 +829,24 @@ def _require_profile_identity(payload: TokenPayload | None) -> TokenPayload:
     return payload
 
 
+def _apply_user_data_policy(
+    user_id: str,
+    data_action: Literal["keep", "archive", "delete"],
+) -> dict:
+    if user_id and _USER_ID_RE.match(user_id):
+        from deeptutor.multi_user.identity import delete_avatar_file
+
+        delete_avatar_file(user_id)
+        try:
+            return apply_user_delete_policy(user_id, data_action)
+        except OSError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"User was deleted but data policy failed: {exc}",
+            ) from exc
+    return {"action": data_action, "workspace": "skipped", "grant": "skipped"}
+
+
 @router.get("/profile", response_model=UserInfo)
 async def get_profile(
     payload: TokenPayload | None = Depends(require_auth),
@@ -614,6 +887,109 @@ async def update_profile(
     return {"ok": True, "avatar": body.avatar}
 
 
+@router.put("/profile/password")
+async def change_profile_password(
+    body: PasswordChangeRequest,
+    payload: TokenPayload | None = Depends(require_auth),
+) -> dict:
+    """Change the current user's password and invalidate existing JWTs."""
+    current = _require_profile_identity(payload)
+    if POCKETBASE_ENABLED:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Password changes are not available in PocketBase mode.",
+        )
+    from deeptutor.multi_user.identity import get_user
+
+    record = get_user(current.username)
+    if not record or not verify_password(body.current_password, str(record.get("hash") or "")):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Current password is incorrect.",
+        )
+    if not update_password(current.username, body.new_password):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    return {"ok": True}
+
+
+@router.get("/profile/export")
+async def export_profile_data(
+    payload: TokenPayload | None = Depends(require_auth),
+) -> FileResponse:
+    """Export the current regular user's own data as a zip archive."""
+    current = _require_profile_identity(payload)
+    if POCKETBASE_ENABLED:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Data export is not available in PocketBase mode.",
+        )
+    if current.role == "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin data export is not available from self-service profile.",
+        )
+
+    info = get_user_info(current.username)
+    user_id = str((info or {}).get("id") or current.user_id or "")
+    if not user_id or not _USER_ID_RE.match(user_id):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    path = export_user_data(user_id, current.username)
+    log_admin_action(
+        "user_self_export",
+        target_user_id=user_id,
+        summary={"username": current.username},
+    )
+    return FileResponse(
+        str(path),
+        media_type="application/zip",
+        filename=f"deeptutor-user-{current.username}-{user_id}.zip",
+    )
+
+
+@router.delete("/profile")
+async def delete_profile(
+    body: AccountDeleteRequest,
+    response: Response,
+    payload: TokenPayload | None = Depends(require_auth),
+) -> dict:
+    """Delete the current regular user's account after password confirmation."""
+    current = _require_profile_identity(payload)
+    if POCKETBASE_ENABLED:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Account deletion is not available in PocketBase mode.",
+        )
+    if current.role == "admin":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Admin account deletion must be handled by another admin.",
+        )
+
+    from deeptutor.multi_user.identity import get_user
+
+    record = get_user(current.username)
+    if not record or not verify_password(body.password, str(record.get("hash") or "")):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Current password is incorrect.",
+        )
+
+    info = get_user_info(current.username)
+    user_id = str((info or record).get("id") or current.user_id or "")
+    if not delete_user(current.username):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    data_policy = _apply_user_data_policy(user_id, body.data_action)
+    log_admin_action(
+        "user_self_delete",
+        target_user_id=user_id,
+        summary={"username": current.username, "data_policy": data_policy},
+    )
+    response.delete_cookie(key=_COOKIE_NAME, samesite=_SAMESITE)
+    return {"ok": True, "data_policy": data_policy}
+
+
 @router.put("/profile/avatar")
 async def upload_avatar(
     file: UploadFile = File(...),
@@ -643,7 +1019,7 @@ async def upload_avatar(
     data = await file.read(_AVATAR_MAX_BYTES + 1)
     if len(data) > _AVATAR_MAX_BYTES:
         raise HTTPException(
-            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            status_code=status.HTTP_413_CONTENT_TOO_LARGE,
             detail="Avatar image is too large (max 1 MB).",
         )
     ext = _sniff_image(data)
@@ -723,6 +1099,119 @@ async def get_users(_: TokenPayload = Depends(require_admin)) -> list[UserInfo]:
     return [UserInfo(**u) for u in list_users()]
 
 
+@router.get("/users/export.csv")
+async def export_users_csv(_: TokenPayload = Depends(require_admin)) -> Response:
+    """Export the user directory as CSV. Password hashes are never included."""
+    output = io.StringIO()
+    writer = csv.DictWriter(
+        output,
+        fieldnames=["email", "role", "disabled", "disabled_reason", "created_at", "user_id"],
+    )
+    writer.writeheader()
+    for user in list_users():
+        writer.writerow(
+            {
+                "email": user.get("username", ""),
+                "role": user.get("role", "user"),
+                "disabled": "true" if user.get("disabled") else "false",
+                "disabled_reason": user.get("disabled_reason", ""),
+                "created_at": user.get("created_at", ""),
+                "user_id": user.get("id", ""),
+            }
+        )
+    return Response(
+        content=output.getvalue(),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": 'attachment; filename="deeptutor-users.csv"'},
+    )
+
+
+@router.post("/users/import.csv", response_model=UserImportResult)
+async def import_users_csv(
+    file: UploadFile = File(...),
+    current: TokenPayload = Depends(require_admin),
+) -> UserImportResult:
+    """Admin-only bulk import for email/password user accounts."""
+    if not AUTH_ENABLED:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Auth is disabled — user import is not available.",
+        )
+    if POCKETBASE_ENABLED:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="User import is not available in PocketBase mode.",
+        )
+
+    data = await file.read()
+    if len(data) > _CSV_IMPORT_MAX_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="CSV is too large."
+        )
+    rows = _parse_user_import_csv(data)
+    existing = {str(user.get("username") or "").lower() for user in list_users()}
+    for row in rows:
+        email = str(row["email"])
+        if email in existing:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Email already exists: {email}",
+            )
+
+    _enforce_user_seats(additional=len(rows))
+    usernames: list[str] = []
+    for row in rows:
+        email = str(row["email"])
+        add_user(email, str(row["password"]), role="user")
+        if row["disabled"]:
+            set_disabled(email, True, reason=str(row["disabled_reason"]))
+        usernames.append(email)
+
+    log_admin_action(
+        "users_import",
+        summary={
+            "created": len(usernames),
+            "usernames": usernames[:20],
+            "truncated": len(usernames) > 20,
+            "actor": current.username if current else "local",
+        },
+    )
+    return UserImportResult(created=len(usernames), usernames=usernames)
+
+
+@router.get("/invites", response_model=list[InviteInfo])
+async def get_invites(_: TokenPayload = Depends(require_admin)) -> list[InviteInfo]:
+    """List registration invites. Requires admin role."""
+    return [InviteInfo(**item) for item in list_invites()]
+
+
+@router.post("/invites", response_model=InviteInfo, status_code=status.HTTP_201_CREATED)
+async def admin_create_invite(
+    body: InviteCreateRequest,
+    current: TokenPayload = Depends(require_admin),
+) -> InviteInfo:
+    """Admin-only: create a one-use email/password registration invite."""
+    _enforce_user_seats()
+    invite = create_invite(email=body.email, created_by=current.username)
+    log_admin_action(
+        "invite_create",
+        summary={"email": body.email or "", "used": False},
+    )
+    return InviteInfo(**invite)
+
+
+@router.delete("/invites/{code}", status_code=status.HTTP_200_OK)
+async def admin_delete_invite(
+    code: str,
+    _: TokenPayload = Depends(require_admin),
+) -> dict:
+    """Admin-only: revoke an unused or used invite code."""
+    if not delete_invite(code):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Invite not found")
+    log_admin_action("invite_delete")
+    return {"ok": True}
+
+
 @router.post("/users", status_code=status.HTTP_201_CREATED)
 async def admin_create_user(
     body: RegisterRequest,
@@ -741,6 +1230,7 @@ async def admin_create_user(
         )
 
     if POCKETBASE_ENABLED:
+        _enforce_user_seats()
         result = register_pb(username=body.username, email=body.username, password=body.password)
         if not result:
             raise HTTPException(
@@ -750,6 +1240,11 @@ async def admin_create_user(
         logger.info(
             f"Admin '{current.username if current else 'local'}' created PocketBase user "
             f"'{body.username}'"
+        )
+        log_admin_action(
+            "user_create",
+            target_user_id=str(result.get("id") or ""),
+            summary={"username": body.username, "role": "user", "provider": "pocketbase"},
         )
         return {
             "ok": True,
@@ -766,6 +1261,7 @@ async def admin_create_user(
             detail="Username already taken",
         )
 
+    _enforce_user_seats()
     add_user(body.username, body.password)
     user_id = ""
     role = "user"
@@ -778,6 +1274,11 @@ async def admin_create_user(
         f"Admin '{current.username if current else 'local'}' created user '{body.username}' "
         f"(role={role!r})"
     )
+    log_admin_action(
+        "user_create",
+        target_user_id=user_id,
+        summary={"username": body.username, "role": role, "provider": "local"},
+    )
     return {
         "ok": True,
         "user_id": user_id,
@@ -787,9 +1288,101 @@ async def admin_create_user(
     }
 
 
+@router.put("/users/{username}/password", status_code=status.HTTP_200_OK)
+async def admin_reset_user_password(
+    username: str,
+    body: PasswordResetRequest,
+    current: TokenPayload = Depends(require_admin),
+) -> dict:
+    """Admin-only: reset another user's password and invalidate their JWTs."""
+    if POCKETBASE_ENABLED:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Password reset is not available in PocketBase mode.",
+        )
+    if current and username == current.username:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Use profile settings to change your own password",
+        )
+    info = get_user_info(username)
+    if not update_password(username, body.password):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    logger.info(
+        "Admin '%s' reset password for '%s'", current.username if current else "local", username
+    )
+    log_admin_action(
+        "user_password_reset",
+        target_user_id=str((info or {}).get("id") or ""),
+        summary={"username": username},
+    )
+    return {"ok": True}
+
+
+@router.put("/users/{username}/disabled", status_code=status.HTTP_200_OK)
+async def update_user_disabled(
+    username: str,
+    body: DisabledRequest,
+    current: TokenPayload = Depends(require_admin),
+) -> dict:
+    """Admin-only: enable or disable a user. Admins cannot disable themselves."""
+    if current and username == current.username:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="You cannot disable your own account",
+        )
+    info = get_user_info(username)
+    if not set_disabled(username, body.disabled, reason=body.reason):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    logger.info(
+        "Admin '%s' set '%s' disabled=%s",
+        current.username if current else "local",
+        username,
+        body.disabled,
+    )
+    log_admin_action(
+        "user_disabled_set",
+        target_user_id=str((info or {}).get("id") or ""),
+        summary={
+            "username": username,
+            "disabled": body.disabled,
+            "reason": body.reason if body.disabled else "",
+        },
+    )
+    return {
+        "ok": True,
+        "username": username,
+        "disabled": body.disabled,
+        "disabled_reason": body.reason if body.disabled else "",
+    }
+
+
+@router.post("/users/{username}/revoke-sessions", status_code=status.HTTP_200_OK)
+async def admin_revoke_user_sessions(
+    username: str,
+    current: TokenPayload = Depends(require_admin),
+) -> dict:
+    """Admin-only: invalidate another user's existing JWTs."""
+    if current and username == current.username:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="You cannot revoke your own current session here",
+        )
+    info = get_user_info(username)
+    if not revoke_sessions(username):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    log_admin_action(
+        "user_sessions_revoked",
+        target_user_id=str((info or {}).get("id") or ""),
+        summary={"username": username},
+    )
+    return {"ok": True, "username": username}
+
+
 @router.delete("/users/{username}", status_code=status.HTTP_200_OK)
 async def remove_user(
     username: str,
+    data_action: Literal["keep", "archive", "delete"] = "keep",
     current: TokenPayload = Depends(require_admin),
 ) -> dict:
     """Delete a user. Admins cannot delete their own account."""
@@ -807,13 +1400,15 @@ async def remove_user(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
 
     user_id = str(info.get("id") or "") if info else ""
-    if user_id and _USER_ID_RE.match(user_id):
-        from deeptutor.multi_user.identity import delete_avatar_file
-
-        delete_avatar_file(user_id)
+    data_policy = _apply_user_data_policy(user_id, data_action)
 
     logger.info(f"Admin '{current.username if current else 'local'}' deleted user '{username}'")
-    return {"ok": True}
+    log_admin_action(
+        "user_delete",
+        target_user_id=user_id,
+        summary={"username": username, "data_policy": data_policy},
+    )
+    return {"ok": True, "data_policy": data_policy}
 
 
 @router.put("/users/{username}/role", status_code=status.HTTP_200_OK)
@@ -829,11 +1424,17 @@ async def update_user_role(
             detail="You cannot change your own role",
         )
 
+    info = get_user_info(username)
     updated = set_role(username, body.role)
     if not updated:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
 
     logger.info(
         f"Admin '{current.username if current else 'local'}' set '{username}' role to {body.role!r}"
+    )
+    log_admin_action(
+        "user_role_set",
+        target_user_id=str((info or {}).get("id") or ""),
+        summary={"username": username, "role": body.role},
     )
     return {"ok": True, "username": username, "role": body.role}

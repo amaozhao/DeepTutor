@@ -487,7 +487,6 @@ export const ComposerInput = memo(
                   className="shrink-0 text-[var(--muted-foreground)]"
                 />
                 {/* Command syntax token — must not be localized. */}
-                {/* eslint-disable-next-line i18n/no-literal-ui-text */}
                 <span className="font-medium text-[var(--foreground)]">
                   /persona
                 </span>

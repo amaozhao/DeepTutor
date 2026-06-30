@@ -3,15 +3,11 @@
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useState } from "react";
 import { useAppShell } from "@/context/AppShellContext";
 import {
-  BookOpen,
-  BookText,
   Bot,
-  Brain,
   ChevronDown,
-  Github,
   HeartHandshake,
   House,
   LayoutGrid,
@@ -88,28 +84,8 @@ const PRIMARY_NAV: NavEntry[] = [
 ];
 
 const SECONDARY_NAV: NavEntry[] = [
-  {
-    // Memory is its own top-level console (pulled out of the Learning Space):
-    // a place to inspect and curate the tutor's long-term memory, not a daily
-    // workspace. Never gated — memory has no per-user model requirement.
-    href: "/memory",
-    label: "Memory",
-    icon: Brain,
-    tooltipKey: "Memory tooltip",
-  },
-  {
-    // Knowledge Center sits just above Settings: it's a console for managing
-    // KBs and retrieval engines, not a daily workspace. Never gated — embedding
-    // / search are shared admin infrastructure, no per-user model grant needed.
-    href: "/knowledge",
-    label: "Knowledge Center",
-    icon: BookOpen,
-    tooltipKey: "Knowledge tooltip",
-  },
   { href: "/settings", label: "Settings", icon: Settings },
 ];
-const GITHUB_REPO_URL = "https://github.com/HKUDS/DeepTutor";
-const DOCS_URL = "https://deeptutor.info/";
 const RECENTS_COLLAPSED_KEY = "deeptutor.sidebar.recentsCollapsed";
 
 interface SidebarShellProps {
@@ -122,12 +98,6 @@ interface SidebarShellProps {
   onSelectSession?: (sessionId: string) => void | Promise<void>;
   onRenameSession?: (sessionId: string, title: string) => void | Promise<void>;
   onDeleteSession?: (sessionId: string) => void | Promise<void>;
-  /**
-   * Footer content rendered below the nav. Pass a render function to receive
-   * the current ``collapsed`` state so footer items (e.g. Admin / Sign out) can
-   * switch to their icon-only variant when the rail is collapsed.
-   */
-  footerSlot?: ReactNode | ((collapsed: boolean) => ReactNode);
 }
 
 export function SidebarShell({
@@ -139,7 +109,6 @@ export function SidebarShell({
   onSelectSession,
   onRenameSession,
   onDeleteSession,
-  footerSlot,
 }: SidebarShellProps) {
   const pathname = usePathname();
   const router = useRouter();
@@ -151,14 +120,11 @@ export function SidebarShell({
   const navLocked = (item: NavEntry) =>
     item.requires ? !has(item.requires) : false;
   const lockedTooltip = t("Locked — contact your administrator to get access.");
-  const renderedFooter =
-    typeof footerSlot === "function" ? footerSlot(collapsed) : footerSlot;
   const [recentsCollapsed, setRecentsCollapsed] = useState(false);
 
   // Hydrate Recents collapse from localStorage after first render to stay SSR-safe.
   useEffect(() => {
     if (typeof window === "undefined") return;
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     setRecentsCollapsed(
       window.localStorage.getItem(RECENTS_COLLAPSED_KEY) === "1",
     );
@@ -272,7 +238,7 @@ export function SidebarShell({
 
         <div className="flex-1" />
 
-        {/* Secondary nav + footer */}
+        {/* Secondary nav */}
         <div className="flex w-full flex-col items-center gap-1 px-1.5">
           <div className="my-1 h-px w-7 bg-[var(--border)]/40" />
           {SECONDARY_NAV.map((item) => {
@@ -292,27 +258,6 @@ export function SidebarShell({
               </Link>
             );
           })}
-          {renderedFooter}
-          <a
-            href={DOCS_URL}
-            target="_blank"
-            rel="noreferrer noopener"
-            title={t("Docs") as string}
-            aria-label={t("Docs") as string}
-            className="mt-1 flex h-9 w-9 items-center justify-center rounded-xl text-[var(--muted-foreground)]/70 transition-colors hover:bg-[var(--background)]/50 hover:text-[var(--foreground)]"
-          >
-            <BookText size={15} strokeWidth={1.6} />
-          </a>
-          <a
-            href={GITHUB_REPO_URL}
-            target="_blank"
-            rel="noreferrer noopener"
-            title="GitHub"
-            aria-label="GitHub"
-            className="flex h-9 w-9 items-center justify-center rounded-xl text-[var(--muted-foreground)]/70 transition-colors hover:bg-[var(--background)]/50 hover:text-[var(--foreground)]"
-          >
-            <Github size={15} strokeWidth={1.6} />
-          </a>
           <VersionBadge collapsed />
         </div>
       </aside>
@@ -447,7 +392,7 @@ export function SidebarShell({
         !onDeleteSession ||
         recentsCollapsed) && <div className="flex-1" />}
 
-      {/* Secondary nav + footer */}
+      {/* Secondary nav */}
       <div className="border-t border-[var(--border)]/40 px-2 py-2">
         {SECONDARY_NAV.map((item) => {
           const active = pathname.startsWith(item.href);
@@ -466,29 +411,8 @@ export function SidebarShell({
             </Link>
           );
         })}
-        {renderedFooter}
-        <div className="mt-0.5 flex items-center gap-0.5">
+        <div className="mt-0.5">
           <VersionBadge />
-          <a
-            href={DOCS_URL}
-            target="_blank"
-            rel="noreferrer noopener"
-            title={t("Docs") as string}
-            aria-label={t("Docs") as string}
-            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-[var(--muted-foreground)]/55 transition-colors hover:bg-[var(--background)]/50 hover:text-[var(--muted-foreground)]"
-          >
-            <BookText size={13} strokeWidth={1.7} />
-          </a>
-          <a
-            href={GITHUB_REPO_URL}
-            target="_blank"
-            rel="noreferrer noopener"
-            title="GitHub"
-            aria-label="GitHub"
-            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-[var(--muted-foreground)]/55 transition-colors hover:bg-[var(--background)]/50 hover:text-[var(--muted-foreground)]"
-          >
-            <Github size={13} strokeWidth={1.7} />
-          </a>
         </div>
       </div>
     </aside>

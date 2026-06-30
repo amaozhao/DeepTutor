@@ -167,6 +167,12 @@ export type SystemStatus = {
   llm: { status: string; model?: string; error?: string };
   embeddings: { status: string; model?: string; error?: string };
   search: { status: string; provider?: string; error?: string };
+  deployment?: {
+    status: string;
+    multi_replica_ready: boolean;
+    shared_state?: Record<string, string>;
+    blocking_reasons?: string[];
+  };
 };
 
 export type EmbeddingCapabilities = {

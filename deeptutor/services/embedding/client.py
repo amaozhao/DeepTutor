@@ -15,6 +15,34 @@ from .config import EmbeddingConfig, get_embedding_config
 from .validation import validate_embedding_batch
 
 
+def _enforce_embedding_quota() -> None:
+    from deeptutor.multi_user.usage import enforce_current_user_quota
+
+    enforce_current_user_quota()
+
+
+def _record_embedding_usage(config: EmbeddingConfig, count: int) -> None:
+    if count <= 0:
+        return
+    from deeptutor.multi_user.context import get_current_user_or_none
+
+    if get_current_user_or_none() is None:
+        return
+    try:
+        from deeptutor.multi_user.usage import record_current_user_usage
+
+        record_current_user_usage(
+            session_id="",
+            turn_id="",
+            capability="embedding",
+            provider=config.provider_name or config.binding,
+            model=config.model,
+            summary={"total_calls": count},
+        )
+    except Exception:
+        logging.getLogger(__name__).warning("Failed to record embedding usage", exc_info=True)
+
+
 def _resolve_adapter_class(binding: str) -> type[BaseEmbeddingAdapter]:
     provider = (binding or "").strip().lower()
     spec = EMBEDDING_PROVIDERS.get(provider)
@@ -66,6 +94,7 @@ class EmbeddingClient:
     async def embed(self, texts: List[str], progress_callback=None) -> List[List[float]]:
         if not texts:
             return []
+        _enforce_embedding_quota()
 
         import asyncio
 
@@ -149,6 +178,7 @@ class EmbeddingClient:
             f"Generated {len(all_embeddings)} embeddings using "
             f"{self.config.binding} (batch_size={batch_size})"
         )
+        _record_embedding_usage(self.config, len(all_embeddings))
         return all_embeddings
 
     def supports_multimodal_contents(self) -> bool:
@@ -180,6 +210,7 @@ class EmbeddingClient:
             raise ValueError(
                 "Configured embedding provider/model does not support multimodal contents."
             )
+        _enforce_embedding_quota()
 
         import asyncio
 
@@ -219,6 +250,7 @@ class EmbeddingClient:
             if i < total_batches - 1 and self.config.batch_delay > 0:
                 await asyncio.sleep(self.config.batch_delay)
 
+        _record_embedding_usage(self.config, len(all_embeddings))
         return all_embeddings
 
     def embed_sync(self, texts: List[str]) -> List[List[float]]:

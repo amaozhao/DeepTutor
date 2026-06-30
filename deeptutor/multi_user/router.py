@@ -5,7 +5,8 @@ from __future__ import annotations
 import asyncio
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from deeptutor.api.routers.auth import require_admin
@@ -13,11 +14,18 @@ from deeptutor.knowledge.manager import KnowledgeBaseManager
 from deeptutor.services.config.model_catalog import ModelCatalogService
 from deeptutor.services.skill.service import SkillService
 
-from .audit import log_admin_action
+from .audit import log_admin_action, query_audit_events
+from .data_governance import (
+    apply_data_retention_policy,
+    export_user_data,
+    load_data_governance_settings,
+    save_data_governance_settings,
+)
 from .grants import load_grant, save_grant
 from .identity import get_user_by_id, list_user_info
 from .knowledge_access import admin_kb_base_dir
 from .paths import get_admin_path_service
+from .usage import empty_quota, normalize_quota, usage_summary
 
 router = APIRouter()
 
@@ -31,6 +39,12 @@ class SkillInstallPayload(BaseModel):
     name: str | None = None
     force: bool = False
     allow_unverified: bool = False
+
+
+class DataGovernancePayload(BaseModel):
+    audit_retention_days: int = 0
+    usage_retention_days: int = 0
+    deleted_user_retention_days: int = 0
 
 
 def _admin_catalog_summary() -> dict[str, list[dict[str, Any]]]:
@@ -127,6 +141,46 @@ async def admin_resources(_: object = Depends(require_admin)) -> dict[str, Any]:
     }
 
 
+@router.get("/admin/audit")
+async def admin_audit_events(
+    _: object = Depends(require_admin),
+    action: str | None = None,
+    actor_id: str | None = None,
+    target_user_id: str | None = None,
+    limit: int = Query(100, ge=1, le=500),
+) -> dict[str, Any]:
+    return {
+        "events": query_audit_events(
+            action=action,
+            actor_id=actor_id,
+            target_user_id=target_user_id,
+            limit=limit,
+        )
+    }
+
+
+@router.get("/admin/data-governance")
+async def get_data_governance_settings(_: object = Depends(require_admin)) -> dict[str, Any]:
+    return {"settings": load_data_governance_settings()}
+
+
+@router.put("/admin/data-governance")
+async def put_data_governance_settings(
+    payload: DataGovernancePayload,
+    _: object = Depends(require_admin),
+) -> dict[str, Any]:
+    settings = save_data_governance_settings(payload.model_dump())
+    log_admin_action("data_governance_update", summary=settings)
+    return {"settings": settings}
+
+
+@router.post("/admin/data-governance/prune")
+async def prune_data_governance(_: object = Depends(require_admin)) -> dict[str, Any]:
+    result = apply_data_retention_policy()
+    log_admin_action("data_governance_prune", summary={"removed_total": result["removed_total"]})
+    return result
+
+
 @router.get("/users/{user_id}/grants")
 async def get_user_grants(user_id: str, _: object = Depends(require_admin)) -> dict[str, Any]:
     _require_assignable_user(user_id)
@@ -157,9 +211,31 @@ async def put_user_grants(
                 None if grant.get("mcp_tools") is None else len(grant.get("mcp_tools") or [])
             ),
             "exec_enabled": grant.get("exec_enabled"),
+            "quota": grant.get("quota"),
         },
     )
     return {"grant": grant}
+
+
+@router.get("/users/{user_id}/usage")
+async def get_user_usage(user_id: str, _: object = Depends(require_admin)) -> dict[str, Any]:
+    _username, record = _require_assignable_user(user_id)
+    quota = empty_quota()
+    if str(record.get("role") or "user") != "admin":
+        quota = normalize_quota(load_grant(user_id).get("quota"))
+    return {"quota": quota, "usage": usage_summary(user_id)}
+
+
+@router.get("/users/{user_id}/export")
+async def export_user(user_id: str, _: object = Depends(require_admin)) -> FileResponse:
+    username, _record = _require_assignable_user(user_id)
+    path = export_user_data(user_id, username)
+    log_admin_action("user_export", target_user_id=user_id, summary={"username": username})
+    return FileResponse(
+        str(path),
+        media_type="application/zip",
+        filename=f"deeptutor-user-{username}-{user_id}.zip",
+    )
 
 
 @router.post("/admin/skills/install")

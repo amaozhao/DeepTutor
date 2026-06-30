@@ -196,7 +196,7 @@ function GeneratedFileCards({
               onClick={onOpen ? () => onOpen(a) : undefined}
               className="group block w-full max-w-[min(520px,90%)] overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--card)] text-left shadow-sm transition hover:border-[var(--border)]"
             >
-              {/* eslint-disable-next-line @next/next/no-img-element */}
+              { }
               <img
                 src={mediaSrc}
                 alt={filename}

@@ -142,7 +142,7 @@ function AttachmentStrip({
               className="h-14 w-14 overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--muted)]/35"
               title={attachment.filename}
             >
-              {/* eslint-disable-next-line @next/next/no-img-element */}
+              { }
               <img
                 src={attachment.previewUrl}
                 alt={attachment.filename}

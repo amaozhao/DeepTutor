@@ -1,11 +1,65 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { AlertCircle, CheckCircle2, Loader2, Save } from "lucide-react";
-import { fetchAdminResources, fetchUserGrant, saveUserGrant } from "../api";
-import type { GrantPayload, McpToolOption, MultiUserResources } from "../types";
+import { useTranslation } from "react-i18next";
+import {
+  fetchAdminResources,
+  fetchUserGrant,
+  fetchUserUsage,
+  saveUserGrant,
+} from "../api";
+import type {
+  GrantPayload,
+  McpToolOption,
+  MultiUserResources,
+  UserQuota,
+  UserUsageResponse,
+} from "../types";
 
 type SaveState = "idle" | "saving" | "saved" | "error";
+
+const quotaFields: Array<{
+  key: keyof UserQuota;
+  step?: string;
+}> = [
+  { key: "daily_token_limit" },
+  { key: "monthly_token_limit" },
+  { key: "daily_call_limit" },
+  { key: "monthly_call_limit" },
+  { key: "daily_cost_limit_usd", step: "0.01" },
+  { key: "monthly_cost_limit_usd", step: "0.01" },
+];
+
+type Tr = (cn: string, en: string) => string;
+
+function quotaLabel(key: keyof UserQuota, tr: Tr): string {
+  switch (key) {
+    case "daily_token_limit":
+      return tr("每日 token", "Daily tokens");
+    case "monthly_token_limit":
+      return tr("每月 token", "Monthly tokens");
+    case "daily_call_limit":
+      return tr("每日调用", "Daily calls");
+    case "monthly_call_limit":
+      return tr("每月调用", "Monthly calls");
+    case "daily_cost_limit_usd":
+      return tr("每日美元", "Daily USD");
+    case "monthly_cost_limit_usd":
+      return tr("每月美元", "Monthly USD");
+  }
+}
+
+function emptyQuota(): UserQuota {
+  return {
+    daily_token_limit: 0,
+    monthly_token_limit: 0,
+    daily_call_limit: 0,
+    monthly_call_limit: 0,
+    daily_cost_limit_usd: 0,
+    monthly_cost_limit_usd: 0,
+  };
+}
 
 function emptyGrant(userId: string): GrantPayload {
   return {
@@ -18,6 +72,7 @@ function emptyGrant(userId: string): GrantPayload {
     enabled_tools: null,
     mcp_tools: null,
     exec_enabled: null,
+    quota: emptyQuota(),
   };
 }
 
@@ -87,12 +142,14 @@ function ModeSwitch({
   onDefault,
   onCustom,
   defaultLabel = "Default · all",
+  customLabel = "Custom",
 }: {
   isCustom: boolean;
   disabled: boolean;
   onDefault: () => void;
   onCustom: () => void;
   defaultLabel?: string;
+  customLabel?: string;
 }) {
   const base =
     "rounded-md px-2 py-0.5 text-[11px] font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-45";
@@ -120,15 +177,19 @@ function ModeSwitch({
             : "text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
         }`}
       >
-        Custom
+        {customLabel}
       </button>
     </div>
   );
 }
 
 export function GrantEditor({ userId }: { userId: string }) {
+  const { i18n } = useTranslation();
+  const zh = i18n.language?.toLowerCase().startsWith("zh");
+  const tr = useCallback((cn: string, en: string) => (zh ? cn : en), [zh]);
   const [resources, setResources] = useState<MultiUserResources | null>(null);
   const [grant, setGrant] = useState<GrantPayload>(() => emptyGrant(userId));
+  const [usage, setUsage] = useState<UserUsageResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [savedFingerprint, setSavedFingerprint] = useState("");
   const [saveState, setSaveState] = useState<SaveState>("idle");
@@ -136,17 +197,22 @@ export function GrantEditor({ userId }: { userId: string }) {
 
   useEffect(() => {
     let cancelled = false;
-    Promise.all([fetchAdminResources(), fetchUserGrant(userId)])
-      .then(([nextResources, nextGrant]) => {
+    Promise.all([
+      fetchAdminResources(),
+      fetchUserGrant(userId),
+      fetchUserUsage(userId),
+    ])
+      .then(([nextResources, nextGrant, nextUsage]) => {
         if (cancelled) return;
         setResources(nextResources);
         setGrant(nextGrant);
+        setUsage(nextUsage);
         setSavedFingerprint(grantFingerprint(nextGrant));
       })
       .catch((error) => {
         setSaveState("error");
         setMessage(
-          error instanceof Error ? error.message : "Failed to load grants",
+          error instanceof Error ? error.message : tr("加载授权失败", "Failed to load grants"),
         );
       })
       .finally(() => {
@@ -155,7 +221,7 @@ export function GrantEditor({ userId }: { userId: string }) {
     return () => {
       cancelled = true;
     };
-  }, [userId]);
+  }, [tr, userId]);
 
   const currentFingerprint = useMemo(() => grantFingerprint(grant), [grant]);
   const dirty =
@@ -283,6 +349,17 @@ export function GrantEditor({ userId }: { userId: string }) {
     });
   }
 
+  function setQuota(key: keyof UserQuota, raw: string) {
+    const number = Number(raw);
+    setGrant((current) => ({
+      ...current,
+      quota: {
+        ...(current.quota || emptyQuota()),
+        [key]: Number.isFinite(number) && number > 0 ? number : 0,
+      },
+    }));
+  }
+
   async function save() {
     setSaveState("saving");
     setMessage("");
@@ -291,24 +368,24 @@ export function GrantEditor({ userId }: { userId: string }) {
       setGrant(saved);
       setSavedFingerprint(grantFingerprint(saved));
       setSaveState("saved");
-      setMessage("Saved just now");
+      setMessage(tr("刚刚已保存", "Saved just now"));
     } catch (error) {
       setSaveState("error");
-      setMessage(error instanceof Error ? error.message : "Failed to save");
+      setMessage(error instanceof Error ? error.message : tr("保存失败", "Failed to save"));
     }
   }
 
   const status = loading
-    ? "Loading assignments..."
+    ? tr("正在加载授权…", "Loading assignments...")
     : saveState === "saving"
-      ? "Saving changes..."
+      ? tr("正在保存更改…", "Saving changes...")
       : saveState === "error"
-        ? message || "Failed to save"
+        ? message || tr("保存失败", "Failed to save")
         : saveState === "saved" && !dirty
-          ? message || "Saved just now"
+          ? message || tr("刚刚已保存", "Saved just now")
           : dirty
-            ? "Unsaved changes"
-            : "Ready";
+            ? tr("有未保存更改", "Unsaved changes")
+            : tr("就绪", "Ready");
 
   const statusTone =
     saveState === "error"
@@ -319,12 +396,13 @@ export function GrantEditor({ userId }: { userId: string }) {
 
   const toolsSummary =
     grant.enabled_tools === null
-      ? "all tools"
-      : `${grant.enabled_tools.length} tools`;
+      ? tr("全部工具", "all tools")
+      : tr(`${grant.enabled_tools.length} 个工具`, `${grant.enabled_tools.length} tools`);
   // MCP tools deny-by-default for non-admin users: ``null`` grants none until
   // the admin switches to Custom and picks specific tool names.
   const mcpSummary =
-    grant.mcp_tools === null ? "no MCP" : `${grant.mcp_tools.length} MCP`;
+    grant.mcp_tools === null ? tr("无 MCP", "no MCP") : `${grant.mcp_tools.length} MCP`;
+  const todayUsage = usage?.usage.today;
 
   const mcpByServer = useMemo(() => {
     const groups = new Map<string, McpToolOption[]>();
@@ -340,7 +418,7 @@ export function GrantEditor({ userId }: { userId: string }) {
       <div className="border-t border-[var(--border)] bg-[var(--background)]/40 p-4">
         <div className="flex h-[420px] items-center justify-center rounded-2xl border border-[var(--border)] bg-[var(--card)] text-sm text-[var(--muted-foreground)]">
           <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-          Loading assignments...
+          {tr("正在加载授权…", "Loading assignments...")}
         </div>
       </div>
     );
@@ -353,25 +431,27 @@ export function GrantEditor({ userId }: { userId: string }) {
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <h2 className="text-sm font-semibold text-[var(--foreground)]">
-                Assign access
+                {tr("分配访问权限", "Assign access")}
               </h2>
               <p className="mt-0.5 text-xs text-[var(--muted-foreground)]">
-                Admin resources stay linked server-side; users only receive
-                allowed access.
+                {tr(
+                  "管理员资源仍由服务端关联，用户只获得被允许的访问权限。",
+                  "Admin resources stay linked server-side; users only receive allowed access.",
+                )}
               </p>
             </div>
             <div className="flex flex-wrap gap-1.5 text-[11px] text-[var(--muted-foreground)]">
               <span className="rounded-full bg-[var(--muted)]/60 px-2 py-1">
-                {selectedModelCount} models
+                {tr(`${selectedModelCount} 个模型`, `${selectedModelCount} models`)}
               </span>
               <span className="rounded-full bg-[var(--muted)]/60 px-2 py-1">
                 {kbIds.size} KBs
               </span>
               <span className="rounded-full bg-[var(--muted)]/60 px-2 py-1">
-                {skillIds.size} skills
+                {tr(`${skillIds.size} 个技能`, `${skillIds.size} skills`)}
               </span>
               <span className="rounded-full bg-[var(--muted)]/60 px-2 py-1">
-                {partnerIds.size} partners
+                {tr(`${partnerIds.size} 个伙伴`, `${partnerIds.size} partners`)}
               </span>
               <span className="rounded-full bg-[var(--muted)]/60 px-2 py-1">
                 {toolsSummary}
@@ -379,6 +459,14 @@ export function GrantEditor({ userId }: { userId: string }) {
               <span className="rounded-full bg-[var(--muted)]/60 px-2 py-1">
                 {mcpSummary}
               </span>
+              {todayUsage ? (
+                <span className="rounded-full bg-[var(--muted)]/60 px-2 py-1">
+                  {tr(
+                    `今天 ${todayUsage.total_calls} 次调用 · ${todayUsage.total_tokens} token · $${todayUsage.total_cost_usd.toFixed(4)}`,
+                    `Today ${todayUsage.total_calls} calls · ${todayUsage.total_tokens} tokens · $${todayUsage.total_cost_usd.toFixed(4)}`,
+                  )}
+                </span>
+              ) : null}
             </div>
           </div>
         </div>
@@ -386,7 +474,7 @@ export function GrantEditor({ userId }: { userId: string }) {
         <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5 [scrollbar-gutter:stable]">
           <div className="grid gap-5 md:grid-cols-3">
             <section className="min-w-0">
-              <SectionTitle>Models</SectionTitle>
+              <SectionTitle>{tr("模型", "Models")}</SectionTitle>
               <div className="space-y-1.5 text-xs">
                 {(resources?.models.llm || []).map((profile) => (
                   <div
@@ -421,7 +509,7 @@ export function GrantEditor({ userId }: { userId: string }) {
               </div>
             </section>
             <section className="min-w-0">
-              <SectionTitle>Knowledge</SectionTitle>
+              <SectionTitle>{tr("知识库", "Knowledge")}</SectionTitle>
               <div className="space-y-1.5 text-xs">
                 {(resources?.knowledge_bases || []).map((kb) => (
                   <CheckRow
@@ -435,7 +523,7 @@ export function GrantEditor({ userId }: { userId: string }) {
               </div>
             </section>
             <section className="min-w-0">
-              <SectionTitle>Skills</SectionTitle>
+              <SectionTitle>{tr("技能", "Skills")}</SectionTitle>
               <div className="space-y-1.5 text-xs">
                 {(resources?.skills || []).map((skill) => (
                   <CheckRow
@@ -449,11 +537,14 @@ export function GrantEditor({ userId }: { userId: string }) {
               </div>
             </section>
             <section className="min-w-0">
-              <SectionTitle>Partners</SectionTitle>
+              <SectionTitle>{tr("伙伴", "Partners")}</SectionTitle>
               <div className="space-y-1.5 text-xs">
                 {(resources?.partners || []).length === 0 ? (
                   <p className="px-1 text-[11px] leading-relaxed text-[var(--muted-foreground)]">
-                    No partners yet. Create one under Partners to assign it.
+                    {tr(
+                      "暂无伙伴。先在伙伴页面创建，再分配给用户。",
+                      "No partners yet. Create one under Partners to assign it.",
+                    )}
                   </p>
                 ) : (
                   (resources?.partners || []).map((partner) => (
@@ -476,10 +567,12 @@ export function GrantEditor({ userId }: { userId: string }) {
             </section>
 
             <section className="min-w-0">
-              <SectionTitle>System tools</SectionTitle>
+              <SectionTitle>{tr("系统工具", "System tools")}</SectionTitle>
               <ModeSwitch
                 isCustom={grant.enabled_tools !== null}
                 disabled={controlsDisabled}
+                defaultLabel={tr("默认 · 全部", "Default · all")}
+                customLabel={tr("自定义", "Custom")}
                 onDefault={() => setToolList("enabled_tools", null)}
                 onCustom={() =>
                   setToolList(
@@ -506,11 +599,12 @@ export function GrantEditor({ userId }: { userId: string }) {
               )}
             </section>
             <section className="min-w-0">
-              <SectionTitle>MCP tools</SectionTitle>
+              <SectionTitle>{tr("MCP 工具", "MCP tools")}</SectionTitle>
               <ModeSwitch
                 isCustom={grant.mcp_tools !== null}
                 disabled={controlsDisabled}
-                defaultLabel="Default · none"
+                defaultLabel={tr("默认 · 无", "Default · none")}
+                customLabel={tr("自定义", "Custom")}
                 onDefault={() => setToolList("mcp_tools", null)}
                 onCustom={() =>
                   setToolList(
@@ -521,8 +615,10 @@ export function GrantEditor({ userId }: { userId: string }) {
               />
               {grant.mcp_tools === null ? (
                 <p className="px-1 text-[11px] leading-relaxed text-[var(--muted-foreground)]">
-                  MCP tools proxy host-side capabilities, so they stay denied by
-                  default. Switch to Custom to grant specific tools.
+                  {tr(
+                    "MCP 工具会代理宿主机能力，所以默认不授权。切换到自定义后再选择具体工具。",
+                    "MCP tools proxy host-side capabilities, so they stay denied by default. Switch to Custom to grant specific tools.",
+                  )}
                 </p>
               ) : null}
               {grant.mcp_tools !== null &&
@@ -552,16 +648,19 @@ export function GrantEditor({ userId }: { userId: string }) {
                   </div>
                 ) : (
                   <p className="text-xs text-[var(--muted-foreground)]">
-                    No MCP servers configured.
+                    {tr("尚未配置 MCP 服务器。", "No MCP servers configured.")}
                   </p>
                 ))}
             </section>
             <section className="min-w-0">
-              <SectionTitle>Code execution</SectionTitle>
+              <SectionTitle>{tr("代码执行", "Code execution")}</SectionTitle>
               <div className="space-y-1.5 text-xs">
                 <CheckRow
-                  label="Allow code execution"
-                  description="Follows the deployment sandbox policy. Uncheck to disable exec for this user."
+                  label={tr("允许代码执行", "Allow code execution")}
+                  description={tr(
+                    "遵循部署沙箱策略。取消勾选会禁用该用户的 exec 能力。",
+                    "Follows the deployment sandbox policy. Uncheck to disable exec for this user.",
+                  )}
                   checked={grant.exec_enabled !== false}
                   disabled={controlsDisabled}
                   onToggle={() =>
@@ -573,6 +672,33 @@ export function GrantEditor({ userId }: { userId: string }) {
                   }
                 />
               </div>
+            </section>
+            <section className="min-w-0">
+              <SectionTitle>{tr("LLM 配额", "LLM quota")}</SectionTitle>
+              <div className="grid grid-cols-2 gap-2 text-xs">
+                {quotaFields.map((field) => (
+                  <label key={field.key} className="min-w-0">
+                    <span className="mb-1 block truncate text-[11px] text-[var(--muted-foreground)]">
+                      {quotaLabel(field.key, tr)}
+                    </span>
+                    <input
+                      type="number"
+                      min="0"
+                      step={field.step || "1"}
+                      value={grant.quota?.[field.key] ?? 0}
+                      disabled={controlsDisabled}
+                      onChange={(event) => setQuota(field.key, event.target.value)}
+                      className="w-full rounded-md border border-[var(--border)] bg-[var(--background)] px-2 py-1 text-[var(--foreground)] outline-none focus:border-[var(--foreground)] disabled:opacity-45"
+                    />
+                  </label>
+                ))}
+              </div>
+              <p className="mt-2 px-1 text-[11px] leading-relaxed text-[var(--muted-foreground)]">
+                {tr(
+                  "0 表示不限制。配额用尽后会阻止下一轮对话。",
+                  "0 means unlimited. A spent quota blocks the next turn.",
+                )}
+              </p>
             </section>
           </div>
         </div>
@@ -602,10 +728,10 @@ export function GrantEditor({ userId }: { userId: string }) {
               <Save className="h-3 w-3" />
             )}
             {saving
-              ? "Saving..."
+              ? tr("保存中…", "Saving...")
               : saveState === "saved" && !dirty
-                ? "Saved"
-                : "Save assignments"}
+                ? tr("已保存", "Saved")
+                : tr("保存授权", "Save assignments")}
           </button>
         </div>
       </div>

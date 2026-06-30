@@ -4,13 +4,16 @@ Manages system status checks and model connection tests
 """
 
 from datetime import datetime
+from pathlib import Path
 import time
 
 from fastapi import APIRouter
 from pydantic import BaseModel
 
+from deeptutor.api.security import production_security_warnings
+from deeptutor.multi_user import paths
 from deeptutor.multi_user.context import get_current_user
-from deeptutor.services.config import resolve_search_runtime_config
+from deeptutor.services.config import load_integrations_settings, resolve_search_runtime_config
 from deeptutor.services.embedding import get_embedding_client, get_embedding_config
 from deeptutor.services.llm import complete as llm_complete
 from deeptutor.services.llm import get_llm_config, get_token_limit_kwargs
@@ -25,6 +28,40 @@ class TestResponse(BaseModel):
     model: str | None = None
     response_time_ms: float | None = None
     error: str | None = None
+
+
+def _writable_dir_status(path: Path) -> dict[str, str]:
+    try:
+        path.mkdir(parents=True, exist_ok=True)
+        probe = path / f".healthcheck-{time.time_ns()}"
+        probe.write_text("ok", encoding="utf-8")
+        probe.unlink(missing_ok=True)
+    except Exception as exc:
+        return {"status": "error", "path": str(path), "error": str(exc)}
+    return {"status": "ok", "path": str(path)}
+
+
+def _deployment_status() -> dict[str, object]:
+    pocketbase_enabled = bool(load_integrations_settings().get("pocketbase_url"))
+    blocking_reasons = [
+        "auth/token revocation is file-backed",
+        "rate limiting is process-local",
+        "usage/quota is file-backed",
+    ]
+    if pocketbase_enabled:
+        blocking_reasons.append("PocketBase multi-user/SaaS mode is unsupported")
+    return {
+        "status": "single_replica_beta",
+        "multi_replica_ready": False,
+        "shared_state": {
+            "auth": "pocketbase_single_user" if pocketbase_enabled else "file",
+            "token_revocation": "pocketbase_token_refresh" if pocketbase_enabled else "file",
+            "rate_limit": "process",
+            "usage_quota": "file",
+        },
+        "pocketbase_multi_user_supported": False,
+        "blocking_reasons": blocking_reasons,
+    }
 
 
 @router.get("/runtime-topology")
@@ -71,6 +108,10 @@ async def get_system_status():
         "llm": {"status": "unknown", "model": None, "testable": True},
         "embeddings": {"status": "unknown", "model": None, "testable": True},
         "search": {"status": "optional", "provider": None, "testable": True},
+        "security": {"warnings": production_security_warnings()},
+        "storage": _writable_dir_status(paths.ADMIN_WORKSPACE_ROOT),
+        "quota_store": _writable_dir_status(paths.SYSTEM_ROOT / "usage"),
+        "deployment": _deployment_status(),
     }
 
     # Check backend status (this endpoint itself proves backend is online)
@@ -141,6 +182,8 @@ async def get_system_status():
         for section in ("llm", "embeddings"):
             result[section].pop("model", None)
         result["search"].pop("provider", None)
+        result["storage"].pop("path", None)
+        result["quota_store"].pop("path", None)
 
     return result
 
