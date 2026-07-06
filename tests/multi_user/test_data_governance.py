@@ -88,6 +88,23 @@ def test_delete_policy_archive_moves_workspace_and_grant(seed_user):
     assert "deleted_users" in archive
     assert (Path(archive) / "manifest.json").exists()
     assert not (Path(archive) / "manifest.tmp").exists()
+    assert (paths.SYSTEM_ROOT / "grants" / f"{user_id}.lock").exists()
+
+
+def test_delete_policy_hard_delete_uses_grant_write_lock(seed_user):
+    from deeptutor.multi_user import paths
+
+    _username, user_id = _seed_admin_and_user(seed_user)
+    save_grant(user_id, {"quota": {"daily_call_limit": 3}})
+    lock_file = paths.SYSTEM_ROOT / "grants" / f"{user_id}.lock"
+    if lock_file.exists():
+        lock_file.unlink()
+
+    result = apply_user_delete_policy(user_id, "delete")
+
+    assert result["grant"] == "deleted"
+    assert not (paths.SYSTEM_ROOT / "grants" / f"{user_id}.json").exists()
+    assert lock_file.exists()
 
 
 def test_data_retention_policy_prunes_configured_files_and_archives(mu_isolated_root):

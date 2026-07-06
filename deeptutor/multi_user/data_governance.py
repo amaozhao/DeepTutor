@@ -280,13 +280,14 @@ def apply_user_delete_policy(user_id: str, action: DeleteDataAction) -> dict[str
     if action not in {"archive", "delete"}:
         raise ValueError(f"Unknown delete data action: {action}")
 
-    workspace = paths.USERS_ROOT / user_id
-    grant_file = paths.SYSTEM_ROOT / "grants" / f"{user_id}.json"
+    from .grants import _grant_write_lock
 
+    workspace = paths.USERS_ROOT / user_id
     if action == "delete":
         if workspace.exists():
             shutil.rmtree(workspace)
-        grant_file.unlink(missing_ok=True)
+        with _grant_write_lock(user_id) as locked_grant_file:
+            locked_grant_file.unlink(missing_ok=True)
         return {"action": "delete", "workspace": "deleted", "grant": "deleted"}
 
     archive_root = paths.SYSTEM_ROOT / "deleted_users" / f"{user_id}-{_stamp()}"
@@ -301,9 +302,10 @@ def apply_user_delete_policy(user_id: str, action: DeleteDataAction) -> dict[str
         archive_root.parent.mkdir(parents=True, exist_ok=True)
         shutil.move(str(workspace), str(archive_root / "workspace"))
         manifest["workspace"] = "archived"
-    if grant_file.exists():
-        shutil.move(str(grant_file), str(archive_root / "grant.json"))
-        manifest["grant"] = "archived"
+    with _grant_write_lock(user_id) as locked_grant_file:
+        if locked_grant_file.exists():
+            shutil.move(str(locked_grant_file), str(archive_root / "grant.json"))
+            manifest["grant"] = "archived"
     manifest_path = archive_root / "manifest.json"
     manifest_tmp = archive_root / "manifest.tmp"
     manifest_tmp.write_text(json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8")
