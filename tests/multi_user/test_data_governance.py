@@ -149,6 +149,32 @@ def test_data_retention_policy_prunes_configured_files_and_archives(mu_isolated_
     assert new_archive.exists()
 
 
+def test_data_retention_prune_uses_audit_write_lock(mu_isolated_root):
+    from deeptutor.multi_user import paths
+
+    paths.ensure_system_dirs()
+    audit_file = paths.SYSTEM_ROOT / "audit" / "usage.jsonl"
+    audit_file.write_text(
+        json.dumps(
+            {
+                "time": (datetime.now(timezone.utc) - timedelta(days=40)).isoformat(),
+                "action": "old",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    save_data_governance_settings({"audit_retention_days": 30})
+    lock_file = paths.SYSTEM_ROOT / "audit" / "usage.lock"
+    if lock_file.exists():
+        lock_file.unlink()
+
+    result = apply_data_retention_policy()
+
+    assert result["audit"]["removed"] == 1
+    assert lock_file.exists()
+
+
 def test_multi_user_export_endpoint_returns_zip(seed_user):
     from deeptutor.multi_user import router as multi_router
 
