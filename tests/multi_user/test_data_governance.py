@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 import io
 import json
+from pathlib import Path
 import zipfile
 
 from fastapi import FastAPI
@@ -85,6 +86,8 @@ def test_delete_policy_archive_moves_workspace_and_grant(seed_user):
     assert (paths.SYSTEM_ROOT / "grants" / f"{user_id}.json").exists() is False
     assert (paths.SYSTEM_ROOT / "deleted_users").exists()
     assert "deleted_users" in archive
+    assert (Path(archive) / "manifest.json").exists()
+    assert not (Path(archive) / "manifest.tmp").exists()
 
 
 def test_data_retention_policy_prunes_configured_files_and_archives(mu_isolated_root):
