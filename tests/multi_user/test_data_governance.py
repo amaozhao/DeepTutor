@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 import io
 import json
+import logging
 from pathlib import Path
 import zipfile
 
@@ -341,6 +342,42 @@ def test_audit_queries_do_not_take_write_lock(mu_isolated_root):
 
     assert query_audit_events(action="user_create", limit=10)
     assert not lock_file.exists()
+
+
+def test_audit_write_failure_logs_without_breaking_request(mu_isolated_root, monkeypatch, caplog):
+    import deeptutor.multi_user.audit as audit
+
+    def fail_lock():
+        raise OSError("disk full")
+
+    monkeypatch.setattr(audit, "_audit_write_lock", fail_lock)
+
+    with caplog.at_level(logging.ERROR, logger="deeptutor.multi_user.audit"):
+        log_admin_action("user_create", target_user_id="u1", summary={"username": "alice"})
+
+    assert "Failed to write audit event: user_create" in caplog.text
+
+
+def test_audit_query_logs_malformed_lines_and_returns_valid_events(mu_isolated_root, caplog):
+    from deeptutor.multi_user import paths
+
+    audit_file = paths.SYSTEM_ROOT / "audit" / "usage.jsonl"
+    audit_file.parent.mkdir(parents=True, exist_ok=True)
+    audit_file.write_text(
+        "\n".join(
+            [
+                "{not-json}",
+                json.dumps({"action": "user_create", "target_user_id": "u1"}),
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    with caplog.at_level(logging.WARNING, logger="deeptutor.multi_user.audit"):
+        events = query_audit_events(action="user_create", limit=10)
+
+    assert [event["target_user_id"] for event in events] == ["u1"]
+    assert "Skipping malformed audit log line" in caplog.text
 
 
 def test_data_governance_settings_endpoint_normalizes_and_audits(mu_isolated_root):
