@@ -63,7 +63,7 @@ docker compose up -d
 不要在当前文件型状态下直接水平扩容。多副本前至少需要：
 
 - 外部用户库或数据库事务，替代 `data/system/auth/users.json`。当前本机写锁只保护注册、停用、改角色、改密码等写路径，普通鉴权读取不加锁。
-- 共享 token revocation/session store，替代本地 `token_version` 文件。
+- 外部 token-version/session 撤销状态源，替代本地 `users.json` 里的 `token_version`。这是为了让停用、删号、改密、降权、强制登出在所有实例生效，不是给普通鉴权读取加锁。
 - 强一致 quota store，替代 JSONL usage 账本；文件型限流和带文件锁的 usage ledger 只能作为受控 beta 过渡方案。
 - 对象存储或共享文件系统，承载 attachments、knowledge bases、exports。
 - 可查询审计存储和备份恢复演练。
