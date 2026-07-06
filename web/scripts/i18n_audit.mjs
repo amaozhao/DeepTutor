@@ -21,6 +21,48 @@ function hasUiText(s) {
   return /[A-Za-z\u4e00-\u9fff]/.test(s);
 }
 
+function isKnownNonUiText(text) {
+  if (text === "DeepTutor") return true;
+  if (/^[\w.-]+@[\w.-]+\.\w+$/.test(text)) return true;
+  if (/^\/[\w./:-]+$/.test(text)) return true;
+  if (/^https?:\/\/\S+$/.test(text)) return true;
+  if (/^sk-\.\.\.$/.test(text)) return true;
+  if (/^npx$/.test(text)) return true;
+  if (/^alloy$/.test(text)) return true;
+  if (/^\d+x\d+$/.test(text)) return true;
+  if (/^\d+p$/.test(text)) return true;
+  if (/^[A-Za-z0-9._-]+$/.test(text) && /[._-]/.test(text)) return true;
+  if (text.includes("]:")) return true;
+  if (
+    [
+      ".md",
+      ".pdf",
+      "\\n",
+      "&Sigma;",
+      "/persona",
+      "L3",
+      "Promise",
+      "void | Promise",
+      "SOUL.md",
+      "stdio",
+      "sse",
+      "streamableHttp",
+      "English",
+      "中文",
+      "or /delete",
+      "context. Next.js",
+      "Visualization",
+      '`` in L2   → ``#m_',
+      '`` in L3   → ``/memory/resolve?id=m_',
+      '``   → ``/memory/l2/',
+      'div]:mb-0\\">',
+    ].includes(text)
+  ) {
+    return true;
+  }
+  return false;
+}
+
 function auditFile(content) {
   const findings = [];
 
@@ -44,9 +86,8 @@ function auditFile(content) {
     if (text.includes("&&") || text.includes("= ") || text.startsWith("=")) continue;
     if (text.includes("mark.") || text.includes("diff")) continue;
     if (text.includes(">/i") || text.includes("katex")) continue;
-    // Common non-translatable tokens / file extensions / escapes
-    if (text === ".md" || text === ".pdf" || text === "\\n") continue;
-    if (text === "DeepTutor") continue;
+    // Common non-translatable tokens / examples / code snippets.
+    if (isKnownNonUiText(text)) continue;
     // Ignore obvious already-i18n'd inline markers
     if (text.includes('t("') || text.includes("t('")) continue;
     if (!hasUiText(text)) continue;
@@ -64,6 +105,7 @@ function auditFile(content) {
     if (!text) continue;
     if (text.length > 160) continue;
     if (!hasUiText(text)) continue;
+    if (isKnownNonUiText(text)) continue;
     findings.push({ kind: `attr:${attr}`, text });
   }
 

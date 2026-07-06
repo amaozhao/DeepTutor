@@ -2705,5 +2705,11 @@
   "Connected to LightRAG server": "已连接到 LightRAG 服务器",
   "Core {{version}}": "内核 {{version}}",
   "API key accepted": "API 密钥已通过",
-  "Open access": "开放访问"
+  "Open access": "开放访问",
+  "Admin": "管理后台",
+  "Admin — User Management": "管理后台 — 用户管理",
+  "DeepTutor · Agent-Native Learning": "DeepTutor · Agent-Native Learning",
+  "Loading sign in...": "正在加载登录页...",
+  "Invalid JSON — value not applied.": "JSON 无效，未应用该值。",
+  "Drag to adjust ratio": "拖动调整比例"
 }
