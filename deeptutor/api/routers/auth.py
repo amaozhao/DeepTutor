@@ -840,16 +840,17 @@ def _apply_user_data_policy(
     data_action: Literal["keep", "archive", "delete"],
 ) -> dict:
     if user_id and _USER_ID_RE.match(user_id):
-        from deeptutor.multi_user.identity import delete_avatar_file
-
-        delete_avatar_file(user_id)
         try:
-            return apply_user_delete_policy(user_id, data_action)
+            data_policy = apply_user_delete_policy(user_id, data_action)
         except OSError as exc:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"User was deleted but data policy failed: {exc}",
             ) from exc
+        from deeptutor.multi_user.identity import delete_avatar_file
+
+        delete_avatar_file(user_id)
+        return data_policy
     return {"action": data_action, "workspace": "skipped", "grant": "skipped"}
 
 
