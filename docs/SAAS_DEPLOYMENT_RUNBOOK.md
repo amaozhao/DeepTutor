@@ -2,7 +2,7 @@
 
 日期：2026-06-30
 
-本文只覆盖当前代码可支持的受控 beta / 私有多用户部署。正式公开 SaaS 仍需要外部用户库、强一致 quota store 和完整合规治理；当前文件型限流、用户文件写锁和带文件锁的 usage ledger 只适合受控 beta。账单/支付本轮不纳入。
+本文覆盖当前代码可支持的受控 beta / 私有多用户部署，以及 PostgreSQL shared_state 支撑的多副本基础。正式公开 SaaS 仍需要完整合规治理、运营监控、审计存储和对象存储；当前文件型限流、用户文件写锁和带文件锁的 usage ledger 只适合单副本 beta。账单/支付本轮不纳入。
 
 ## 当前推荐拓扑
 
@@ -60,12 +60,12 @@ docker compose up -d
 
 ## 多副本前置条件
 
-不要在当前文件型状态下直接水平扩容。多副本前至少需要：
+不要在默认文件型状态下直接水平扩容。多副本前至少需要：
 
-- 外部用户库或数据库事务，替代 `data/system/auth/users.json`。当前本机写锁只保护注册、停用、改角色、改密码等写路径，普通鉴权读取不加锁。
-- 外部 token-version/session 撤销状态源，替代本地 `users.json` 里的 `token_version`。这是为了让停用、删号、改密、降权、强制登出在所有实例生效，不是给普通鉴权读取加锁。
-- 强一致 quota store，替代 JSONL usage 账本；文件型限流和带文件锁的 usage ledger 只能作为受控 beta 过渡方案。
+- 配置 `DEEPTUTOR_SHARED_STATE_PROVIDER=postgres` 和 `DEEPTUTOR_DATABASE_URL=...`，让 auth secret、用户记录/token_version、注册邀请码、rate limit、grant quota 和 usage ledger 进入 PostgreSQL。
 - 对象存储或共享文件系统，承载 attachments、knowledge bases、exports。
 - 可查询审计存储和备份恢复演练。
 
-可以先通过 `data/user/settings/shared_state.json` 或环境变量 `DEEPTUTOR_SHARED_STATE_PROVIDER=postgres`、`DEEPTUTOR_DATABASE_URL=...` 声明计划使用的共享状态来源。当前代码只把它用于部署状态和健康检查提示；auth、rate limit、quota 尚未迁移到数据库，所以配置该项不等于可以开启多副本。
+也可以通过 `data/user/settings/shared_state.json` 持久化同样配置。配置为 `postgres` 后，`/health` 会初始化并探测共享状态库；连接失败会返回 503。保持 `file` 时只适合单副本 beta。
+
+从文件模式切到 PostgreSQL 时，如果共享用户表为空，启动后的首次用户读取会把现有 `data/system/auth/users.json` 导入 PostgreSQL；已有 `data/system/auth/auth_secret` 也会作为 PostgreSQL JWT secret 初始值，避免切换后立刻让现有 token 全部失效。

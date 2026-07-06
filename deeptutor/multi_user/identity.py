@@ -169,6 +169,8 @@ def load_users(  # nosec B107 - empty defaults mean "no env fallback supplied".
     env_password_hash: str = "",
 ) -> dict[str, dict[str, Any]]:
     """Load canonical users, migrating legacy records and env fallback in memory."""
+    if _postgres_enabled():
+        return _postgres_load_users(env_username, env_password_hash)
     if not USERS_FILE.exists() and LEGACY_USERS_FILE.exists():
         with auth_store_write_lock():
             return _load_users_unlocked(env_username, env_password_hash)
@@ -240,7 +242,90 @@ def _load_users_unlocked(
     return users
 
 
+def _postgres_enabled() -> bool:
+    from .shared_state import postgres_enabled
+
+    return postgres_enabled()
+
+
+def _postgres_load_users(
+    env_username: str = "",
+    env_password_hash: str = "",
+) -> dict[str, dict[str, Any]]:
+    from . import shared_state
+
+    users = shared_state.load_users()
+    if not users and USERS_FILE.exists():
+        users, _needs_write_back = _load_users_result("", "")
+        if users:
+            shared_state.save_users(users)
+    canonical: dict[str, dict[str, Any]] = {}
+    changed = False
+    for index, (username, value) in enumerate(users.items()):
+        role: Role = "admin" if index == 0 else "user"
+        if isinstance(value, dict) and str(value.get("role") or "") in {"admin", "user"}:
+            role = str(value.get("role"))  # type: ignore[assignment]
+        record = _canonical_record(str(username), value, default_role=role)
+        if record is None:
+            changed = True
+            continue
+        canonical[str(username)] = record
+        changed = changed or record != value
+    if canonical:
+        if changed:
+            shared_state.save_users(canonical)
+        return canonical
+    if env_username and env_password_hash:
+        return {
+            env_username: {
+                "id": "env-admin",
+                "hash": env_password_hash,
+                "role": "admin",
+                "created_at": "",
+                "disabled": False,
+                "disabled_reason": "",
+                "avatar": "",
+                "token_version": 1,
+                "terms_accepted": False,
+                "terms_accepted_at": "",
+                "terms_version": "",
+                "privacy_version": "",
+            }
+        }
+    return {}
+
+
+def _postgres_save_users(users: dict[str, dict[str, Any]]) -> None:
+    from . import shared_state
+
+    shared_state.save_users(users)
+
+
 def save_user(username: str, hashed_password: str, role: Role = "user") -> dict[str, Any]:
+    if _postgres_enabled():
+        from .shared_state import update_users
+
+        def mutate(users: dict[str, dict[str, Any]]) -> dict[str, Any]:
+            effective_role: Role = "admin" if not users else role
+            existing = users.get(username) or {}
+            record = {
+                "id": str(existing.get("id") or new_user_id()),
+                "hash": hashed_password,
+                "role": effective_role,
+                "created_at": str(existing.get("created_at") or utc_now()),
+                "disabled": bool(existing.get("disabled", False)),
+                "disabled_reason": str(existing.get("disabled_reason") or ""),
+                "avatar": str(existing.get("avatar") or ""),
+                "token_version": _token_version(existing.get("token_version")),
+                "terms_accepted": bool(existing.get("terms_accepted", False)),
+                "terms_accepted_at": str(existing.get("terms_accepted_at") or ""),
+                "terms_version": str(existing.get("terms_version") or ""),
+                "privacy_version": str(existing.get("privacy_version") or ""),
+            }
+            users[username] = record
+            return record
+
+        return update_users(mutate)
     USERS_FILE.parent.mkdir(parents=True, exist_ok=True)
     # Read-modify-write must be atomic so concurrent first-time registrations
     # cannot each see an empty store and each promote themselves to admin.
@@ -273,6 +358,19 @@ def record_terms_acceptance(
     terms_version: str = "",
     privacy_version: str = "",
 ) -> bool:
+    if _postgres_enabled():
+        from .shared_state import update_users
+
+        def mutate(users: dict[str, dict[str, Any]]) -> bool:
+            if username not in users:
+                return False
+            users[username]["terms_accepted"] = True
+            users[username]["terms_accepted_at"] = utc_now()
+            users[username]["terms_version"] = terms_version
+            users[username]["privacy_version"] = privacy_version
+            return True
+
+        return bool(update_users(mutate))
     if not USERS_FILE.exists():
         return False
     with auth_store_write_lock():
@@ -317,6 +415,16 @@ def get_user_by_id(user_id: str) -> tuple[str, dict[str, Any]] | None:
 
 
 def delete_user(username: str) -> bool:
+    if _postgres_enabled():
+        from .shared_state import update_users
+
+        def mutate(users: dict[str, dict[str, Any]]) -> bool:
+            if username not in users:
+                return False
+            users.pop(username, None)
+            return True
+
+        return bool(update_users(mutate))
     if not USERS_FILE.exists():
         return False
     with auth_store_write_lock():
@@ -334,6 +442,17 @@ def _bump_token_version(record: dict[str, Any]) -> None:
 
 def update_password(username: str, hashed_password: str) -> bool:
     """Replace a user's password hash and invalidate existing JWTs."""
+    if _postgres_enabled():
+        from .shared_state import update_users
+
+        def mutate(users: dict[str, dict[str, Any]]) -> bool:
+            if username not in users:
+                return False
+            users[username]["hash"] = hashed_password
+            _bump_token_version(users[username])
+            return True
+
+        return bool(update_users(mutate))
     if not USERS_FILE.exists():
         return False
     with auth_store_write_lock():
@@ -348,6 +467,20 @@ def update_password(username: str, hashed_password: str) -> bool:
 
 def set_disabled(username: str, disabled: bool, reason: str = "") -> bool:
     """Enable or disable a user and invalidate existing JWTs."""
+    if _postgres_enabled():
+        from .shared_state import update_users
+
+        def mutate(users: dict[str, dict[str, Any]]) -> bool:
+            if username not in users:
+                return False
+            if bool(users[username].get("disabled", False)) != disabled:
+                users[username]["disabled"] = disabled
+                _bump_token_version(users[username])
+            next_reason = reason.strip()[:500] if disabled else ""
+            users[username]["disabled_reason"] = next_reason
+            return True
+
+        return bool(update_users(mutate))
     if not USERS_FILE.exists():
         return False
     with auth_store_write_lock():
@@ -370,6 +503,16 @@ def set_disabled(username: str, disabled: bool, reason: str = "") -> bool:
 
 def revoke_sessions(username: str) -> bool:
     """Invalidate existing JWTs without changing account fields."""
+    if _postgres_enabled():
+        from .shared_state import update_users
+
+        def mutate(users: dict[str, dict[str, Any]]) -> bool:
+            if username not in users:
+                return False
+            _bump_token_version(users[username])
+            return True
+
+        return bool(update_users(mutate))
     if not USERS_FILE.exists():
         return False
     with auth_store_write_lock():
@@ -383,6 +526,16 @@ def revoke_sessions(username: str) -> bool:
 
 def set_avatar(username: str, avatar: str) -> bool:
     """Update the avatar marker for an existing user. Returns True on success."""
+    if _postgres_enabled():
+        from .shared_state import update_users
+
+        def mutate(users: dict[str, dict[str, Any]]) -> bool:
+            if username not in users:
+                return False
+            users[username]["avatar"] = avatar
+            return True
+
+        return bool(update_users(mutate))
     if not USERS_FILE.exists():
         return False
     with auth_store_write_lock():
@@ -442,6 +595,17 @@ def delete_avatar_file(user_id: str) -> None:
 def set_role(username: str, role: Role) -> bool:
     if role not in {"admin", "user"}:
         raise ValueError("role must be 'admin' or 'user'")
+    if _postgres_enabled():
+        from .shared_state import update_users
+
+        def mutate(users: dict[str, dict[str, Any]]) -> bool:
+            if username not in users:
+                return False
+            users[username]["role"] = role
+            _bump_token_version(users[username])
+            return True
+
+        return bool(update_users(mutate))
     if not USERS_FILE.exists():
         return False
     with auth_store_write_lock():
@@ -455,6 +619,16 @@ def set_role(username: str, role: Role) -> bool:
 
 
 def load_or_create_auth_secret() -> str:
+    if _postgres_enabled():
+        from .shared_state import load_or_create_auth_secret as _postgres_secret
+
+        seed = ""
+        try:
+            if SECRET_FILE.exists():
+                seed = SECRET_FILE.read_text(encoding="utf-8").strip()
+        except Exception:
+            seed = ""
+        return _postgres_secret(seed)
     migrate_legacy_multi_user_tree()
     try:
         if SECRET_FILE.exists():

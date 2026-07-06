@@ -151,7 +151,7 @@ def test_production_security_warnings_for_multi_worker_auth(monkeypatch):
     assert any("external storage" in item for item in warnings)
 
 
-def test_production_security_warnings_do_not_mark_postgres_config_ready(monkeypatch):
+def test_production_security_warnings_allow_multi_worker_with_postgres_state(monkeypatch):
     from deeptutor.api import security
 
     monkeypatch.setenv("WEB_CONCURRENCY", "2")
@@ -179,8 +179,7 @@ def test_production_security_warnings_do_not_mark_postgres_config_ready(monkeypa
 
     warnings = security.production_security_warnings()
 
-    assert any("still file-backed" in item for item in warnings)
-    assert not any("external storage for supported multi-worker" in item for item in warnings)
+    assert not any("backend workers configured" in item for item in warnings)
 
 
 def test_file_rate_limiter_shares_counts_across_instances(tmp_path: Path):
@@ -246,7 +245,7 @@ def test_system_status_reports_multi_worker_blocker(monkeypatch):
     assert any("multiple backend workers configured" in item for item in result["blocking_reasons"])
 
 
-def test_system_status_reports_configured_external_state_not_migrated(monkeypatch):
+def test_system_status_reports_postgres_shared_state_ready(monkeypatch):
     from deeptutor.api.routers import system
 
     monkeypatch.setenv("UVICORN_WORKERS", "3")
@@ -259,11 +258,63 @@ def test_system_status_reports_configured_external_state_not_migrated(monkeypatc
 
     result = system._deployment_status()
 
-    assert result["multi_replica_ready"] is False
+    assert result["status"] == "multi_replica_ready"
+    assert result["multi_replica_ready"] is True
     assert result["shared_state"]["provider"] == "postgres"
     assert result["shared_state"]["database_url_configured"] is True
     assert result["shared_state"]["external_state_configured"] is True
-    assert any("not migrated" in item for item in result["blocking_reasons"])
+    assert result["shared_state"]["token_revocation"] == "postgres_token_version"
+    assert result["shared_state"]["rate_limit"] == "postgres"
+    assert result["shared_state"]["usage_quota"] == "postgres"
+    assert result["shared_state"]["registration_invites"] == "postgres"
+    assert result["blocking_reasons"] == []
+
+
+def test_container_health_allows_multi_worker_with_postgres_state(monkeypatch):
+    from deeptutor.api.routers import system
+
+    monkeypatch.setattr(system, "_writable_dir_status", lambda _path: {"status": "ok"})
+    monkeypatch.setattr(
+        system,
+        "_deployment_status",
+        lambda: {
+            "multi_replica_ready": True,
+            "shared_state": {"backend_workers": 2, "external_state_configured": True},
+        },
+    )
+    monkeypatch.setattr(
+        "deeptutor.multi_user.shared_state.health_status",
+        lambda: {"status": "ok"},
+    )
+
+    status_code, payload = system._container_health()
+
+    assert status_code == 200
+    assert payload["failures"] == []
+    assert payload["shared_state_store"] == {"status": "ok"}
+
+
+def test_container_health_fails_when_postgres_state_unreachable(monkeypatch):
+    from deeptutor.api.routers import system
+
+    monkeypatch.setattr(system, "_writable_dir_status", lambda _path: {"status": "ok"})
+    monkeypatch.setattr(
+        system,
+        "_deployment_status",
+        lambda: {
+            "multi_replica_ready": True,
+            "shared_state": {"backend_workers": 2, "external_state_configured": True},
+        },
+    )
+    monkeypatch.setattr(
+        "deeptutor.multi_user.shared_state.health_status",
+        lambda: {"status": "error", "error": "connection refused"},
+    )
+
+    status_code, payload = system._container_health()
+
+    assert status_code == 503
+    assert payload["failures"] == ["shared state store is not reachable"]
 
 
 def test_container_health_allows_single_worker_beta(monkeypatch):

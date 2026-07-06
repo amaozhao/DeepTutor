@@ -54,35 +54,46 @@ def _deployment_status() -> dict[str, object]:
         shared_state_provider == "postgres" and database_url_configured
     )
     worker_count = configured_worker_count()
-    blocking_reasons = [
-        "auth/token-version revocation is file-backed beta",
-        "rate limiting is file-backed beta",
-        "usage/quota is file-backed",
-    ]
-    if worker_count > 1:
-        if external_state_configured:
-            blocking_reasons.append(
-                "external shared state is configured but auth/rate/quota stores are not migrated"
-            )
-        else:
+    blocking_reasons: list[str] = []
+    if not external_state_configured:
+        blocking_reasons.extend(
+            [
+                "auth/token-version revocation is file-backed beta",
+                "rate limiting is file-backed beta",
+                "usage/quota is file-backed",
+            ]
+        )
+        if worker_count > 1:
             blocking_reasons.append(
                 "multiple backend workers configured without external auth/token-version/quota storage"
             )
     if pocketbase_enabled:
         blocking_reasons.append("PocketBase multi-user/SaaS mode is unsupported")
+    multi_replica_ready = external_state_configured and not pocketbase_enabled
     return {
-        "status": "single_replica_beta",
-        "multi_replica_ready": False,
+        "status": "multi_replica_ready" if multi_replica_ready else "single_replica_beta",
+        "multi_replica_ready": multi_replica_ready,
         "shared_state": {
             "provider": shared_state_provider,
             "database_url_configured": database_url_configured,
             "external_state_configured": external_state_configured,
-            "auth": "pocketbase_single_user" if pocketbase_enabled else "file_write_lock",
-            "token_revocation": (
-                "pocketbase_token_refresh" if pocketbase_enabled else "file_token_version"
+            "auth": (
+                "pocketbase_single_user"
+                if pocketbase_enabled
+                else "postgres"
+                if external_state_configured
+                else "file_write_lock"
             ),
-            "rate_limit": "file",
-            "usage_quota": "file",
+            "token_revocation": (
+                "pocketbase_token_refresh"
+                if pocketbase_enabled
+                else "postgres_token_version"
+                if external_state_configured
+                else "file_token_version"
+            ),
+            "rate_limit": "postgres" if external_state_configured else "file",
+            "usage_quota": "postgres" if external_state_configured else "file",
+            "registration_invites": "postgres" if external_state_configured else "file",
             "backend_workers": worker_count,
         },
         "pocketbase_multi_user_supported": False,
@@ -91,21 +102,40 @@ def _deployment_status() -> dict[str, object]:
 
 
 def _container_health() -> tuple[int, dict[str, object]]:
-    storage = _writable_dir_status(paths.ADMIN_WORKSPACE_ROOT)
-    auth_store = _writable_dir_status(paths.SYSTEM_ROOT / "auth")
-    quota_store = _writable_dir_status(paths.SYSTEM_ROOT / "usage")
-    rate_store = _writable_dir_status(paths.SYSTEM_ROOT / "rate")
     deployment = _deployment_status()
+    shared_state = deployment.get("shared_state") or {}
+    external_state_configured = bool(shared_state.get("external_state_configured"))
+    storage = _writable_dir_status(paths.ADMIN_WORKSPACE_ROOT)
+    auth_store = {"status": "external"} if external_state_configured else _writable_dir_status(
+        paths.SYSTEM_ROOT / "auth"
+    )
+    quota_store = {"status": "external"} if external_state_configured else _writable_dir_status(
+        paths.SYSTEM_ROOT / "usage"
+    )
+    rate_store = {"status": "external"} if external_state_configured else _writable_dir_status(
+        paths.SYSTEM_ROOT / "rate"
+    )
+    shared_state_store: dict[str, str] = {"status": "file"}
+    if external_state_configured:
+        from deeptutor.multi_user.shared_state import health_status
+
+        shared_state_store = health_status()
     failures: list[str] = []
     if storage["status"] != "ok":
         failures.append("storage is not writable")
-    if auth_store["status"] != "ok":
+    ready_statuses = {"ok", "external"}
+    if auth_store["status"] not in ready_statuses:
         failures.append("auth store is not writable")
-    if quota_store["status"] != "ok":
+    if quota_store["status"] not in ready_statuses:
         failures.append("quota store is not writable")
-    if rate_store["status"] != "ok":
+    if rate_store["status"] not in ready_statuses:
         failures.append("rate store is not writable")
-    if int((deployment.get("shared_state") or {}).get("backend_workers") or 1) > 1:
+    if shared_state_store["status"] == "error":
+        failures.append("shared state store is not reachable")
+    if (
+        int((deployment.get("shared_state") or {}).get("backend_workers") or 1) > 1
+        and not bool(deployment.get("multi_replica_ready"))
+    ):
         failures.append(
             "multiple backend workers configured before shared auth/rate/quota stores are active"
         )
@@ -114,6 +144,7 @@ def _container_health() -> tuple[int, dict[str, object]]:
         "status": "ok" if not failures else "error",
         "failures": failures,
         "deployment": deployment,
+        "shared_state_store": shared_state_store,
     }
 
 
@@ -175,6 +206,15 @@ async def get_system_status():
         "rate_store": _writable_dir_status(paths.SYSTEM_ROOT / "rate"),
         "deployment": _deployment_status(),
     }
+    if result["deployment"]["shared_state"]["external_state_configured"]:
+        from deeptutor.multi_user.shared_state import health_status
+
+        result["shared_state_store"] = health_status()
+        result["auth_store"] = {"status": "external"}
+        result["quota_store"] = {"status": "external"}
+        result["rate_store"] = {"status": "external"}
+    else:
+        result["shared_state_store"] = {"status": "file"}
 
     # Check backend status (this endpoint itself proves backend is online)
     result["backend"]["status"] = "online"

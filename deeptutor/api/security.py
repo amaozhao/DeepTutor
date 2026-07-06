@@ -78,6 +78,10 @@ class FileSlidingWindowRateLimiter:
         current = time.time() if now is None else now
         if limit <= 0:
             return False
+        if _postgres_shared_state_enabled():
+            from deeptutor.multi_user.shared_state import allow_rate_hit
+
+            return allow_rate_hit(key, limit=limit, window_seconds=window_seconds, now=current)
         path = self._path_for(key)
         try:
             path.parent.mkdir(parents=True, exist_ok=True)
@@ -125,6 +129,11 @@ class FileSlidingWindowRateLimiter:
 
     def clear(self) -> None:
         self._fallback.clear()
+        if _postgres_shared_state_enabled():
+            from deeptutor.multi_user.shared_state import clear_rate_hits
+
+            clear_rate_hits()
+            return
         try:
             for child in self.root.glob("*.json"):
                 child.unlink(missing_ok=True)
@@ -139,6 +148,12 @@ class FileSlidingWindowRateLimiter:
 rate_limiter = FileSlidingWindowRateLimiter()
 
 _WORKER_ENV_VARS = ("WEB_CONCURRENCY", "UVICORN_WORKERS", "GUNICORN_WORKERS")
+
+
+def _postgres_shared_state_enabled() -> bool:
+    from deeptutor.multi_user.shared_state import postgres_enabled
+
+    return postgres_enabled()
 
 
 def client_ip(request: Request) -> str:
@@ -216,15 +231,7 @@ def production_security_warnings() -> list[str]:
     worker_count = configured_worker_count()
     if worker_count > 1:
         shared_state = load_shared_state_settings()
-        if (
-            shared_state.get("provider") == "postgres"
-            and shared_state.get("database_url")
-        ):
-            warnings.append(
-                f"{worker_count} backend workers configured, but auth, rate limiting, "
-                "and quota are still file-backed until the shared-state migration is active. "
-                "Use one worker until then."
-            )
+        if shared_state.get("provider") == "postgres" and shared_state.get("database_url"):
             return warnings
         warnings.append(
             f"{worker_count} backend workers configured, but auth and quota still need "

@@ -209,14 +209,14 @@ def export_user_data(user_id: str, username: str) -> Path:
     export_dir.mkdir(parents=True, exist_ok=True)
     target = export_dir / f"{user_id}-{_stamp()}.zip"
     workspace = paths.USERS_ROOT / user_id
-    grant_file = paths.SYSTEM_ROOT / "grants" / f"{user_id}.json"
-    usage_file = paths.SYSTEM_ROOT / "usage" / "llm_usage.jsonl"
     audit_file = paths.SYSTEM_ROOT / "audit" / "usage.jsonl"
+    from .grants import load_grant
     from .identity import get_avatar_file, get_user
-    from .usage import usage_ledger_lock
+    from .usage import _read_events
 
     avatar_file = get_avatar_file(user_id)
     record = get_user(username) or {}
+    grant = load_grant(user_id)
     account = {
         "id": str(record.get("id") or user_id),
         "username": username,
@@ -240,7 +240,7 @@ def export_user_data(user_id: str, username: str) -> Path:
                     "username": username,
                     "exported_at": datetime.now(timezone.utc).isoformat(),
                     "workspace_included": workspace.exists(),
-                    "grant_included": grant_file.exists(),
+                    "grant_included": bool(grant),
                     "avatar_included": avatar_file is not None,
                 },
                 indent=2,
@@ -252,14 +252,14 @@ def export_user_data(user_id: str, username: str) -> Path:
             json.dumps(account, indent=2, ensure_ascii=False),
         )
         _add_tree(archive, workspace, "workspace")
-        if grant_file.exists():
-            archive.write(grant_file, "system/grant.json")
+        if grant:
+            archive.writestr(
+                "system/grant.json",
+                json.dumps(grant, indent=2, ensure_ascii=False),
+            )
         if avatar_file is not None:
             archive.write(avatar_file, f"system/avatar{avatar_file.suffix}")
-        with usage_ledger_lock():
-            usage_rows = [
-                row for row in _read_jsonl(usage_file) if str(row.get("user_id") or "") == user_id
-            ]
+        usage_rows = [row for row in _read_events() if str(row.get("user_id") or "") == user_id]
         _write_jsonl_to_zip(archive, "system/usage.jsonl", usage_rows)
         _write_jsonl_to_zip(
             archive,
@@ -284,7 +284,7 @@ def apply_user_delete_policy(user_id: str, action: DeleteDataAction) -> dict[str
     if action not in {"archive", "delete"}:
         raise ValueError(f"Unknown delete data action: {action}")
 
-    from .grants import _grant_write_lock
+    from .grants import _grant_write_lock, delete_grant, load_grant
     from .identity import delete_avatar_file, get_avatar_file
 
     workspace = paths.USERS_ROOT / user_id
@@ -292,8 +292,7 @@ def apply_user_delete_policy(user_id: str, action: DeleteDataAction) -> dict[str
     if action == "delete":
         if workspace.exists():
             shutil.rmtree(workspace)
-        with _grant_write_lock(user_id) as locked_grant_file:
-            locked_grant_file.unlink(missing_ok=True)
+        delete_grant(user_id)
         if avatar_file is not None:
             delete_avatar_file(user_id)
         return {
@@ -316,6 +315,14 @@ def apply_user_delete_policy(user_id: str, action: DeleteDataAction) -> dict[str
         archive_root.parent.mkdir(parents=True, exist_ok=True)
         shutil.move(str(workspace), str(archive_root / "workspace"))
         manifest["workspace"] = "archived"
+    grant = load_grant(user_id)
+    if grant:
+        (archive_root / "grant.json").write_text(
+            json.dumps(grant, indent=2, ensure_ascii=False),
+            encoding="utf-8",
+        )
+        delete_grant(user_id)
+        manifest["grant"] = "archived"
     with _grant_write_lock(user_id) as locked_grant_file:
         if locked_grant_file.exists():
             shutil.move(str(locked_grant_file), str(archive_root / "grant.json"))
