@@ -36,6 +36,10 @@ RUNTIME_ENV_KEYS = (
     "POCKETBASE_EXTERNAL_URL",
     "POCKETBASE_ADMIN_EMAIL",
     "POCKETBASE_ADMIN_PASSWORD",
+    "DEEPTUTOR_SHARED_STATE_PROVIDER",
+    "SHARED_STATE_PROVIDER",
+    "DEEPTUTOR_DATABASE_URL",
+    "DATABASE_URL",
 )
 
 
@@ -59,9 +63,11 @@ def test_runtime_settings_creates_defaults_without_reading_dotenv(tmp_path: Path
     assert service.load_system(include_process_overrides=False)["backend_port"] == 8001
     assert service.load_auth(include_process_overrides=False)["enabled"] is False
     assert service.load_integrations(include_process_overrides=False)["pocketbase_url"] == ""
+    assert service.load_shared_state(include_process_overrides=False)["provider"] == "file"
 
     assert _read_json(service.path_for("system"))["backend_port"] == 8001
     assert _read_json(service.path_for("auth"))["enabled"] is False
+    assert _read_json(service.path_for("shared_state"))["provider"] == "file"
 
 
 def test_runtime_process_env_is_explicit_override(tmp_path: Path) -> None:
@@ -71,18 +77,24 @@ def test_runtime_process_env_is_explicit_override(tmp_path: Path) -> None:
             "BACKEND_PORT": "9100",
             "AUTH_ENABLED": "true",
             "POCKETBASE_PORT": "9090",
+            "DEEPTUTOR_SHARED_STATE_PROVIDER": "postgres",
+            "DEEPTUTOR_DATABASE_URL": "postgresql://db/deeptutor",
         },
     )
     service.save_system({"backend_port": 8001, "frontend_port": 3782})
     service.save_auth({"enabled": False, "username": "admin"})
     service.save_integrations({"pocketbase_port": 8090})
+    service.save_shared_state({"provider": "file", "database_url": ""})
 
     assert service.load_system()["backend_port"] == 9100
     assert service.load_auth()["enabled"] is True
     assert service.load_integrations()["pocketbase_port"] == 9090
+    assert service.load_shared_state()["provider"] == "postgres"
+    assert service.load_shared_state()["database_url"] == "postgresql://db/deeptutor"
     assert _read_json(service.path_for("system"))["backend_port"] == 8001
     assert _read_json(service.path_for("auth"))["enabled"] is False
     assert _read_json(service.path_for("integrations"))["pocketbase_port"] == 8090
+    assert _read_json(service.path_for("shared_state"))["provider"] == "file"
 
 
 def test_render_environment_uses_json_backed_runtime_names(monkeypatch, tmp_path: Path) -> None:
@@ -101,6 +113,12 @@ def test_render_environment_uses_json_backed_runtime_names(monkeypatch, tmp_path
         {
             "pocketbase_url": "http://pocketbase:8090",
             "pocketbase_admin_email": "admin@example.com",
+        }
+    )
+    service.save_shared_state(
+        {
+            "provider": "postgres",
+            "database_url": "postgresql://db/deeptutor",
         }
     )
 
@@ -128,7 +146,25 @@ def test_render_environment_uses_json_backed_runtime_names(monkeypatch, tmp_path
     assert env["AUTH_CSRF_PROTECTION_ENABLED"] == "true"
     assert env["AUTH_MAX_USERS"] == "0"
     assert env["POCKETBASE_URL"] == "http://pocketbase:8090"
+    assert env["DEEPTUTOR_SHARED_STATE_PROVIDER"] == "postgres"
+    assert env["DEEPTUTOR_DATABASE_URL"] == "postgresql://db/deeptutor"
     assert "AUTH_SECRET" not in env
+
+
+def test_shared_state_settings_normalize_and_export(tmp_path: Path) -> None:
+    service = RuntimeSettingsService(tmp_path / "settings", process_env={})
+
+    saved = service.save_shared_state(
+        {"provider": "Postgres", "database_url": "  postgresql://db/deeptutor  "}
+    )
+
+    assert saved == {
+        "version": 1,
+        "provider": "postgres",
+        "database_url": "postgresql://db/deeptutor",
+    }
+    assert service.render_environment()["DEEPTUTOR_SHARED_STATE_PROVIDER"] == "postgres"
+    assert service.save_shared_state({"provider": "redis"})["provider"] == "file"
 
 
 def test_auth_max_users_normalizes_and_exports(tmp_path: Path) -> None:
@@ -279,6 +315,7 @@ def test_startup_ensure_creates_missing_runtime_jsons_with_defaults(
     assert (settings_dir / "system.json").exists()
     assert (settings_dir / "auth.json").exists()
     assert (settings_dir / "integrations.json").exists()
+    assert (settings_dir / "shared_state.json").exists()
     assert (settings_dir / "document_parsing.json").exists()
     assert (settings_dir / "model_catalog.json").exists()
     _parsing_file = _read_json(settings_dir / "document_parsing.json")
@@ -287,6 +324,7 @@ def test_startup_ensure_creates_missing_runtime_jsons_with_defaults(
     assert _read_json(settings_dir / "system.json")["backend_port"] == 8001
     assert _read_json(settings_dir / "auth.json")["enabled"] is False
     assert _read_json(settings_dir / "integrations.json")["pocketbase_url"] == ""
+    assert _read_json(settings_dir / "shared_state.json")["provider"] == "file"
     assert set(_read_json(settings_dir / "model_catalog.json")["services"]) == {
         "llm",
         "embedding",

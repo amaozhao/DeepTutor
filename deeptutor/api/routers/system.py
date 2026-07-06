@@ -13,7 +13,11 @@ from pydantic import BaseModel
 from deeptutor.api.security import configured_worker_count, production_security_warnings
 from deeptutor.multi_user import paths
 from deeptutor.multi_user.context import get_current_user
-from deeptutor.services.config import load_integrations_settings, resolve_search_runtime_config
+from deeptutor.services.config import (
+    load_integrations_settings,
+    load_shared_state_settings,
+    resolve_search_runtime_config,
+)
 from deeptutor.services.embedding import get_embedding_client, get_embedding_config
 from deeptutor.services.llm import complete as llm_complete
 from deeptutor.services.llm import get_llm_config, get_token_limit_kwargs
@@ -43,6 +47,12 @@ def _writable_dir_status(path: Path) -> dict[str, str]:
 
 def _deployment_status() -> dict[str, object]:
     pocketbase_enabled = bool(load_integrations_settings().get("pocketbase_url"))
+    shared_state_settings = load_shared_state_settings()
+    shared_state_provider = str(shared_state_settings.get("provider") or "file")
+    database_url_configured = bool(shared_state_settings.get("database_url"))
+    external_state_configured = (
+        shared_state_provider == "postgres" and database_url_configured
+    )
     worker_count = configured_worker_count()
     blocking_reasons = [
         "auth/token-version revocation is file-backed beta",
@@ -50,15 +60,23 @@ def _deployment_status() -> dict[str, object]:
         "usage/quota is file-backed",
     ]
     if worker_count > 1:
-        blocking_reasons.append(
-            "multiple backend workers configured without external auth/token-version/quota storage"
-        )
+        if external_state_configured:
+            blocking_reasons.append(
+                "external shared state is configured but auth/rate/quota stores are not migrated"
+            )
+        else:
+            blocking_reasons.append(
+                "multiple backend workers configured without external auth/token-version/quota storage"
+            )
     if pocketbase_enabled:
         blocking_reasons.append("PocketBase multi-user/SaaS mode is unsupported")
     return {
         "status": "single_replica_beta",
         "multi_replica_ready": False,
         "shared_state": {
+            "provider": shared_state_provider,
+            "database_url_configured": database_url_configured,
+            "external_state_configured": external_state_configured,
             "auth": "pocketbase_single_user" if pocketbase_enabled else "file_write_lock",
             "token_revocation": (
                 "pocketbase_token_refresh" if pocketbase_enabled else "file_token_version"
@@ -88,7 +106,9 @@ def _container_health() -> tuple[int, dict[str, object]]:
     if rate_store["status"] != "ok":
         failures.append("rate store is not writable")
     if int((deployment.get("shared_state") or {}).get("backend_workers") or 1) > 1:
-        failures.append("multiple backend workers configured without external auth/quota storage")
+        failures.append(
+            "multiple backend workers configured before shared auth/rate/quota stores are active"
+        )
     http_status = status.HTTP_200_OK if not failures else status.HTTP_503_SERVICE_UNAVAILABLE
     return http_status, {
         "status": "ok" if not failures else "error",

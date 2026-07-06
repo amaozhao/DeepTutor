@@ -69,6 +69,11 @@ def test_production_security_warnings_for_auth_without_secure_public_origin(monk
         "load_integrations_settings",
         lambda: {"pocketbase_url": ""},
     )
+    monkeypatch.setattr(
+        security,
+        "load_shared_state_settings",
+        lambda: {"provider": "file", "database_url": ""},
+    )
 
     warnings = security.production_security_warnings()
 
@@ -98,6 +103,11 @@ def test_production_security_warnings_for_pocketbase_multi_user(monkeypatch):
         security,
         "load_integrations_settings",
         lambda: {"pocketbase_url": "http://127.0.0.1:8090"},
+    )
+    monkeypatch.setattr(
+        security,
+        "load_shared_state_settings",
+        lambda: {"provider": "file", "database_url": ""},
     )
 
     warnings = security.production_security_warnings()
@@ -129,11 +139,48 @@ def test_production_security_warnings_for_multi_worker_auth(monkeypatch):
         "load_integrations_settings",
         lambda: {"pocketbase_url": ""},
     )
+    monkeypatch.setattr(
+        security,
+        "load_shared_state_settings",
+        lambda: {"provider": "file", "database_url": ""},
+    )
 
     warnings = security.production_security_warnings()
 
     assert any("2 backend workers configured" in item for item in warnings)
     assert any("external storage" in item for item in warnings)
+
+
+def test_production_security_warnings_do_not_mark_postgres_config_ready(monkeypatch):
+    from deeptutor.api import security
+
+    monkeypatch.setenv("WEB_CONCURRENCY", "2")
+    monkeypatch.setattr(
+        security,
+        "load_auth_settings",
+        lambda: {
+            "enabled": True,
+            "cookie_secure": True,
+            "public_registration_enabled": False,
+            "require_terms_acceptance": True,
+        },
+    )
+    monkeypatch.setattr(
+        security,
+        "load_system_settings",
+        lambda: {"cors_origin": "https://app.example.com", "cors_origins": []},
+    )
+    monkeypatch.setattr(security, "load_integrations_settings", lambda: {"pocketbase_url": ""})
+    monkeypatch.setattr(
+        security,
+        "load_shared_state_settings",
+        lambda: {"provider": "postgres", "database_url": "postgresql://db/deeptutor"},
+    )
+
+    warnings = security.production_security_warnings()
+
+    assert any("still file-backed" in item for item in warnings)
+    assert not any("external storage for supported multi-worker" in item for item in warnings)
 
 
 def test_file_rate_limiter_shares_counts_across_instances(tmp_path: Path):
@@ -163,12 +210,19 @@ def test_system_status_marks_file_backed_deployment_single_replica(monkeypatch):
     monkeypatch.delenv("UVICORN_WORKERS", raising=False)
     monkeypatch.delenv("GUNICORN_WORKERS", raising=False)
     monkeypatch.setattr(system, "load_integrations_settings", lambda: {"pocketbase_url": ""})
+    monkeypatch.setattr(
+        system,
+        "load_shared_state_settings",
+        lambda: {"provider": "file", "database_url": ""},
+    )
 
     result = system._deployment_status()
 
     assert result["status"] == "single_replica_beta"
     assert result["multi_replica_ready"] is False
     assert isinstance(result["shared_state"], dict)
+    assert result["shared_state"]["provider"] == "file"
+    assert result["shared_state"]["external_state_configured"] is False
     assert result["shared_state"]["token_revocation"] == "file_token_version"
     assert result["shared_state"]["rate_limit"] == "file"
     assert any("token-version revocation" in item for item in result["blocking_reasons"])
@@ -179,12 +233,37 @@ def test_system_status_reports_multi_worker_blocker(monkeypatch):
 
     monkeypatch.setenv("UVICORN_WORKERS", "3")
     monkeypatch.setattr(system, "load_integrations_settings", lambda: {"pocketbase_url": ""})
+    monkeypatch.setattr(
+        system,
+        "load_shared_state_settings",
+        lambda: {"provider": "file", "database_url": ""},
+    )
 
     result = system._deployment_status()
 
     assert result["multi_replica_ready"] is False
     assert result["shared_state"]["backend_workers"] == 3
     assert any("multiple backend workers configured" in item for item in result["blocking_reasons"])
+
+
+def test_system_status_reports_configured_external_state_not_migrated(monkeypatch):
+    from deeptutor.api.routers import system
+
+    monkeypatch.setenv("UVICORN_WORKERS", "3")
+    monkeypatch.setattr(system, "load_integrations_settings", lambda: {"pocketbase_url": ""})
+    monkeypatch.setattr(
+        system,
+        "load_shared_state_settings",
+        lambda: {"provider": "postgres", "database_url": "postgresql://db/deeptutor"},
+    )
+
+    result = system._deployment_status()
+
+    assert result["multi_replica_ready"] is False
+    assert result["shared_state"]["provider"] == "postgres"
+    assert result["shared_state"]["database_url_configured"] is True
+    assert result["shared_state"]["external_state_configured"] is True
+    assert any("not migrated" in item for item in result["blocking_reasons"])
 
 
 def test_container_health_allows_single_worker_beta(monkeypatch):
@@ -223,7 +302,7 @@ def test_container_health_fails_for_multi_worker_without_shared_state(monkeypatc
     assert status_code == 503
     assert payload["status"] == "error"
     assert payload["failures"] == [
-        "multiple backend workers configured without external auth/quota storage"
+        "multiple backend workers configured before shared auth/rate/quota stores are active"
     ]
 
 
@@ -294,6 +373,11 @@ def test_system_status_marks_pocketbase_unsupported_for_multi_user(monkeypatch):
         system,
         "load_integrations_settings",
         lambda: {"pocketbase_url": "http://127.0.0.1:8090"},
+    )
+    monkeypatch.setattr(
+        system,
+        "load_shared_state_settings",
+        lambda: {"provider": "file", "database_url": ""},
     )
 
     result = system._deployment_status()
