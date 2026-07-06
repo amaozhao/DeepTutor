@@ -133,7 +133,7 @@ def test_production_security_warnings_for_multi_worker_auth(monkeypatch):
     warnings = security.production_security_warnings()
 
     assert any("2 backend workers configured" in item for item in warnings)
-    assert any("auth and quota state" in item for item in warnings)
+    assert any("external storage" in item for item in warnings)
 
 
 def test_file_rate_limiter_shares_counts_across_instances(tmp_path: Path):
@@ -222,7 +222,7 @@ def test_container_health_fails_for_multi_worker_without_shared_state(monkeypatc
     assert status_code == 503
     assert payload["status"] == "error"
     assert payload["failures"] == [
-        "multiple backend workers configured without shared auth/quota storage"
+        "multiple backend workers configured without external auth/quota storage"
     ]
 
 
@@ -246,6 +246,28 @@ def test_container_health_fails_when_rate_store_is_unwritable(monkeypatch):
 
     assert status_code == 503
     assert payload["failures"] == ["rate store is not writable"]
+
+
+def test_container_health_fails_when_auth_store_is_unwritable(monkeypatch):
+    from deeptutor.api.routers import system
+    from deeptutor.multi_user import paths
+
+    def fake_status(path):
+        if path == paths.SYSTEM_ROOT / "auth":
+            return {"status": "error", "error": "denied"}
+        return {"status": "ok"}
+
+    monkeypatch.setattr(system, "_writable_dir_status", fake_status)
+    monkeypatch.setattr(
+        system,
+        "_deployment_status",
+        lambda: {"shared_state": {"backend_workers": 1}, "blocking_reasons": []},
+    )
+
+    status_code, payload = system._container_health()
+
+    assert status_code == 503
+    assert payload["failures"] == ["auth store is not writable"]
 
 
 def test_public_health_endpoint_uses_container_health(monkeypatch):
