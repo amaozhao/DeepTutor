@@ -212,9 +212,10 @@ def export_user_data(user_id: str, username: str) -> Path:
     grant_file = paths.SYSTEM_ROOT / "grants" / f"{user_id}.json"
     usage_file = paths.SYSTEM_ROOT / "usage" / "llm_usage.jsonl"
     audit_file = paths.SYSTEM_ROOT / "audit" / "usage.jsonl"
-    from .identity import get_user
+    from .identity import get_avatar_file, get_user
     from .usage import usage_ledger_lock
 
+    avatar_file = get_avatar_file(user_id)
     record = get_user(username) or {}
     account = {
         "id": str(record.get("id") or user_id),
@@ -240,6 +241,7 @@ def export_user_data(user_id: str, username: str) -> Path:
                     "exported_at": datetime.now(timezone.utc).isoformat(),
                     "workspace_included": workspace.exists(),
                     "grant_included": grant_file.exists(),
+                    "avatar_included": avatar_file is not None,
                 },
                 indent=2,
                 ensure_ascii=False,
@@ -252,6 +254,8 @@ def export_user_data(user_id: str, username: str) -> Path:
         _add_tree(archive, workspace, "workspace")
         if grant_file.exists():
             archive.write(grant_file, "system/grant.json")
+        if avatar_file is not None:
+            archive.write(avatar_file, f"system/avatar{avatar_file.suffix}")
         with usage_ledger_lock():
             usage_rows = [
                 row for row in _read_jsonl(usage_file) if str(row.get("user_id") or "") == user_id
@@ -281,14 +285,23 @@ def apply_user_delete_policy(user_id: str, action: DeleteDataAction) -> dict[str
         raise ValueError(f"Unknown delete data action: {action}")
 
     from .grants import _grant_write_lock
+    from .identity import delete_avatar_file, get_avatar_file
 
     workspace = paths.USERS_ROOT / user_id
+    avatar_file = get_avatar_file(user_id)
     if action == "delete":
         if workspace.exists():
             shutil.rmtree(workspace)
         with _grant_write_lock(user_id) as locked_grant_file:
             locked_grant_file.unlink(missing_ok=True)
-        return {"action": "delete", "workspace": "deleted", "grant": "deleted"}
+        if avatar_file is not None:
+            delete_avatar_file(user_id)
+        return {
+            "action": "delete",
+            "workspace": "deleted",
+            "grant": "deleted",
+            "avatar": "deleted" if avatar_file is not None else "missing",
+        }
 
     archive_root = paths.SYSTEM_ROOT / "deleted_users" / f"{user_id}-{_stamp()}"
     archive_root.mkdir(parents=True, exist_ok=False)
@@ -297,6 +310,7 @@ def apply_user_delete_policy(user_id: str, action: DeleteDataAction) -> dict[str
         "archived_at": datetime.now(timezone.utc).isoformat(),
         "workspace": "missing",
         "grant": "missing",
+        "avatar": "missing",
     }
     if workspace.exists():
         archive_root.parent.mkdir(parents=True, exist_ok=True)
@@ -306,6 +320,9 @@ def apply_user_delete_policy(user_id: str, action: DeleteDataAction) -> dict[str
         if locked_grant_file.exists():
             shutil.move(str(locked_grant_file), str(archive_root / "grant.json"))
             manifest["grant"] = "archived"
+    if avatar_file is not None:
+        shutil.move(str(avatar_file), str(archive_root / f"avatar{avatar_file.suffix}"))
+        manifest["avatar"] = "archived"
     manifest_path = archive_root / "manifest.json"
     manifest_tmp = archive_root / "manifest.tmp"
     manifest_tmp.write_text(json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8")
