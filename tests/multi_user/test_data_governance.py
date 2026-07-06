@@ -292,6 +292,31 @@ def test_profile_delete_requires_password_and_deletes_current_user_data(seed_use
     assert query_audit_events(action="user_self_delete")[0]["target_user_id"] == user_id
 
 
+def test_profile_delete_keeps_user_when_data_policy_fails(seed_user, monkeypatch):
+    import deeptutor.api.routers.auth as auth_router
+    from deeptutor.multi_user.identity import get_user
+    from deeptutor.services.auth import create_token
+
+    seed_user("admin", role="admin")
+    user = seed_user("alice", password="password1234")
+    client = _auth_client(monkeypatch)
+
+    def fail_data_policy(*_args, **_kwargs):
+        raise HTTPException(status_code=500, detail="policy failed")
+
+    monkeypatch.setattr(auth_router, "_apply_user_data_policy", fail_data_policy)
+
+    response = client.request(
+        "DELETE",
+        "/api/v1/auth/profile",
+        headers={"Authorization": f"Bearer {create_token('alice', 'user', user['id'])}"},
+        json={"password": "password1234", "data_action": "delete"},
+    )
+
+    assert response.status_code == 500
+    assert get_user("alice") is not None
+
+
 def test_admin_delete_keeps_user_when_data_policy_fails(seed_user, monkeypatch):
     import deeptutor.api.routers.auth as auth_router
     from deeptutor.multi_user.identity import get_user

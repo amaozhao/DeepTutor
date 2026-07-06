@@ -1013,10 +1013,10 @@ async def delete_profile(
 
     info = get_user_info(current.username)
     user_id = str((info or record).get("id") or current.user_id or "")
+    data_policy = _apply_user_data_policy(user_id, body.data_action)
     if not delete_user(current.username):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
 
-    data_policy = _apply_user_data_policy(user_id, body.data_action)
     log_admin_action(
         "user_self_delete",
         target_user_id=user_id,
