@@ -143,6 +143,7 @@ def apply_data_retention_policy() -> dict[str, Any]:
     """Prune data covered by the configured retention windows."""
     paths.ensure_system_dirs()
     settings = load_data_governance_settings()
+    from .audit import _audit_write_lock
     from .usage import usage_ledger_lock
 
     with usage_ledger_lock():
@@ -150,12 +151,14 @@ def apply_data_retention_policy() -> dict[str, Any]:
             paths.SYSTEM_ROOT / "usage" / "llm_usage.jsonl",
             settings["usage_retention_days"],
         )
-    result = {
-        "settings": settings,
-        "audit": _prune_jsonl(
+    with _audit_write_lock():
+        audit_result = _prune_jsonl(
             paths.SYSTEM_ROOT / "audit" / "usage.jsonl",
             settings["audit_retention_days"],
-        ),
+        )
+    result = {
+        "settings": settings,
+        "audit": audit_result,
         "usage": usage_result,
         "deleted_users": _prune_deleted_user_archives(
             paths.SYSTEM_ROOT / "deleted_users",
