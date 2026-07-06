@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 import zipfile
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 
 from deeptutor.multi_user.audit import log_admin_action, query_audit_events
@@ -289,6 +289,29 @@ def test_profile_delete_requires_password_and_deletes_current_user_data(seed_use
     assert not (paths.SYSTEM_ROOT / "grants" / f"{user_id}.json").exists()
     assert decode_token(token) is None
     assert query_audit_events(action="user_self_delete")[0]["target_user_id"] == user_id
+
+
+def test_admin_delete_keeps_user_when_data_policy_fails(seed_user, monkeypatch):
+    import deeptutor.api.routers.auth as auth_router
+    from deeptutor.multi_user.identity import get_user
+    from deeptutor.services.auth import create_token
+
+    admin = seed_user("admin", role="admin")
+    seed_user("alice")
+    client = _auth_client(monkeypatch)
+
+    def fail_data_policy(*_args, **_kwargs):
+        raise HTTPException(status_code=500, detail="policy failed")
+
+    monkeypatch.setattr(auth_router, "_apply_user_data_policy", fail_data_policy)
+
+    response = client.delete(
+        "/api/v1/auth/users/alice?data_action=delete",
+        headers={"Authorization": f"Bearer {create_token('admin', 'admin', admin['id'])}"},
+    )
+
+    assert response.status_code == 500
+    assert get_user("alice") is not None
 
 
 def test_query_audit_events_filters_newest_first(mu_isolated_root):
