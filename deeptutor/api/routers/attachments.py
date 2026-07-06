@@ -25,6 +25,7 @@ from urllib.parse import quote
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse
 
+from deeptutor.multi_user.audit import log_usage
 from deeptutor.services.session import get_session_store
 from deeptutor.services.storage import (
     LocalDiskAttachmentStore,
@@ -86,6 +87,13 @@ async def get_attachment(
     media_type, _ = mimetypes.guess_type(target.name)
     if not media_type:
         media_type = "application/octet-stream"
+
+    log_usage(
+        "attachment",
+        attachment_id,
+        "download",
+        {"session_id": session_id, "filename": filename},
+    )
 
     # ``inline`` lets the browser preview the file when possible while still
     # honouring the suggested filename for the drawer's download action.
