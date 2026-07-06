@@ -2,15 +2,15 @@
 
 规划日期：2026-06-30
 
-目标：把当前“受控私有多用户部署”推进到“可开放注册、可计费、可运营”的 SaaS。注册方案限定为邮箱 + 密码；不做手机号/SMS 验证码注册。
+目标：把当前“受控私有多用户部署”推进到“可开放注册、可运营”的 SaaS 基础。注册方案限定为邮箱 + 密码；不做手机号/SMS 验证码注册。本轮不实现账单/支付。
 
-当前状态（2026-06-30）：Milestone 0-4 的最小闭环已完成，其中 TTS/STT/search/embedding 已按调用次数纳入 usage/quota；Milestone 5 已完成管理员用户操作、停用原因、全局 `auth.max_users` 账号上限、grant、skill 安装、模型目录、MCP 配置、用户导出、用户清单 CSV 导出、邮箱密码批量导入普通用户、用户自助导出、账号自助注销、删除数据策略、审计查询、注册审核开关、注册协议版本同意记录、保留期配置和管理员手动保留期清理入口的文件型 beta 闭环；Milestone 6 已修复 GHCR compose 的多用户持久化挂载，补充备份/恢复 runbook，在系统状态里暴露 storage/quota store 可写性和 `multi_replica_ready=false` 的单副本部署状态，并把 PocketBase 明确标为非 SaaS 多用户底座。仍不建议直接公开商用 SaaS；后续重点是外部共享存储、多副本一致性、支付/订阅和完整合规治理。
+当前状态（2026-06-30）：Milestone 0-4 的最小闭环已完成，其中 TTS/STT/search/embedding 已按调用次数纳入 usage/quota；Milestone 5 已完成管理员用户操作、停用原因、全局 `auth.max_users` 账号上限、grant、skill 安装、模型目录、MCP 配置、用户导出、用户清单 CSV 导出、邮箱密码批量导入普通用户、用户自助导出、账号自助注销、删除数据策略、审计查询、注册审核开关、注册协议版本同意记录、保留期配置和管理员手动保留期清理入口的文件型 beta 闭环；Milestone 6 已修复 GHCR compose 的多用户持久化挂载，补充备份/恢复 runbook，在系统状态里暴露 storage/quota store 可写性和 `multi_replica_ready=false` 的单副本部署状态，并把 PocketBase 明确标为非 SaaS 多用户底座。仍不建议直接公开商用 SaaS；后续重点是外部共享存储、多副本一致性和完整合规治理。
 
 ## 原则
 
 - 先做可控 beta，再做公开 SaaS。
 - 先堵认证、额度、数据隔离这些会导致事故的洞，再做增长功能。
-- 保持默认 JSON/SQLite 路径可用于私有部署；公开 SaaS 需要外部用户库/会话/quota/计费存储。
+- 保持默认 JSON/SQLite 路径可用于私有部署；公开 SaaS 需要外部用户库/会话/quota 存储。
 - PocketBase 要么完成多用户支持矩阵，要么在 SaaS 路径中明确禁用。
 
 ## Milestone 0：基线确认
@@ -180,7 +180,7 @@
 6. 已完成 beta：增加 audit、usage、deleted user 的保留天数配置和管理员手动清理入口；0 表示永久保留，当前不包含后台定时任务。
 7. 已完成 beta：审计 JSONL 可通过管理员 API 查询；生产级仍需不可篡改/可检索审计存储。
 8. 已完成 beta：管理员可导出用户清单 CSV；可导入 `email,password` CSV 批量创建普通用户，CSV 内手机号或非邮箱账号会被拒绝且不会部分创建。
-9. 已完成 beta：全局 `auth.max_users` 可限制账号总数；正式 SaaS 仍需组织/套餐级席位模型。
+9. 已完成 beta：全局 `auth.max_users` 可限制账号总数；正式 SaaS 仍需组织/团队/席位模型。
 
 主要代码区域：
 
@@ -204,14 +204,14 @@
 
 ## Milestone 6：部署和外部存储
 
-状态：部分完成。`docker-compose.ghcr.yml` 已改为完整 `./data:/app/data` 挂载，已补充 `docs/SAAS_DEPLOYMENT_RUNBOOK.md`，系统状态会检查 storage/quota store 可写性，并明确当前 `multi_replica_ready=false`。PocketBase 保留为单用户集成，启用时会在生产告警和部署状态里标记为不支持多用户/SaaS；限流已改为文件型共享 beta，配置多个 backend worker 时仍会明确告警并让 `/health` 失败，因为 auth 和 quota 状态尚未共享。外部用户库、共享 token revocation、共享 quota store、多副本一致性仍未完成。
+状态：部分完成。`docker-compose.ghcr.yml` 已改为完整 `./data:/app/data` 挂载，已补充 `docs/SAAS_DEPLOYMENT_RUNBOOK.md`，系统状态会检查 storage/quota store 可写性，并明确当前 `multi_replica_ready=false`。PocketBase 保留为单用户集成，启用时会在生产告警和部署状态里标记为不支持多用户/SaaS；限流已改为文件型共享 beta，usage ledger 已加本机文件锁，配置多个 backend worker 时仍会明确告警并让 `/health` 失败，因为 auth 和强一致 quota 状态尚未共享。外部用户库、共享 token revocation、强一致 quota store、多副本一致性仍未完成。
 
 目标：支持正式 SaaS 的多 worker / 多副本部署。
 
 任务：
 
 1. 选择并接入外部用户库和会话/撤销存储。
-2. 已完成 beta：限流状态放入文件型共享存储；quota 仍需外部共享存储。
+2. 已完成 beta：限流状态放入文件型共享存储，usage ledger 使用本机文件锁；强一致 quota 仍需外部共享存储。
 3. 已完成：修复 `docker-compose.ghcr.yml`，改成单一 `./data:/app/data` volume。
 4. 已完成 beta：明确 PocketBase 路线。当前保留单用户集成；SaaS 多用户路径在生产告警和部署状态中标记为 unsupported。
 5. 已完成：增加备份/恢复文档。
@@ -223,26 +223,11 @@
 - token 撤销、限流、quota 在多副本间一致。
 - compose 模板不会丢失多用户数据。
 
-## Milestone 7：商业化
+## 暂不纳入：商业化/账单/支付
 
-状态：暂不实现。本轮明确排除账单/支付，后续等套餐、provider、税务和运营方案确定后再设计。
+状态：暂不实现。本轮明确排除账单/支付；后续等商业化、provider、税务和运营方案确定后再单独设计。
 
-目标：支持付费订阅和运营。
-
-任务：
-
-1. 增加套餐模型 `free` / `pro` / `team`。
-2. 接入支付 provider。
-3. 增加 webhook 处理：订阅创建、续费、取消、支付失败。
-4. 将套餐映射到 quota 和功能权限。
-5. 已完成 beta：全局 `auth.max_users` 可以作为受控 beta 的账号上限；正式商业化仍需把套餐映射到组织/租户席位，而不是只限制全局账号数。
-6. 增加账单页、用量页、管理员运营页。
-7. 增加账单、发票或收据记录。
-
-验收：
-
-- 订阅状态能自动影响额度和功能权限。
-- 支付失败或取消后不会继续无限消耗模型成本。
+当前只保留受控 beta 所需的全局账号上限和 per-user quota，不设计套餐、支付 provider、webhook、账单页、发票或订阅状态。
 
 ## 最短可控 beta 路线
 
