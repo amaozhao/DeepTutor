@@ -896,6 +896,7 @@ async def update_profile(
 @router.put("/profile/password")
 async def change_profile_password(
     body: PasswordChangeRequest,
+    response: Response,
     payload: TokenPayload | None = Depends(require_auth),
 ) -> dict:
     """Change the current user's password and invalidate existing JWTs."""
@@ -920,6 +921,7 @@ async def change_profile_password(
         target_user_id=current.user_id,
         summary={"username": current.username},
     )
+    response.delete_cookie(key=_COOKIE_NAME, samesite=_SAMESITE)
     return {"ok": True}
 
 

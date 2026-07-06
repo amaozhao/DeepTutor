@@ -236,14 +236,14 @@ export default function ProfilePage() {
         setCurrentPassword("");
         setNewPassword("");
         setConfirmPassword("");
-        setPasswordMessage(t("Password updated. Please sign in again."));
+        router.replace("/login");
       } catch (err) {
         setPasswordMessage(err instanceof Error ? err.message : String(err));
       } finally {
         setPasswordBusy(false);
       }
     },
-    [confirmPassword, currentPassword, newPassword, t],
+    [confirmPassword, currentPassword, newPassword, router, t],
   );
 
   const handleDataExport = useCallback(async () => {
