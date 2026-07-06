@@ -1,3 +1,4 @@
+from contextlib import contextmanager
 from pathlib import Path
 
 from deeptutor.multi_user import identity, paths
@@ -41,6 +42,31 @@ def test_identity_plain_reads_do_not_take_write_lock(mu_isolated_root):
 
     assert identity.load_users()["alice"]["role"] == "admin"
     assert not lock_file.exists()
+
+
+def test_invite_writes_reuse_auth_store_write_lock(mu_isolated_root, monkeypatch):
+    from deeptutor.multi_user import invites
+
+    calls = 0
+
+    @contextmanager
+    def fake_lock():
+        nonlocal calls
+        calls += 1
+        yield
+
+    monkeypatch.setattr(invites, "auth_store_write_lock", fake_lock)
+
+    invite = invites.create_invite(email="learner@example.com", created_by="admin")
+    assert calls == 1
+
+    assert invites.consume_invite(invite["code"], email="learner@example.com") is not None
+    assert calls == 2
+
+    second = invites.create_invite(email="other@example.com", created_by="admin")
+    assert calls == 3
+    assert invites.delete_invite(second["code"]) is True
+    assert calls == 4
 
 
 def test_path_service_uses_current_user_scope(tmp_path, monkeypatch):
