@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 from collections import defaultdict, deque
+import os
 import time
-from typing import Any, Iterable
+from typing import Any, Iterable, Mapping
 from urllib.parse import urlparse
 
 from fastapi import HTTPException, Request, status
@@ -44,6 +45,8 @@ class SlidingWindowRateLimiter:
 
 rate_limiter = SlidingWindowRateLimiter()
 
+_WORKER_ENV_VARS = ("WEB_CONCURRENCY", "UVICORN_WORKERS", "GUNICORN_WORKERS")
+
 
 def client_ip(request: Request) -> str:
     forwarded = request.headers.get("x-forwarded-for", "")
@@ -65,6 +68,19 @@ def require_rate_limit(key: str, *, limit: int, window_seconds: int) -> None:
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail="Too many requests. Try again later.",
         )
+
+
+def configured_worker_count(env: Mapping[str, str] | None = None) -> int:
+    source = os.environ if env is None else env
+    counts: list[int] = []
+    for name in _WORKER_ENV_VARS:
+        try:
+            value = int(str(source.get(name, "")).strip() or "0")
+        except ValueError:
+            continue
+        if value > 0:
+            counts.append(value)
+    return max(counts, default=1)
 
 
 def _origin(value: str) -> str:
@@ -103,6 +119,12 @@ def production_security_warnings() -> list[str]:
         warnings.append(
             "PocketBase is single-user only in DeepTutor; keep integrations.pocketbase_url "
             "blank for multi-user/SaaS deployments."
+        )
+    worker_count = configured_worker_count()
+    if worker_count > 1:
+        warnings.append(
+            f"{worker_count} backend workers configured, but auth, rate limiting, and quota "
+            "state are not shared. Use one worker until external shared storage is added."
         )
     return warnings
 

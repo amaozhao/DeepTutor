@@ -450,7 +450,7 @@ EOF
 
 RUN sed -i 's/\r$//' /app/entrypoint.sh && chmod +x /app/entrypoint.sh
 
-RUN cat > /app/healthcheck.py <<'EOF'
+RUN cat > /app/probe.py <<'EOF'
 from pathlib import Path
 import json
 import urllib.request
@@ -472,7 +472,7 @@ EXPOSE 8001 3782
 # Health check. Read the port from JSON so standalone `docker run` does not
 # depend on a Dockerfile-level BACKEND_PORT default.
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-    CMD python /app/healthcheck.py
+    CMD python /app/probe.py
 
 # Set entrypoint
 ENTRYPOINT ["/app/entrypoint.sh"]
