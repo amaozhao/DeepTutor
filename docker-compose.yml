@@ -80,6 +80,11 @@ services:
       # this unset: the app degrades to bwrap (Linux, if installed) or, only when
       # DEEPTUTOR_SANDBOX_ALLOW_SUBPROCESS=1, a restricted subprocess.
       - DEEPTUTOR_SANDBOX_RUNNER_URL=http://sandbox-runner:8900
+      # Optional multi-replica shared state. Leave empty for single-replica
+      # file-backed beta; set provider=postgres and a PostgreSQL URL before
+      # running multiple backend workers/replicas.
+      - DEEPTUTOR_SHARED_STATE_PROVIDER=${DEEPTUTOR_SHARED_STATE_PROVIDER:-file}
+      - DEEPTUTOR_DATABASE_URL=${DEEPTUTOR_DATABASE_URL:-}
 
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:${DEEPTUTOR_DOCKER_BACKEND_PORT:-8001}/health"]

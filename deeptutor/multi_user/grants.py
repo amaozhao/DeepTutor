@@ -110,6 +110,11 @@ def normalize_grant(user_id: str, payload: dict[str, Any] | None) -> dict[str, A
 
 
 def load_grant(user_id: str) -> dict[str, Any]:
+    if _postgres_enabled():
+        from .shared_state import load_grant as _postgres_load_grant
+
+        payload = _postgres_load_grant(user_id)
+        return normalize_grant(user_id, payload)
     path = grant_path(user_id)
     if not path.exists():
         return empty_grant(user_id)
@@ -128,11 +133,32 @@ def save_grant(user_id: str, payload: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("Admin users use the main workspace and cannot receive assignments.")
     grant = normalize_grant(user_id, payload)
     validate_grant(grant)
+    if _postgres_enabled():
+        from .shared_state import save_grant as _postgres_save_grant
+
+        _postgres_save_grant(user_id, grant)
+        return grant
     with _grant_write_lock(user_id) as path:
         tmp = path.with_suffix(".tmp")
         tmp.write_text(json.dumps(grant, indent=2, ensure_ascii=False), encoding="utf-8")
         tmp.replace(path)
     return grant
+
+
+def delete_grant(user_id: str) -> None:
+    if _postgres_enabled():
+        from .shared_state import delete_grant as _postgres_delete_grant
+
+        _postgres_delete_grant(user_id)
+        return
+    with _grant_write_lock(user_id) as path:
+        path.unlink(missing_ok=True)
+
+
+def _postgres_enabled() -> bool:
+    from .shared_state import postgres_enabled
+
+    return postgres_enabled()
 
 
 def validate_grant(grant: dict[str, Any]) -> None:

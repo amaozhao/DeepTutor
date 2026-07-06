@@ -51,6 +51,13 @@ services:
       # whole tree so multi-user auth/grants/audit/usage state survives.
       - ./data:/app/data
 
+    environment:
+      # Optional multi-replica shared state. Leave empty for single-replica
+      # file-backed beta; set provider=postgres and a PostgreSQL URL before
+      # running multiple backend workers/replicas.
+      - DEEPTUTOR_SHARED_STATE_PROVIDER=${DEEPTUTOR_SHARED_STATE_PROVIDER:-file}
+      - DEEPTUTOR_DATABASE_URL=${DEEPTUTOR_DATABASE_URL:-}
+
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:${DEEPTUTOR_DOCKER_BACKEND_PORT:-8001}/health"]
       interval: 30s

@@ -159,6 +159,11 @@ def record_usage(
         "model": model,
         "usage": metrics,
     }
+    if _postgres_enabled():
+        from .shared_state import record_usage_event
+
+        record_usage_event(event)
+        return event
     with usage_ledger_lock():
         with _usage_file().open("a", encoding="utf-8") as handle:
             handle.write(json.dumps(event, ensure_ascii=False) + "\n")
@@ -176,6 +181,10 @@ def _empty_metrics() -> dict[str, int | float]:
 
 
 def _read_events() -> list[dict[str, Any]]:
+    if _postgres_enabled():
+        from .shared_state import usage_events
+
+        return usage_events()
     target = _usage_file()
     events: list[dict[str, Any]] = []
     with usage_ledger_lock():
@@ -190,6 +199,12 @@ def _read_events() -> list[dict[str, Any]]:
         if isinstance(item, dict):
             events.append(item)
     return events
+
+
+def _postgres_enabled() -> bool:
+    from .shared_state import postgres_enabled
+
+    return postgres_enabled()
 
 
 def usage_summary(user_id: str | None = None, *, now: datetime | None = None) -> dict[str, Any]:
