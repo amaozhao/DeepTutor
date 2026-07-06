@@ -78,6 +78,8 @@ def test_profile_password_change_audits_and_invalidates_token(
 
     assert response.status_code == 200
     assert decode_token(token) is None
+    assert "dt_token=" in response.headers.get("set-cookie", "")
+    assert "Max-Age=0" in response.headers.get("set-cookie", "")
     event = query_audit_events(action="user_self_password_change")[0]
     assert event["target_user_id"] == record["id"]
 
