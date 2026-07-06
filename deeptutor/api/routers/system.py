@@ -46,12 +46,12 @@ def _deployment_status() -> dict[str, object]:
     worker_count = configured_worker_count()
     blocking_reasons = [
         "auth/token revocation is file-backed",
-        "rate limiting is process-local",
+        "rate limiting is file-backed beta",
         "usage/quota is file-backed",
     ]
     if worker_count > 1:
         blocking_reasons.append(
-            "multiple backend workers configured without shared auth/rate-limit/quota storage"
+            "multiple backend workers configured without shared auth/quota storage"
         )
     if pocketbase_enabled:
         blocking_reasons.append("PocketBase multi-user/SaaS mode is unsupported")
@@ -61,7 +61,7 @@ def _deployment_status() -> dict[str, object]:
         "shared_state": {
             "auth": "pocketbase_single_user" if pocketbase_enabled else "file",
             "token_revocation": "pocketbase_token_refresh" if pocketbase_enabled else "file",
-            "rate_limit": "process",
+            "rate_limit": "file",
             "usage_quota": "file",
             "backend_workers": worker_count,
         },
@@ -73,14 +73,17 @@ def _deployment_status() -> dict[str, object]:
 def _container_health() -> tuple[int, dict[str, object]]:
     storage = _writable_dir_status(paths.ADMIN_WORKSPACE_ROOT)
     quota_store = _writable_dir_status(paths.SYSTEM_ROOT / "usage")
+    rate_store = _writable_dir_status(paths.SYSTEM_ROOT / "rate")
     deployment = _deployment_status()
     failures: list[str] = []
     if storage["status"] != "ok":
         failures.append("storage is not writable")
     if quota_store["status"] != "ok":
         failures.append("quota store is not writable")
+    if rate_store["status"] != "ok":
+        failures.append("rate store is not writable")
     if int((deployment.get("shared_state") or {}).get("backend_workers") or 1) > 1:
-        failures.append("multiple backend workers configured without shared state")
+        failures.append("multiple backend workers configured without shared auth/quota storage")
     http_status = status.HTTP_200_OK if not failures else status.HTTP_503_SERVICE_UNAVAILABLE
     return http_status, {
         "status": "ok" if not failures else "error",
@@ -143,6 +146,7 @@ async def get_system_status():
         "security": {"warnings": production_security_warnings()},
         "storage": _writable_dir_status(paths.ADMIN_WORKSPACE_ROOT),
         "quota_store": _writable_dir_status(paths.SYSTEM_ROOT / "usage"),
+        "rate_store": _writable_dir_status(paths.SYSTEM_ROOT / "rate"),
         "deployment": _deployment_status(),
     }
 
@@ -216,6 +220,7 @@ async def get_system_status():
         result["search"].pop("provider", None)
         result["storage"].pop("path", None)
         result["quota_store"].pop("path", None)
+        result["rate_store"].pop("path", None)
 
     return result
 

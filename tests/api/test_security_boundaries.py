@@ -133,6 +133,18 @@ def test_production_security_warnings_for_multi_worker_auth(monkeypatch):
     warnings = security.production_security_warnings()
 
     assert any("2 backend workers configured" in item for item in warnings)
+    assert any("auth and quota state" in item for item in warnings)
+
+
+def test_file_rate_limiter_shares_counts_across_instances(tmp_path: Path):
+    from deeptutor.api.security import FileSlidingWindowRateLimiter
+
+    first = FileSlidingWindowRateLimiter(root=tmp_path)
+    second = FileSlidingWindowRateLimiter(root=tmp_path)
+
+    assert first.allow("login:ip:alice", limit=1, window_seconds=60, now=100.0) is True
+    assert second.allow("login:ip:alice", limit=1, window_seconds=60, now=101.0) is False
+    assert second.allow("login:ip:alice", limit=1, window_seconds=60, now=161.0) is True
 
 
 def test_system_status_writable_dir_healthcheck(tmp_path: Path):
@@ -157,7 +169,7 @@ def test_system_status_marks_file_backed_deployment_single_replica(monkeypatch):
     assert result["status"] == "single_replica_beta"
     assert result["multi_replica_ready"] is False
     assert isinstance(result["shared_state"], dict)
-    assert result["shared_state"]["rate_limit"] == "process"
+    assert result["shared_state"]["rate_limit"] == "file"
     assert result["blocking_reasons"]
 
 
@@ -209,7 +221,31 @@ def test_container_health_fails_for_multi_worker_without_shared_state(monkeypatc
 
     assert status_code == 503
     assert payload["status"] == "error"
-    assert payload["failures"] == ["multiple backend workers configured without shared state"]
+    assert payload["failures"] == [
+        "multiple backend workers configured without shared auth/quota storage"
+    ]
+
+
+def test_container_health_fails_when_rate_store_is_unwritable(monkeypatch):
+    from deeptutor.api.routers import system
+    from deeptutor.multi_user import paths
+
+    def fake_status(path):
+        if path == paths.SYSTEM_ROOT / "rate":
+            return {"status": "error", "error": "denied"}
+        return {"status": "ok"}
+
+    monkeypatch.setattr(system, "_writable_dir_status", fake_status)
+    monkeypatch.setattr(
+        system,
+        "_deployment_status",
+        lambda: {"shared_state": {"backend_workers": 1}, "blocking_reasons": []},
+    )
+
+    status_code, payload = system._container_health()
+
+    assert status_code == 503
+    assert payload["failures"] == ["rate store is not writable"]
 
 
 def test_public_health_endpoint_uses_container_health(monkeypatch):
