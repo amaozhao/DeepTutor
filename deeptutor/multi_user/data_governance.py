@@ -62,7 +62,9 @@ def save_data_governance_settings(settings: dict[str, Any]) -> dict[str, int]:
     normalized = normalize_data_governance_settings(settings)
     path = _settings_file()
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(normalized, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(json.dumps(normalized, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    tmp.replace(path)
     return normalized
 
 
