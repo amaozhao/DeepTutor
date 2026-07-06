@@ -5,12 +5,10 @@ from __future__ import annotations
 from datetime import datetime, timezone
 import json
 import secrets
-import threading
 from typing import Any
 
 from . import paths
-
-_INVITE_LOCK = threading.Lock()
+from .identity import auth_store_write_lock
 
 
 def _invite_file():
@@ -34,12 +32,15 @@ def _read() -> dict[str, dict[str, Any]]:
 
 def _write(invites: dict[str, dict[str, Any]]) -> None:
     paths.ensure_system_dirs()
-    _invite_file().write_text(json.dumps(invites, indent=2, ensure_ascii=False), encoding="utf-8")
+    target = _invite_file()
+    tmp = target.with_suffix(".tmp")
+    tmp.write_text(json.dumps(invites, indent=2, ensure_ascii=False), encoding="utf-8")
+    tmp.replace(target)
 
 
 def create_invite(*, email: str = "", created_by: str = "") -> dict[str, Any]:
     """Create a one-use invite code, optionally bound to a lower-cased email."""
-    with _INVITE_LOCK:
+    with auth_store_write_lock():
         invites = _read()
         code = secrets.token_urlsafe(18)
         while code in invites:
@@ -63,7 +64,7 @@ def list_invites() -> list[dict[str, Any]]:
 
 
 def delete_invite(code: str) -> bool:
-    with _INVITE_LOCK:
+    with auth_store_write_lock():
         invites = _read()
         if code not in invites:
             return False
@@ -78,7 +79,7 @@ def consume_invite(code: str, *, email: str) -> dict[str, Any] | None:
     normalized_email = email.strip().lower()
     if not normalized_code or not normalized_email:
         return None
-    with _INVITE_LOCK:
+    with auth_store_write_lock():
         invites = _read()
         record = invites.get(normalized_code)
         if not record or record.get("used_at"):
