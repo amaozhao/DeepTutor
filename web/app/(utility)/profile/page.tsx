@@ -12,6 +12,7 @@ import {
   LogOut,
   ShieldCheck,
   Trash2,
+  Unplug,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { fetchAuthStatus, logout } from "@/lib/auth";
@@ -21,6 +22,7 @@ import {
   deleteMyAccount,
   downloadMyData,
   removeAvatarImage,
+  revokeMySessions,
   setAvatarMarker,
   uploadAvatarImage,
   type ProfileInfo,
@@ -116,6 +118,7 @@ export default function ProfilePage() {
   const [passwordBusy, setPasswordBusy] = useState(false);
   const [exportBusy, setExportBusy] = useState(false);
   const [accountBusy, setAccountBusy] = useState(false);
+  const [sessionBusy, setSessionBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [passwordMessage, setPasswordMessage] = useState<string | null>(null);
   const [accountMessage, setAccountMessage] = useState<string | null>(null);
@@ -205,6 +208,18 @@ export default function ProfilePage() {
   const handleSignOut = useCallback(async () => {
     await logout();
     router.replace("/login");
+  }, [router]);
+
+  const handleRevokeSessions = useCallback(async () => {
+    setSessionBusy(true);
+    setError(null);
+    try {
+      await revokeMySessions();
+      router.replace("/login");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+      setSessionBusy(false);
+    }
   }, [router]);
 
   const handlePasswordSubmit = useCallback(
@@ -616,24 +631,36 @@ export default function ProfilePage() {
             )}
 
             {/* Sign out card */}
-            <div className="mt-4 flex items-center justify-between rounded-2xl border border-[var(--border)] bg-[var(--card)] p-6 shadow-sm">
-              <div>
-                <h2 className="text-sm font-semibold text-[var(--foreground)]">
-                  {t("Sign out")}
-                </h2>
-                <p className="mt-0.5 text-sm text-[var(--muted-foreground)]">
-                  {t("End your session on this device")}
-                </p>
+            <div className="mt-4 rounded-2xl border border-[var(--border)] bg-[var(--card)] p-6 shadow-sm">
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <h2 className="text-sm font-semibold text-[var(--foreground)]">
+                    {t("Sessions")}
+                  </h2>
+                  <p className="mt-0.5 text-sm text-[var(--muted-foreground)]">
+                    {t("Manage browser sessions for this account")}
+                  </p>
+                </div>
+                <div className="flex flex-col gap-2 sm:flex-row">
+                  <button
+                    onClick={() => void handleRevokeSessions()}
+                    disabled={sessionBusy}
+                    className="flex items-center justify-center gap-1.5 rounded-lg border border-[var(--border)] px-3 py-1.5 text-sm text-[var(--foreground)] transition-colors hover:bg-[var(--background)]/60 disabled:opacity-50"
+                  >
+                    <Unplug size={14} />
+                    {sessionBusy ? t("Revoking…") : t("Sign out everywhere")}
+                  </button>
+                  <button
+                    onClick={() => void handleSignOut()}
+                    className="flex items-center justify-center gap-1.5 rounded-lg px-3 py-1.5 text-sm
+                               border border-red-500/40 text-red-600 dark:text-red-400
+                               hover:bg-red-500/10 transition-colors"
+                  >
+                    <LogOut size={14} />
+                    {t("Sign out")}
+                  </button>
+                </div>
               </div>
-              <button
-                onClick={() => void handleSignOut()}
-                className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm
-                           border border-red-500/40 text-red-600 dark:text-red-400
-                           hover:bg-red-500/10 transition-colors"
-              >
-                <LogOut size={14} />
-                {t("Sign out")}
-              </button>
             </div>
           </>
         )}

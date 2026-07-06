@@ -92,6 +92,18 @@ export async function changePassword(
   }
 }
 
+/** Invalidate all tokens for the signed-in user and clear this browser cookie. */
+export async function revokeMySessions(): Promise<void> {
+  const res = await apiFetch(apiUrl("/api/v1/auth/profile/revoke-sessions"), {
+    method: "POST",
+    skipAuthRedirect: true,
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(extractDetail(data, "Failed to revoke sessions"));
+  }
+}
+
 /** Download the signed-in user's own data export zip. */
 export async function downloadMyData(): Promise<void> {
   const res = await apiFetch(apiUrl("/api/v1/auth/profile/export"));

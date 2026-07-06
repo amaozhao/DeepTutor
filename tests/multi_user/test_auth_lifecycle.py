@@ -69,6 +69,28 @@ def test_revoke_sessions_invalidates_existing_token(mu_isolated_root, seed_user,
     assert decode_token(token) is None
 
 
+def test_profile_revoke_sessions_invalidates_current_token(mu_isolated_root, seed_user, monkeypatch):
+    import deeptutor.api.routers.auth as auth_router
+    from deeptutor.services import auth as auth_service
+    from deeptutor.services.auth import create_token, decode_token
+
+    monkeypatch.setattr(auth_router, "AUTH_ENABLED", True)
+    monkeypatch.setattr(auth_router, "POCKETBASE_ENABLED", False)
+    monkeypatch.setattr(auth_service, "AUTH_SECRET", "test-secret")
+    record = seed_user("bob", password="password1234")
+    token = create_token("bob", "user", record["id"])
+
+    app = FastAPI()
+    app.include_router(auth_router.router, prefix="/api/v1/auth")
+    response = TestClient(app).post(
+        "/api/v1/auth/profile/revoke-sessions",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 200
+    assert decode_token(token) is None
+
+
 @pytest.fixture
 def registration_client(mu_isolated_root, monkeypatch):
     import deeptutor.api.routers.auth as auth_router

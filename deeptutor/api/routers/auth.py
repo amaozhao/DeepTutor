@@ -918,6 +918,29 @@ async def change_profile_password(
     return {"ok": True}
 
 
+@router.post("/profile/revoke-sessions")
+async def revoke_profile_sessions(
+    response: Response,
+    payload: TokenPayload | None = Depends(require_auth),
+) -> dict:
+    """Invalidate all JWTs for the current local user, including this one."""
+    current = _require_profile_identity(payload)
+    if POCKETBASE_ENABLED:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Session revocation is not available in PocketBase mode.",
+        )
+    if not revoke_sessions(current.username):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    log_admin_action(
+        "user_self_sessions_revoked",
+        target_user_id=current.user_id,
+        summary={"username": current.username},
+    )
+    response.delete_cookie(key=_COOKIE_NAME, samesite=_SAMESITE)
+    return {"ok": True}
+
+
 @router.get("/profile/export")
 async def export_profile_data(
     payload: TokenPayload | None = Depends(require_auth),
