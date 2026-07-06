@@ -5,6 +5,7 @@ from __future__ import annotations
 from contextlib import contextmanager
 from datetime import datetime, timezone
 import json
+import logging
 import threading
 from typing import Any
 
@@ -13,6 +14,7 @@ from .context import get_current_user
 
 MAX_AUDIT_QUERY_LIMIT = 500
 _AUDIT_WRITE_LOCK = threading.Lock()
+logger = logging.getLogger(__name__)
 
 
 def _audit_file():
@@ -51,6 +53,7 @@ def _write(payload: dict[str, Any]) -> None:
                 handle.write(json.dumps(payload, ensure_ascii=False) + "\n")
     except Exception:
         # Auditing must never break a request.
+        logger.exception("Failed to write audit event: %s", payload.get("action", "unknown"))
         return
 
 
@@ -65,11 +68,13 @@ def _read_events() -> list[dict[str, Any]]:
             try:
                 item = json.loads(line)
             except json.JSONDecodeError:
+                logger.warning("Skipping malformed audit log line")
                 continue
             if isinstance(item, dict):
                 events.append(item)
         return events
     except Exception:
+        logger.exception("Failed to read audit events")
         return []
 
 

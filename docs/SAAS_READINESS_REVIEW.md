@@ -158,9 +158,9 @@
 
 2. 审计日志仍不是生产级审计系统
 
-审计仍是 JSONL 追加且失败静默。当前已经覆盖管理员用户 CRUD、CSV 批量导入、grant 变更、skill 安装、模型目录变更、MCP 配置变更和用户导出，并提供管理员查询 API 和基础保留期配置；但仍缺管理员查看/导出敏感数据的审批、不可篡改存储和生产级查询/留存系统。
+审计仍是 JSONL 追加；写入或读取失败不会阻断业务请求，但会记录服务端日志。当前已经覆盖管理员用户 CRUD、CSV 批量导入、grant 变更、skill 安装、模型目录变更、MCP 配置变更和用户导出，并提供管理员查询 API 和基础保留期配置；但仍缺管理员查看/导出敏感数据的审批、不可篡改存储和生产级查询/留存系统。
 
-证据：审计失败被吞掉：`deeptutor/multi_user/audit.py:21` 到 `deeptutor/multi_user/audit.py:28`；审计查询：`deeptutor/multi_user/audit.py:31` 到 `deeptutor/multi_user/audit.py:70`；当前用户操作审计：`deeptutor/api/routers/auth.py:873` 到 `deeptutor/api/routers/auth.py:948`，`deeptutor/api/routers/auth.py:1127` 到 `deeptutor/api/routers/auth.py:1394`；grant、用户导出和审计查询 API：`deeptutor/multi_user/router.py:143` 到 `deeptutor/multi_user/router.py:230`；模型目录和 MCP 配置审计：`deeptutor/api/routers/settings.py:273` 到 `deeptutor/api/routers/settings.py:874`，`deeptutor/api/routers/mcp_settings.py:35` 到 `deeptutor/api/routers/mcp_settings.py:79`。
+证据：审计文件读写和失败日志：`deeptutor/multi_user/audit.py`；当前用户操作审计：`deeptutor/api/routers/auth.py`；grant、用户导出和审计查询 API：`deeptutor/multi_user/router.py`；模型目录和 MCP 配置审计：`deeptutor/api/routers/settings.py`，`deeptutor/api/routers/mcp_settings.py`。
 
 3. 附件访问边界仍偏弱
 
