@@ -10,7 +10,7 @@
 
 - 先做可控 beta，再做公开 SaaS。
 - 先堵认证、额度、数据隔离这些会导致事故的洞，再做增长功能。
-- 保持默认 JSON/SQLite 路径可用于私有部署；公开 SaaS 需要外部用户库/会话/quota 存储。
+- 保持默认 JSON/SQLite 路径可用于私有部署；公开 SaaS 需要外部用户库、外部 token-version/session 撤销状态源和强一致 quota 存储。
 - PocketBase 要么完成多用户支持矩阵，要么在 SaaS 路径中明确禁用。
 
 ## Milestone 0：基线确认
@@ -32,7 +32,7 @@
 
 ## Milestone 1：认证与账号生命周期
 
-状态：已完成最小闭环；生产级多副本还需要外部 session/revocation 存储。
+状态：已完成最小闭环；生产级多副本还需要外部 token-version/session 撤销状态源。
 
 目标：让“用户状态变化”能被系统即时执行。
 
@@ -103,7 +103,7 @@
 
 ## Milestone 3：安全边界和限流
 
-状态：已完成文件型 beta 最小闭环；多副本部署前仍需要外部撤销/quota 存储。限流已从进程内改为文件型共享 beta。
+状态：已完成文件型 beta 最小闭环；多副本部署前仍需要外部 token-version 撤销状态源和强一致 quota 存储。限流已从进程内改为文件型共享 beta。
 
 目标：公开网络下不容易被撞库、CSRF、滥用拖垮。
 
