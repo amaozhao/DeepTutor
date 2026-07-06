@@ -307,8 +307,15 @@ def test_system_status_marks_pocketbase_unsupported_for_multi_user(monkeypatch):
     )
 
 
-def test_attachment_download_requires_session_in_current_store(tmp_path: Path, monkeypatch):
+def test_attachment_download_requires_session_in_current_store(
+    tmp_path: Path,
+    monkeypatch,
+):
     from deeptutor.api.routers import attachments
+    from deeptutor.multi_user import paths as mu_paths
+    from deeptutor.multi_user.audit import query_audit_events
+    from deeptutor.multi_user.context import reset_current_user, set_current_user
+    from deeptutor.multi_user.models import CurrentUser, UserScope
     from deeptutor.services.storage.attachment_store import LocalDiskAttachmentStore
 
     session_id = "sess1"
@@ -318,6 +325,7 @@ def test_attachment_download_requires_session_in_current_store(tmp_path: Path, m
     session_dir = tmp_path / session_id
     session_dir.mkdir()
     (session_dir / f"{attachment_id}_{filename}").write_text("secret", encoding="utf-8")
+    monkeypatch.setattr(mu_paths, "SYSTEM_ROOT", tmp_path / "system")
 
     class _MissingSessionStore:
         async def get_session(self, _session_id: str):
@@ -335,14 +343,25 @@ def test_attachment_download_requires_session_in_current_store(tmp_path: Path, m
     client = TestClient(fastapi_app)
     monkeypatch.setattr(attachments, "get_attachment_store", lambda: store)
 
-    monkeypatch.setattr(attachments, "get_session_store", lambda: _MissingSessionStore())
-    missing = client.get(f"/api/attachments/{session_id}/{attachment_id}/{filename}")
-    assert missing.status_code == 404
+    user = CurrentUser("u_test", "user@example.com", "user", UserScope("user", "u_test", tmp_path))
+    token = set_current_user(user)
+    try:
+        monkeypatch.setattr(attachments, "get_session_store", lambda: _MissingSessionStore())
+        missing = client.get(f"/api/attachments/{session_id}/{attachment_id}/{filename}")
+        assert missing.status_code == 404
+        assert query_audit_events(action="download") == []
 
-    monkeypatch.setattr(attachments, "get_session_store", lambda: _PresentSessionStore())
-    present = client.get(f"/api/attachments/{session_id}/{attachment_id}/{filename}")
-    assert present.status_code == 200
-    assert present.content == b"secret"
+        monkeypatch.setattr(attachments, "get_session_store", lambda: _PresentSessionStore())
+        present = client.get(f"/api/attachments/{session_id}/{attachment_id}/{filename}")
+        assert present.status_code == 200
+        assert present.content == b"secret"
+        event = query_audit_events(action="download")[0]
+        assert event["resource_type"] == "attachment"
+        assert event["resource_id"] == attachment_id
+        assert event["user_id"] == "u_test"
+        assert event["extra"] == {"session_id": session_id, "filename": filename}
+    finally:
+        reset_current_user(token)
 
 
 def test_unified_websocket_turn_start_is_rate_limited(monkeypatch):
