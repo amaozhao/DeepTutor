@@ -304,8 +304,8 @@ def apply_user_delete_policy(user_id: str, action: DeleteDataAction) -> dict[str
     if grant_file.exists():
         shutil.move(str(grant_file), str(archive_root / "grant.json"))
         manifest["grant"] = "archived"
-    (archive_root / "manifest.json").write_text(
-        json.dumps(manifest, indent=2, ensure_ascii=False),
-        encoding="utf-8",
-    )
+    manifest_path = archive_root / "manifest.json"
+    manifest_tmp = archive_root / "manifest.tmp"
+    manifest_tmp.write_text(json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8")
+    manifest_tmp.replace(manifest_path)
     return {"action": "archive", **manifest, "archive": str(archive_root)}
