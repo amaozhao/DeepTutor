@@ -104,6 +104,23 @@ def test_saved_grant_round_trips_v2(grantable_alice):
     assert loaded["exec_enabled"] is False
 
 
+def test_save_grant_uses_local_write_lock(grantable_alice, mu_isolated_root):
+    save_grant(grantable_alice, {"enabled_tools": ["reason"]})
+
+    assert (
+        mu_isolated_root / "data" / "system" / "grants" / f"{grantable_alice}.lock"
+    ).exists()
+
+
+def test_load_grant_does_not_take_write_lock(grantable_alice, mu_isolated_root):
+    save_grant(grantable_alice, {"enabled_tools": ["reason"]})
+    lock_file = mu_isolated_root / "data" / "system" / "grants" / f"{grantable_alice}.lock"
+    lock_file.unlink()
+
+    assert load_grant(grantable_alice)["enabled_tools"] == ["reason"]
+    assert not lock_file.exists()
+
+
 def test_combine_whitelists():
     assert combine_whitelists(None, None) is None
     assert combine_whitelists({"a"}, None) == {"a"}
