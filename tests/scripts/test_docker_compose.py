@@ -96,8 +96,17 @@ def test_dockerfile_uses_single_word_health_script_name() -> None:
     content = (root / "Dockerfile").read_text(encoding="utf-8")
 
     assert "/app/probe.py" in content
+    assert "/health" in content
     assert "/app/health_check.py" not in content
     assert "/app/healthcheck.py" not in content
+
+
+def test_compose_backend_healthchecks_use_public_health_endpoint() -> None:
+    root = Path(__file__).resolve().parents[2]
+    expected = "http://localhost:${DEEPTUTOR_DOCKER_BACKEND_PORT:-8001}/health"
+    for name in ("docker-compose.yml", "docker-compose.ghcr.yml"):
+        content = (root / name).read_text(encoding="utf-8")
+        assert expected in content
 
 
 def test_supervisord_runs_as_root_with_unprivileged_children() -> None:

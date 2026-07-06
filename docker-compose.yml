@@ -82,7 +82,7 @@ services:
       - DEEPTUTOR_SANDBOX_RUNNER_URL=http://sandbox-runner:8900
 
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:${DEEPTUTOR_DOCKER_BACKEND_PORT:-8001}/"]
+      test: ["CMD", "curl", "-f", "http://localhost:${DEEPTUTOR_DOCKER_BACKEND_PORT:-8001}/health"]
       interval: 30s
       timeout: 10s
       retries: 3

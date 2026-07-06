@@ -490,6 +490,15 @@ async def root():
     return {"message": "Welcome to DeepTutor API"}
 
 
+@app.get("/health")
+async def health():
+    from deeptutor.api.routers.system import health_check
+
+    response = JSONResponse(content={})
+    payload = await health_check(response)
+    return JSONResponse(status_code=response.status_code, content=payload)
+
+
 if __name__ == "__main__":
     from deeptutor.api.run_server import main as run_server_main
 

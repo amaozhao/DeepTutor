@@ -174,6 +174,60 @@ def test_system_status_reports_multi_worker_blocker(monkeypatch):
     assert any("multiple backend workers configured" in item for item in result["blocking_reasons"])
 
 
+def test_container_health_allows_single_worker_beta(monkeypatch):
+    from deeptutor.api.routers import system
+
+    monkeypatch.setattr(system, "_writable_dir_status", lambda _path: {"status": "ok"})
+    monkeypatch.setattr(
+        system,
+        "_deployment_status",
+        lambda: {
+            "multi_replica_ready": False,
+            "shared_state": {"backend_workers": 1},
+            "blocking_reasons": ["auth/token revocation is file-backed"],
+        },
+    )
+
+    status_code, payload = system._container_health()
+
+    assert status_code == 200
+    assert payload["status"] == "ok"
+    assert payload["failures"] == []
+
+
+def test_container_health_fails_for_multi_worker_without_shared_state(monkeypatch):
+    from deeptutor.api.routers import system
+
+    monkeypatch.setattr(system, "_writable_dir_status", lambda _path: {"status": "ok"})
+    monkeypatch.setattr(
+        system,
+        "_deployment_status",
+        lambda: {"shared_state": {"backend_workers": 2}, "blocking_reasons": []},
+    )
+
+    status_code, payload = system._container_health()
+
+    assert status_code == 503
+    assert payload["status"] == "error"
+    assert payload["failures"] == ["multiple backend workers configured without shared state"]
+
+
+def test_public_health_endpoint_uses_container_health(monkeypatch):
+    from deeptutor.api import main as api_main
+    from deeptutor.api.routers import system
+
+    monkeypatch.setattr(
+        system,
+        "_container_health",
+        lambda: (503, {"status": "error", "failures": ["bad deployment"]}),
+    )
+
+    response = TestClient(api_main.app).get("/health")
+
+    assert response.status_code == 503
+    assert response.json() == {"status": "error", "failures": ["bad deployment"]}
+
+
 def test_system_status_marks_pocketbase_unsupported_for_multi_user(monkeypatch):
     from deeptutor.api.routers import system
 
