@@ -1428,15 +1428,14 @@ async def remove_user(
             detail="You cannot delete your own account",
         )
 
-    # Capture the id before the record disappears so the avatar file can go too.
     info = get_user_info(username)
-
-    removed = delete_user(username)
-    if not removed:
+    if info is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
 
     user_id = str(info.get("id") or "") if info else ""
     data_policy = _apply_user_data_policy(user_id, data_action)
+    if not delete_user(username):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
 
     logger.info(f"Admin '{current.username if current else 'local'}' deleted user '{username}'")
     log_admin_action(
