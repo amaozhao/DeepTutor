@@ -7,7 +7,7 @@ from datetime import datetime
 from pathlib import Path
 import time
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Response, status
 from pydantic import BaseModel
 
 from deeptutor.api.security import configured_worker_count, production_security_warnings
@@ -70,6 +70,25 @@ def _deployment_status() -> dict[str, object]:
     }
 
 
+def _container_health() -> tuple[int, dict[str, object]]:
+    storage = _writable_dir_status(paths.ADMIN_WORKSPACE_ROOT)
+    quota_store = _writable_dir_status(paths.SYSTEM_ROOT / "usage")
+    deployment = _deployment_status()
+    failures: list[str] = []
+    if storage["status"] != "ok":
+        failures.append("storage is not writable")
+    if quota_store["status"] != "ok":
+        failures.append("quota store is not writable")
+    if int((deployment.get("shared_state") or {}).get("backend_workers") or 1) > 1:
+        failures.append("multiple backend workers configured without shared state")
+    http_status = status.HTTP_200_OK if not failures else status.HTTP_503_SERVICE_UNAVAILABLE
+    return http_status, {
+        "status": "ok" if not failures else "error",
+        "failures": failures,
+        "deployment": deployment,
+    }
+
+
 @router.get("/runtime-topology")
 async def get_runtime_topology():
     """
@@ -99,6 +118,13 @@ async def get_runtime_topology():
             {"router": "plugins_api", "mode": "playground_transport"},
         ],
     }
+
+
+@router.get("/health")
+async def health_check(response: Response) -> dict[str, object]:
+    http_status, payload = _container_health()
+    response.status_code = http_status
+    return payload
 
 
 @router.get("/status")
