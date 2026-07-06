@@ -41,6 +41,7 @@ from deeptutor.multi_user.invites import (
     create_invite,
     delete_invite,
     list_invites,
+    unconsume_invite,
 )
 from deeptutor.multi_user.paths import local_admin_user
 from deeptutor.services.auth import (
@@ -742,7 +743,12 @@ async def register(body: RegisterRequest, request: Request) -> dict:
         review_required = (
             public_registration and not invite_code and _registration_review_required()
         )
-        add_user(body.username, body.password, role="user")
+        try:
+            add_user(body.username, body.password, role="user")
+        except Exception:
+            if invite_code:
+                unconsume_invite(invite_code, email=body.username)
+            raise
         if review_required:
             set_disabled(body.username, True, reason="pending registration review")
         if body.terms_accepted:

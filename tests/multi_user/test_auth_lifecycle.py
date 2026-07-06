@@ -459,6 +459,41 @@ def test_invite_email_binding_is_enforced(invite_registration_client):
     assert response.status_code == 403
 
 
+def test_invite_is_restored_when_registration_write_fails(
+    invite_registration_client, monkeypatch
+):
+    import deeptutor.api.routers.auth as auth_router
+    from deeptutor.multi_user.invites import list_invites
+
+    client, token = invite_registration_client
+    created = client.post(
+        "/api/v1/auth/invites",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"email": "learner@example.com"},
+    )
+    invite_code = created.json()["code"]
+
+    def fail_add_user(*_args, **_kwargs):
+        raise RuntimeError("write failed")
+
+    monkeypatch.setattr(auth_router, "add_user", fail_add_user)
+
+    with pytest.raises(RuntimeError, match="write failed"):
+        client.post(
+            "/api/v1/auth/register",
+            json={
+                "username": "learner@example.com",
+                "password": "password1234",
+                "terms_accepted": True,
+                "invite_code": invite_code,
+            },
+        )
+
+    invite = next(item for item in list_invites() if item["code"] == invite_code)
+    assert invite["used_by"] == ""
+    assert invite["used_at"] == ""
+
+
 def test_repeated_login_attempts_are_rate_limited(mu_isolated_root, monkeypatch):
     import deeptutor.api.routers.auth as auth_router
     from deeptutor.api.security import reset_security_state
