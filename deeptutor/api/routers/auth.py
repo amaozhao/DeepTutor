@@ -915,6 +915,11 @@ async def change_profile_password(
         )
     if not update_password(current.username, body.new_password):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    log_admin_action(
+        "user_self_password_change",
+        target_user_id=current.user_id,
+        summary={"username": current.username},
+    )
     return {"ok": True}
 
 
