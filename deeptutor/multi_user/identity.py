@@ -154,7 +154,7 @@ def _migrate_secret() -> None:
         secret = LEGACY_SECRET_FILE.read_text(encoding="utf-8").strip()
         if secret:
             SECRET_FILE.parent.mkdir(parents=True, exist_ok=True)
-            SECRET_FILE.write_text(secret, encoding="utf-8")
+            _write_auth_secret(secret)
             try:
                 SECRET_FILE.chmod(0o600)
             except OSError:
@@ -456,24 +456,35 @@ def set_role(username: str, role: Role) -> bool:
 
 def load_or_create_auth_secret() -> str:
     migrate_legacy_multi_user_tree()
-    _migrate_secret()
     try:
         if SECRET_FILE.exists():
             existing = SECRET_FILE.read_text(encoding="utf-8").strip()
             if existing:
                 return existing
-        SECRET_FILE.parent.mkdir(parents=True, exist_ok=True)
-        generated = secrets.token_hex(32)
-        SECRET_FILE.write_text(generated, encoding="utf-8")
-        try:
-            SECRET_FILE.chmod(0o600)
-        except OSError:
-            pass
-        logger.warning(
-            "Auth is enabled and no auth_secret file exists. Generated a stable local secret at %s.",
-            SECRET_FILE,
-        )
-        return generated
+        with auth_store_write_lock():
+            _migrate_secret()
+            if SECRET_FILE.exists():
+                existing = SECRET_FILE.read_text(encoding="utf-8").strip()
+                if existing:
+                    return existing
+            generated = secrets.token_hex(32)
+            _write_auth_secret(generated)
+            try:
+                SECRET_FILE.chmod(0o600)
+            except OSError:
+                pass
+            logger.warning(
+                "Auth is enabled and no auth_secret file exists. Generated a stable local secret at %s.",
+                SECRET_FILE,
+            )
+            return generated
     except Exception as exc:
         logger.warning("Failed to load/create auth secret at %s: %s", SECRET_FILE, exc)
         return secrets.token_hex(32)
+
+
+def _write_auth_secret(secret: str) -> None:
+    SECRET_FILE.parent.mkdir(parents=True, exist_ok=True)
+    tmp = SECRET_FILE.with_suffix(".tmp")
+    tmp.write_text(secret, encoding="utf-8")
+    tmp.replace(SECRET_FILE)
