@@ -92,3 +92,21 @@ def consume_invite(code: str, *, email: str) -> dict[str, Any] | None:
         invites[normalized_code] = record
         _write(invites)
     return record
+
+
+def unconsume_invite(code: str, *, email: str) -> bool:
+    """Clear a just-consumed invite when downstream registration fails."""
+    normalized_code = code.strip()
+    normalized_email = email.strip().lower()
+    if not normalized_code or not normalized_email:
+        return False
+    with auth_store_write_lock():
+        invites = _read()
+        record = invites.get(normalized_code)
+        if not record or str(record.get("used_by") or "").strip().lower() != normalized_email:
+            return False
+        record["used_by"] = ""
+        record["used_at"] = ""
+        invites[normalized_code] = record
+        _write(invites)
+    return True
