@@ -204,7 +204,7 @@
 
 ## Milestone 6：部署和外部存储
 
-状态：部分完成。`docker-compose.ghcr.yml` 已改为完整 `./data:/app/data` 挂载，已补充 `docs/SAAS_DEPLOYMENT_RUNBOOK.md`，系统状态会检查 storage/auth/quota/rate store 可写性，并明确当前 `multi_replica_ready=false`。PocketBase 保留为单用户集成，启用时会在生产告警和部署状态里标记为不支持多用户/SaaS；限流已改为文件型共享 beta，用户文件写路径和 usage ledger 已加本机文件锁，配置多个 backend worker 时仍会明确告警并让 `/health` 失败，因为 auth/token-version revocation 和强一致 quota 还不是外部共享状态。外部用户库、外部 token-version/session 撤销状态源、强一致 quota store、多副本一致性仍未完成。
+状态：部分完成。`docker-compose.ghcr.yml` 已改为完整 `./data:/app/data` 挂载，已补充 `docs/SAAS_DEPLOYMENT_RUNBOOK.md`，系统状态会检查 storage/auth/quota/rate store 可写性，并明确当前 `multi_replica_ready=false`。PocketBase 保留为单用户集成，启用时会在生产告警和部署状态里标记为不支持多用户/SaaS；限流已改为文件型共享 beta，用户文件写路径和 usage ledger 已加本机文件锁，配置多个 backend worker 时仍会明确告警并让 `/health` 失败，因为 auth/token-version revocation 和强一致 quota 还不是外部共享状态。已增加 `shared_state` runtime 配置和 `DEEPTUTOR_SHARED_STATE_PROVIDER` / `DEEPTUTOR_DATABASE_URL` 环境变量，用于声明计划使用的共享状态来源；配置为 `postgres` 只会改变部署状态说明，不会把多副本标记为 ready。外部用户库、外部 token-version/session 撤销状态源、强一致 quota store、多副本一致性仍未完成。
 
 目标：支持正式 SaaS 的多 worker / 多副本部署。
 
@@ -215,7 +215,7 @@
 3. 已完成：修复 `docker-compose.ghcr.yml`，改成单一 `./data:/app/data` volume。
 4. 已完成 beta：明确 PocketBase 路线。当前保留单用户集成；SaaS 多用户路径在生产告警和部署状态中标记为 unsupported。
 5. 已完成：增加备份/恢复文档。
-6. 已完成 beta：系统状态已包含 auth/CORS/cookie/PocketBase/多 worker 告警、provider 配置状态、storage/auth/quota/rate store 可写性，并暴露当前文件状态导致 `multi_replica_ready=false`；正式多副本仍需接入外部共享存储后再改为 ready。
+6. 已完成 beta：系统状态已包含 auth/CORS/cookie/PocketBase/多 worker 告警、provider 配置状态、storage/auth/quota/rate store 可写性，并暴露当前文件状态导致 `multi_replica_ready=false`；`shared_state` 配置只作为部署状态输入，正式多副本仍需接入外部共享存储后再改为 ready。
 
 验收：
 

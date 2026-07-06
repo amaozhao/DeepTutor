@@ -67,3 +67,5 @@ docker compose up -d
 - 强一致 quota store，替代 JSONL usage 账本；文件型限流和带文件锁的 usage ledger 只能作为受控 beta 过渡方案。
 - 对象存储或共享文件系统，承载 attachments、knowledge bases、exports。
 - 可查询审计存储和备份恢复演练。
+
+可以先通过 `data/user/settings/shared_state.json` 或环境变量 `DEEPTUTOR_SHARED_STATE_PROVIDER=postgres`、`DEEPTUTOR_DATABASE_URL=...` 声明计划使用的共享状态来源。当前代码只把它用于部署状态和健康检查提示；auth、rate limit、quota 尚未迁移到数据库，所以配置该项不等于可以开启多副本。
