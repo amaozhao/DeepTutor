@@ -2,14 +2,17 @@
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 from datetime import datetime, timezone
 import json
+import threading
 from typing import Any
 
 from . import paths
 from .context import get_current_user
 
 MAX_AUDIT_QUERY_LIMIT = 500
+_AUDIT_WRITE_LOCK = threading.Lock()
 
 
 def _audit_file():
@@ -18,11 +21,34 @@ def _audit_file():
     return paths.SYSTEM_ROOT / "audit" / "usage.jsonl"
 
 
+@contextmanager
+def _audit_write_lock():
+    paths.ensure_system_dirs()
+    target = _audit_file()
+    lock_path = target.with_suffix(".lock")
+    with _AUDIT_WRITE_LOCK:
+        with lock_path.open("a+", encoding="utf-8") as handle:
+            fcntl_module = None
+            locked = False
+            try:
+                import fcntl as fcntl_module
+
+                fcntl_module.flock(handle.fileno(), fcntl_module.LOCK_EX)
+                locked = True
+            except (ImportError, OSError):
+                pass
+            try:
+                yield target
+            finally:
+                if locked and fcntl_module is not None:
+                    fcntl_module.flock(handle.fileno(), fcntl_module.LOCK_UN)
+
+
 def _write(payload: dict[str, Any]) -> None:
     try:
-        paths.ensure_system_dirs()
-        with _audit_file().open("a", encoding="utf-8") as handle:
-            handle.write(json.dumps(payload, ensure_ascii=False) + "\n")
+        with _audit_write_lock() as target:
+            with target.open("a", encoding="utf-8") as handle:
+                handle.write(json.dumps(payload, ensure_ascii=False) + "\n")
     except Exception:
         # Auditing must never break a request.
         return

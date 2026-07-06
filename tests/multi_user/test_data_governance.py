@@ -253,6 +253,25 @@ def test_query_audit_events_filters_newest_first(mu_isolated_root):
     assert [event["target_user_id"] for event in events] == ["u2", "u1"]
 
 
+def test_audit_writes_use_local_file_lock(mu_isolated_root):
+    from deeptutor.multi_user import paths
+
+    log_admin_action("user_create", target_user_id="u1", summary={"username": "alice"})
+
+    assert (paths.SYSTEM_ROOT / "audit" / "usage.lock").exists()
+
+
+def test_audit_queries_do_not_take_write_lock(mu_isolated_root):
+    from deeptutor.multi_user import paths
+
+    log_admin_action("user_create", target_user_id="u1", summary={"username": "alice"})
+    lock_file = paths.SYSTEM_ROOT / "audit" / "usage.lock"
+    lock_file.unlink()
+
+    assert query_audit_events(action="user_create", limit=10)
+    assert not lock_file.exists()
+
+
 def test_data_governance_settings_endpoint_normalizes_and_audits(mu_isolated_root):
     from deeptutor.multi_user import router as multi_router
 
