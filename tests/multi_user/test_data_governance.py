@@ -254,7 +254,7 @@ def test_profile_export_endpoint_returns_current_user_zip(seed_user, monkeypatch
 
 def test_profile_delete_requires_password_and_deletes_current_user_data(seed_user, monkeypatch):
     from deeptutor.multi_user import paths
-    from deeptutor.multi_user.identity import get_user
+    from deeptutor.multi_user.identity import get_avatar_file, get_user, save_avatar_file
     from deeptutor.services.auth import create_token, decode_token
 
     seed_user("admin", role="admin")
@@ -263,6 +263,7 @@ def test_profile_delete_requires_password_and_deletes_current_user_data(seed_use
     workspace = paths.ensure_user_workspace(user_id)
     (workspace / "notes.txt").write_text("private notes", encoding="utf-8")
     save_grant(user_id, {"quota": {"daily_call_limit": 3}})
+    save_avatar_file(user_id, b"\x89PNG\r\n\x1a\navatar", "png")
     client = _auth_client(monkeypatch)
     token = create_token("alice", "user", user_id)
     headers = {"Authorization": f"Bearer {token}"}
@@ -288,17 +289,19 @@ def test_profile_delete_requires_password_and_deletes_current_user_data(seed_use
     assert get_user("alice") is None
     assert not workspace.exists()
     assert not (paths.SYSTEM_ROOT / "grants" / f"{user_id}.json").exists()
+    assert get_avatar_file(user_id) is None
     assert decode_token(token) is None
     assert query_audit_events(action="user_self_delete")[0]["target_user_id"] == user_id
 
 
 def test_profile_delete_keeps_user_when_data_policy_fails(seed_user, monkeypatch):
     import deeptutor.api.routers.auth as auth_router
-    from deeptutor.multi_user.identity import get_user
+    from deeptutor.multi_user.identity import get_avatar_file, get_user, save_avatar_file
     from deeptutor.services.auth import create_token
 
     seed_user("admin", role="admin")
     user = seed_user("alice", password="password1234")
+    save_avatar_file(str(user["id"]), b"\x89PNG\r\n\x1a\navatar", "png")
     client = _auth_client(monkeypatch)
 
     def fail_data_policy(*_args, **_kwargs):
@@ -315,6 +318,7 @@ def test_profile_delete_keeps_user_when_data_policy_fails(seed_user, monkeypatch
 
     assert response.status_code == 500
     assert get_user("alice") is not None
+    assert get_avatar_file(str(user["id"])) is not None
 
 
 def test_admin_delete_keeps_user_when_data_policy_fails(seed_user, monkeypatch):
