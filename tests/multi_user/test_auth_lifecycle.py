@@ -54,6 +54,34 @@ def test_password_update_invalidates_existing_token_and_old_password(
     assert auth_service.authenticate("bob", "new-password") is not None
 
 
+def test_profile_password_change_audits_and_invalidates_token(
+    mu_isolated_root, seed_user, monkeypatch
+):
+    import deeptutor.api.routers.auth as auth_router
+    from deeptutor.multi_user.audit import query_audit_events
+    from deeptutor.services import auth as auth_service
+    from deeptutor.services.auth import create_token, decode_token
+
+    monkeypatch.setattr(auth_router, "AUTH_ENABLED", True)
+    monkeypatch.setattr(auth_router, "POCKETBASE_ENABLED", False)
+    monkeypatch.setattr(auth_service, "AUTH_SECRET", "test-secret")
+    record = seed_user("bob", password="old-password")
+    token = create_token("bob", "user", record["id"])
+
+    app = FastAPI()
+    app.include_router(auth_router.router, prefix="/api/v1/auth")
+    response = TestClient(app).put(
+        "/api/v1/auth/profile/password",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"current_password": "old-password", "new_password": "new-password"},
+    )
+
+    assert response.status_code == 200
+    assert decode_token(token) is None
+    event = query_audit_events(action="user_self_password_change")[0]
+    assert event["target_user_id"] == record["id"]
+
+
 def test_revoke_sessions_invalidates_existing_token(mu_isolated_root, seed_user, monkeypatch):
     from deeptutor.services import auth as auth_service
     from deeptutor.services.auth import create_token, decode_token, revoke_sessions
