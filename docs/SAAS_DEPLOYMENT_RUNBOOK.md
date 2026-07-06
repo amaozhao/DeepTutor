@@ -2,7 +2,7 @@
 
 日期：2026-06-30
 
-本文只覆盖当前代码可支持的受控 beta / 私有多用户部署。正式公开 SaaS 仍需要外部用户库、强一致 quota store 和完整合规治理；当前文件型限流和带文件锁的 usage ledger 只适合受控 beta。账单/支付本轮不纳入。
+本文只覆盖当前代码可支持的受控 beta / 私有多用户部署。正式公开 SaaS 仍需要外部用户库、强一致 quota store 和完整合规治理；当前文件型限流、用户文件写锁和带文件锁的 usage ledger 只适合受控 beta。账单/支付本轮不纳入。
 
 ## 当前推荐拓扑
 
@@ -62,7 +62,7 @@ docker compose up -d
 
 不要在当前文件型状态下直接水平扩容。多副本前至少需要：
 
-- 外部用户库或数据库事务，替代 `data/system/auth/users.json`。
+- 外部用户库或数据库事务，替代 `data/system/auth/users.json`。当前本机写锁只保护注册、停用、改角色、改密码等写路径，普通鉴权读取不加锁。
 - 共享 token revocation/session store，替代本地 `token_version` 文件。
 - 强一致 quota store，替代 JSONL usage 账本；文件型限流和带文件锁的 usage ledger 只能作为受控 beta 过渡方案。
 - 对象存储或共享文件系统，承载 attachments、knowledge bases、exports。

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import datetime, timezone
 import json
 import logging
@@ -16,11 +18,8 @@ from .paths import PROJECT_ROOT, SYSTEM_ROOT, migrate_legacy_multi_user_tree
 
 logger = logging.getLogger(__name__)
 
-# Serialises writes to USERS_FILE so a concurrent burst of /register requests
-# cannot all see ``not users`` and each promote themselves to admin. Single-
-# process FastAPI deployments (the ``deeptutor start`` launcher) are fully covered;
-# multi-worker deployments still race and must rely on an external user store
-# (e.g. PocketBase), which is documented in the multi-user README.
+# Serialises writes inside one process; auth_store_write_lock adds best-effort local
+# process locking. Real multi-replica SaaS still needs an external user store.
 _USERS_WRITE_LOCK = threading.Lock()
 
 AUTH_DIR = SYSTEM_ROOT / "auth"
@@ -99,9 +98,34 @@ def _read_json(path: Path) -> dict[str, Any]:
         return {}
 
 
+@contextmanager
+def auth_store_write_lock() -> Iterator[None]:
+    """Lock local auth writes across worker processes on one host."""
+    USERS_FILE.parent.mkdir(parents=True, exist_ok=True)
+    lock_path = USERS_FILE.parent / "users.lock"
+    with _USERS_WRITE_LOCK:
+        with lock_path.open("a+", encoding="utf-8") as handle:
+            fcntl_module = None
+            locked = False
+            try:
+                import fcntl as fcntl_module
+
+                fcntl_module.flock(handle.fileno(), fcntl_module.LOCK_EX)
+                locked = True
+            except (ImportError, OSError):
+                pass
+            try:
+                yield
+            finally:
+                if locked and fcntl_module is not None:
+                    fcntl_module.flock(handle.fileno(), fcntl_module.LOCK_UN)
+
+
 def _write_users(users: dict[str, dict[str, Any]]) -> None:
     USERS_FILE.parent.mkdir(parents=True, exist_ok=True)
-    USERS_FILE.write_text(json.dumps(users, indent=2, ensure_ascii=False), encoding="utf-8")
+    tmp = USERS_FILE.with_suffix(".tmp")
+    tmp.write_text(json.dumps(users, indent=2, ensure_ascii=False), encoding="utf-8")
+    tmp.replace(USERS_FILE)
 
 
 def _migrate_legacy_users() -> dict[str, dict[str, Any]] | None:
@@ -145,6 +169,20 @@ def load_users(  # nosec B107 - empty defaults mean "no env fallback supplied".
     env_password_hash: str = "",
 ) -> dict[str, dict[str, Any]]:
     """Load canonical users, migrating legacy records and env fallback in memory."""
+    if not USERS_FILE.exists() and LEGACY_USERS_FILE.exists():
+        with auth_store_write_lock():
+            return _load_users_unlocked(env_username, env_password_hash)
+    users, needs_write_back = _load_users_result(env_username, env_password_hash)
+    if needs_write_back:
+        with auth_store_write_lock():
+            return _load_users_unlocked(env_username, env_password_hash)
+    return users
+
+
+def _load_users_result(
+    env_username: str = "",
+    env_password_hash: str = "",
+) -> tuple[dict[str, dict[str, Any]], bool]:
     migrate_legacy_multi_user_tree()
     users: dict[str, dict[str, Any]] | None = None
     if USERS_FILE.exists():
@@ -168,11 +206,8 @@ def load_users(  # nosec B107 - empty defaults mean "no env fallback supplied".
         canonical[str(username)] = record
         changed = changed or record != value
 
-    if USERS_FILE.exists() and changed:
-        _write_users(canonical)
-
     if canonical:
-        return canonical
+        return canonical, changed
 
     if env_username and env_password_hash:
         return {
@@ -190,17 +225,27 @@ def load_users(  # nosec B107 - empty defaults mean "no env fallback supplied".
                 "terms_version": "",
                 "privacy_version": "",
             }
-        }
+        }, False
 
-    return {}
+    return {}, changed
+
+
+def _load_users_unlocked(
+    env_username: str = "",
+    env_password_hash: str = "",
+) -> dict[str, dict[str, Any]]:
+    users, needs_write_back = _load_users_result(env_username, env_password_hash)
+    if needs_write_back and USERS_FILE.exists():
+        _write_users(users)
+    return users
 
 
 def save_user(username: str, hashed_password: str, role: Role = "user") -> dict[str, Any]:
     USERS_FILE.parent.mkdir(parents=True, exist_ok=True)
     # Read-modify-write must be atomic so concurrent first-time registrations
     # cannot each see an empty store and each promote themselves to admin.
-    with _USERS_WRITE_LOCK:
-        users = load_users()
+    with auth_store_write_lock():
+        users = _load_users_unlocked()
         effective_role: Role = "admin" if not users else role
         existing = users.get(username) or {}
         record = {
@@ -230,8 +275,8 @@ def record_terms_acceptance(
 ) -> bool:
     if not USERS_FILE.exists():
         return False
-    with _USERS_WRITE_LOCK:
-        users = load_users()
+    with auth_store_write_lock():
+        users = _load_users_unlocked()
         if username not in users:
             return False
         users[username]["terms_accepted"] = True
@@ -274,11 +319,12 @@ def get_user_by_id(user_id: str) -> tuple[str, dict[str, Any]] | None:
 def delete_user(username: str) -> bool:
     if not USERS_FILE.exists():
         return False
-    users = load_users()
-    if username not in users:
-        return False
-    users.pop(username, None)
-    _write_users(users)
+    with auth_store_write_lock():
+        users = _load_users_unlocked()
+        if username not in users:
+            return False
+        users.pop(username, None)
+        _write_users(users)
     return True
 
 
@@ -290,8 +336,8 @@ def update_password(username: str, hashed_password: str) -> bool:
     """Replace a user's password hash and invalidate existing JWTs."""
     if not USERS_FILE.exists():
         return False
-    with _USERS_WRITE_LOCK:
-        users = load_users()
+    with auth_store_write_lock():
+        users = _load_users_unlocked()
         if username not in users:
             return False
         users[username]["hash"] = hashed_password
@@ -304,8 +350,8 @@ def set_disabled(username: str, disabled: bool, reason: str = "") -> bool:
     """Enable or disable a user and invalidate existing JWTs."""
     if not USERS_FILE.exists():
         return False
-    with _USERS_WRITE_LOCK:
-        users = load_users()
+    with auth_store_write_lock():
+        users = _load_users_unlocked()
         if username not in users:
             return False
         changed = False
@@ -326,8 +372,8 @@ def revoke_sessions(username: str) -> bool:
     """Invalidate existing JWTs without changing account fields."""
     if not USERS_FILE.exists():
         return False
-    with _USERS_WRITE_LOCK:
-        users = load_users()
+    with auth_store_write_lock():
+        users = _load_users_unlocked()
         if username not in users:
             return False
         _bump_token_version(users[username])
@@ -339,8 +385,8 @@ def set_avatar(username: str, avatar: str) -> bool:
     """Update the avatar marker for an existing user. Returns True on success."""
     if not USERS_FILE.exists():
         return False
-    with _USERS_WRITE_LOCK:
-        users = load_users()
+    with auth_store_write_lock():
+        users = _load_users_unlocked()
         if username not in users:
             return False
         users[username]["avatar"] = avatar
@@ -398,8 +444,8 @@ def set_role(username: str, role: Role) -> bool:
         raise ValueError("role must be 'admin' or 'user'")
     if not USERS_FILE.exists():
         return False
-    with _USERS_WRITE_LOCK:
-        users = load_users()
+    with auth_store_write_lock():
+        users = _load_users_unlocked()
         if username not in users:
             return False
         users[username]["role"] = role

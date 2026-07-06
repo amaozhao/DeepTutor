@@ -215,8 +215,8 @@ def production_security_warnings() -> list[str]:
     worker_count = configured_worker_count()
     if worker_count > 1:
         warnings.append(
-            f"{worker_count} backend workers configured, but auth and quota state are not "
-            "multi-worker safe. Use one worker until external shared storage is added."
+            f"{worker_count} backend workers configured, but auth and quota still need "
+            "external storage for supported multi-worker SaaS. Use one worker until then."
         )
     return warnings
 

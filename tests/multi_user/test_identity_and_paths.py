@@ -23,6 +23,26 @@ def test_identity_migrates_legacy_users_with_stable_uid(tmp_path, monkeypatch):
     assert users_file.exists()
 
 
+def test_identity_writes_under_local_auth_store_write_lock(mu_isolated_root):
+    identity.save_user("alice", "h1", role="user")
+    identity.save_user("bob", "h2", role="user")
+
+    users = identity.load_users()
+
+    assert users["alice"]["role"] == "admin"
+    assert users["bob"]["role"] == "user"
+    assert (mu_isolated_root / "data" / "system" / "auth" / "users.lock").exists()
+
+
+def test_identity_plain_reads_do_not_take_write_lock(mu_isolated_root):
+    identity.save_user("alice", "h1", role="user")
+    lock_file = mu_isolated_root / "data" / "system" / "auth" / "users.lock"
+    lock_file.unlink()
+
+    assert identity.load_users()["alice"]["role"] == "admin"
+    assert not lock_file.exists()
+
+
 def test_path_service_uses_current_user_scope(tmp_path, monkeypatch):
     monkeypatch.setattr(paths, "ensure_user_workspace", lambda _uid: tmp_path)
     user_root = tmp_path / "data" / "users" / "u_alice"
