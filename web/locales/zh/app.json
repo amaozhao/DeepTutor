@@ -2938,5 +2938,9 @@
   "Running {{app}}": "运行 {{app}}",
   "Product names and logos are trademarks of their respective owners, shown for identification only.": "产品名称与标识为其各自所有者的商标，此处仅用于标识。",
   "Needs authorization": "待授权",
-  "Reauthorize": "重新授权"
+  "Reauthorize": "重新授权",
+  "DeepTutor · Agent-Native Learning": "DeepTutor · Agent-Native Learning",
+  "Loading sign in...": "正在加载登录页...",
+  "Invalid JSON — value not applied.": "JSON 无效，未应用该值。",
+  "Drag to adjust ratio": "拖动调整比例"
 }

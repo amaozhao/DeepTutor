@@ -151,21 +151,24 @@ function LoginPageContent() {
       </p>
 
       <p className="mt-3 text-center text-xs text-[var(--muted-foreground)]">
-        DeepTutor · Agent-Native Learning
+        {t("DeepTutor · Agent-Native Learning")}
       </p>
+    </div>
+  );
+}
+
+function LoginFallback() {
+  const { t } = useTranslation();
+  return (
+    <div className="w-full max-w-sm text-center text-sm text-[var(--muted-foreground)]">
+      {t("Loading sign in...")}
     </div>
   );
 }
 
 export default function LoginPage() {
   return (
-    <Suspense
-      fallback={
-        <div className="w-full max-w-sm text-center text-sm text-[var(--muted-foreground)]">
-          Loading sign in...
-        </div>
-      }
-    >
+    <Suspense fallback={<LoginFallback />}>
       <LoginPageContent />
     </Suspense>
   );

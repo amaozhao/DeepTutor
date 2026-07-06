@@ -2938,5 +2938,9 @@
   "Running {{app}}": "Running {{app}}",
   "Product names and logos are trademarks of their respective owners, shown for identification only.": "Product names and logos are trademarks of their respective owners, shown for identification only.",
   "Needs authorization": "Needs authorization",
-  "Reauthorize": "Reauthorize"
+  "Reauthorize": "Reauthorize",
+  "DeepTutor · Agent-Native Learning": "DeepTutor · Agent-Native Learning",
+  "Loading sign in...": "Loading sign in...",
+  "Invalid JSON — value not applied.": "Invalid JSON — value not applied.",
+  "Drag to adjust ratio": "Drag to adjust ratio"
 }

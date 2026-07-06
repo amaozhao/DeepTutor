@@ -427,8 +427,8 @@ addopts = [
     "--import-mode=importlib",
 ]
 filterwarnings = [
-    "ignore:Using `httpx` with `starlette.testclient` is deprecated.*:starlette.exceptions.StarletteDeprecationWarning",
-    "ignore:'HTTP_422_UNPROCESSABLE_ENTITY' is deprecated.*:starlette.exceptions.StarletteDeprecationWarning",
+    "ignore:Using `httpx` with `starlette.testclient` is deprecated.*",
+    "ignore:'HTTP_422_UNPROCESSABLE_ENTITY' is deprecated.*",
     "ignore:builtin type SwigPyPacked has no __module__ attribute:DeprecationWarning",
     "ignore:builtin type SwigPyObject has no __module__ attribute:DeprecationWarning",
     "ignore:builtin type swigvarlink has no __module__ attribute:DeprecationWarning",
