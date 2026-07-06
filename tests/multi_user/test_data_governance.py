@@ -145,6 +145,8 @@ def test_data_retention_policy_prunes_configured_files_and_archives(mu_isolated_
     assert result["deleted_users"]["removed"] == 1
     assert "old" not in audit_file.read_text(encoding="utf-8")
     assert "old" not in usage_file.read_text(encoding="utf-8")
+    assert not audit_file.with_suffix(".tmp").exists()
+    assert not usage_file.with_suffix(".tmp").exists()
     assert old_archive.exists() is False
     assert new_archive.exists()
 

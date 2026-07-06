@@ -117,7 +117,9 @@ def _prune_jsonl(path: Path, retention_days: int) -> dict[str, int]:
         else:
             kept.append(line)
     if removed:
-        path.write_text("\n".join(kept) + ("\n" if kept else ""), encoding="utf-8")
+        tmp = path.with_suffix(".tmp")
+        tmp.write_text("\n".join(kept) + ("\n" if kept else ""), encoding="utf-8")
+        tmp.replace(path)
     return {"removed": removed}
 
 
