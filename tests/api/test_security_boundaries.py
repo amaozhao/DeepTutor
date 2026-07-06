@@ -169,8 +169,9 @@ def test_system_status_marks_file_backed_deployment_single_replica(monkeypatch):
     assert result["status"] == "single_replica_beta"
     assert result["multi_replica_ready"] is False
     assert isinstance(result["shared_state"], dict)
+    assert result["shared_state"]["token_revocation"] == "file_token_version"
     assert result["shared_state"]["rate_limit"] == "file"
-    assert result["blocking_reasons"]
+    assert any("token-version revocation" in item for item in result["blocking_reasons"])
 
 
 def test_system_status_reports_multi_worker_blocker(monkeypatch):

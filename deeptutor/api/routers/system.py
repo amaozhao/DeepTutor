@@ -45,13 +45,13 @@ def _deployment_status() -> dict[str, object]:
     pocketbase_enabled = bool(load_integrations_settings().get("pocketbase_url"))
     worker_count = configured_worker_count()
     blocking_reasons = [
-        "auth/token revocation is file-backed write-lock beta",
+        "auth/token-version revocation is file-backed beta",
         "rate limiting is file-backed beta",
         "usage/quota is file-backed",
     ]
     if worker_count > 1:
         blocking_reasons.append(
-            "multiple backend workers configured without external auth/quota storage"
+            "multiple backend workers configured without external auth/token-version/quota storage"
         )
     if pocketbase_enabled:
         blocking_reasons.append("PocketBase multi-user/SaaS mode is unsupported")
@@ -60,7 +60,9 @@ def _deployment_status() -> dict[str, object]:
         "multi_replica_ready": False,
         "shared_state": {
             "auth": "pocketbase_single_user" if pocketbase_enabled else "file_write_lock",
-            "token_revocation": "pocketbase_token_refresh" if pocketbase_enabled else "file",
+            "token_revocation": (
+                "pocketbase_token_refresh" if pocketbase_enabled else "file_token_version"
+            ),
             "rate_limit": "file",
             "usage_quota": "file",
             "backend_workers": worker_count,
