@@ -105,6 +105,36 @@ def test_production_security_warnings_for_pocketbase_multi_user(monkeypatch):
     assert any("PocketBase is single-user only" in item for item in warnings)
 
 
+def test_production_security_warnings_for_multi_worker_auth(monkeypatch):
+    from deeptutor.api import security
+
+    monkeypatch.setenv("WEB_CONCURRENCY", "2")
+    monkeypatch.setattr(
+        security,
+        "load_auth_settings",
+        lambda: {
+            "enabled": True,
+            "cookie_secure": True,
+            "public_registration_enabled": False,
+            "require_terms_acceptance": True,
+        },
+    )
+    monkeypatch.setattr(
+        security,
+        "load_system_settings",
+        lambda: {"cors_origin": "https://app.example.com", "cors_origins": []},
+    )
+    monkeypatch.setattr(
+        security,
+        "load_integrations_settings",
+        lambda: {"pocketbase_url": ""},
+    )
+
+    warnings = security.production_security_warnings()
+
+    assert any("2 backend workers configured" in item for item in warnings)
+
+
 def test_system_status_writable_dir_healthcheck(tmp_path: Path):
     from deeptutor.api.routers.system import _writable_dir_status
 
@@ -117,6 +147,9 @@ def test_system_status_writable_dir_healthcheck(tmp_path: Path):
 def test_system_status_marks_file_backed_deployment_single_replica(monkeypatch):
     from deeptutor.api.routers import system
 
+    monkeypatch.delenv("WEB_CONCURRENCY", raising=False)
+    monkeypatch.delenv("UVICORN_WORKERS", raising=False)
+    monkeypatch.delenv("GUNICORN_WORKERS", raising=False)
     monkeypatch.setattr(system, "load_integrations_settings", lambda: {"pocketbase_url": ""})
 
     result = system._deployment_status()
@@ -126,6 +159,19 @@ def test_system_status_marks_file_backed_deployment_single_replica(monkeypatch):
     assert isinstance(result["shared_state"], dict)
     assert result["shared_state"]["rate_limit"] == "process"
     assert result["blocking_reasons"]
+
+
+def test_system_status_reports_multi_worker_blocker(monkeypatch):
+    from deeptutor.api.routers import system
+
+    monkeypatch.setenv("UVICORN_WORKERS", "3")
+    monkeypatch.setattr(system, "load_integrations_settings", lambda: {"pocketbase_url": ""})
+
+    result = system._deployment_status()
+
+    assert result["multi_replica_ready"] is False
+    assert result["shared_state"]["backend_workers"] == 3
+    assert any("multiple backend workers configured" in item for item in result["blocking_reasons"])
 
 
 def test_system_status_marks_pocketbase_unsupported_for_multi_user(monkeypatch):

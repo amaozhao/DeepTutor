@@ -10,7 +10,7 @@ import time
 from fastapi import APIRouter
 from pydantic import BaseModel
 
-from deeptutor.api.security import production_security_warnings
+from deeptutor.api.security import configured_worker_count, production_security_warnings
 from deeptutor.multi_user import paths
 from deeptutor.multi_user.context import get_current_user
 from deeptutor.services.config import load_integrations_settings, resolve_search_runtime_config
@@ -33,7 +33,7 @@ class TestResponse(BaseModel):
 def _writable_dir_status(path: Path) -> dict[str, str]:
     try:
         path.mkdir(parents=True, exist_ok=True)
-        probe = path / f".healthcheck-{time.time_ns()}"
+        probe = path / f".probe-{time.time_ns()}"
         probe.write_text("ok", encoding="utf-8")
         probe.unlink(missing_ok=True)
     except Exception as exc:
@@ -43,11 +43,16 @@ def _writable_dir_status(path: Path) -> dict[str, str]:
 
 def _deployment_status() -> dict[str, object]:
     pocketbase_enabled = bool(load_integrations_settings().get("pocketbase_url"))
+    worker_count = configured_worker_count()
     blocking_reasons = [
         "auth/token revocation is file-backed",
         "rate limiting is process-local",
         "usage/quota is file-backed",
     ]
+    if worker_count > 1:
+        blocking_reasons.append(
+            "multiple backend workers configured without shared auth/rate-limit/quota storage"
+        )
     if pocketbase_enabled:
         blocking_reasons.append("PocketBase multi-user/SaaS mode is unsupported")
     return {
@@ -58,6 +63,7 @@ def _deployment_status() -> dict[str, object]:
             "token_revocation": "pocketbase_token_refresh" if pocketbase_enabled else "file",
             "rate_limit": "process",
             "usage_quota": "file",
+            "backend_workers": worker_count,
         },
         "pocketbase_multi_user_supported": False,
         "blocking_reasons": blocking_reasons,
