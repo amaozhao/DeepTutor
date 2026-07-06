@@ -18,8 +18,8 @@ from .paths import PROJECT_ROOT, SYSTEM_ROOT, migrate_legacy_multi_user_tree
 
 logger = logging.getLogger(__name__)
 
-# Serialises writes inside one process; auth_store_write_lock adds best-effort local
-# process locking. Real multi-replica SaaS still needs an external user store.
+# Serialises writes inside one process; auth_store_write_lock adds best-effort
+# local process locking. Postgres shared_state handles multi-replica users.
 _USERS_WRITE_LOCK = threading.Lock()
 
 AUTH_DIR = SYSTEM_ROOT / "auth"

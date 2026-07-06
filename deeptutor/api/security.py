@@ -27,7 +27,7 @@ class SlidingWindowRateLimiter:
     """In-process sliding-window limiter.
 
     ponytail: single-process memory is enough for the current single-worker
-    beta path; move buckets to Redis/shared storage before multi-replica SaaS.
+    fallback path; Postgres shared_state handles multi-replica deployments.
     """
 
     def __init__(self) -> None:
@@ -52,7 +52,7 @@ class FileSlidingWindowRateLimiter:
     """File-backed sliding-window limiter for the single-node beta path.
 
     ponytail: this is shared across local worker processes through data/system;
-    replace with Redis or the chosen external store for real multi-replica SaaS.
+    Postgres shared_state handles multi-replica deployments.
     """
 
     def __init__(self, root: Path | None = None) -> None:
