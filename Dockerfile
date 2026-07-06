@@ -424,7 +424,7 @@ try:
 except Exception:
     pass
 
-urllib.request.urlopen(f"http://localhost:{port}/", timeout=5).close()
+urllib.request.urlopen(f"http://localhost:{port}/health", timeout=5).close()
 EOF
 
 # Expose ports
