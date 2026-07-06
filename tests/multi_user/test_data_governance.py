@@ -343,3 +343,14 @@ def test_data_governance_settings_endpoint_normalizes_and_audits(mu_isolated_roo
         ]["summary"]["removed_total"]
         == 0
     )
+
+
+def test_data_governance_settings_write_is_atomic(mu_isolated_root):
+    from deeptutor.multi_user import paths
+
+    saved = save_data_governance_settings({"audit_retention_days": 14})
+
+    settings_file = paths.get_admin_path_service().get_settings_file("data_governance")
+    assert saved["audit_retention_days"] == 14
+    assert json.loads(settings_file.read_text(encoding="utf-8"))["audit_retention_days"] == 14
+    assert not settings_file.with_suffix(".tmp").exists()
