@@ -44,6 +44,25 @@ def test_identity_plain_reads_do_not_take_write_lock(mu_isolated_root):
     assert not lock_file.exists()
 
 
+def test_auth_secret_creation_uses_auth_store_write_lock(mu_isolated_root):
+    secret = identity.load_or_create_auth_secret()
+
+    auth_root = mu_isolated_root / "data" / "system" / "auth"
+    assert len(secret) == 64
+    assert (auth_root / "auth_secret").read_text(encoding="utf-8") == secret
+    assert (auth_root / "users.lock").exists()
+    assert not (auth_root / "auth_secret.tmp").exists()
+
+
+def test_existing_auth_secret_read_does_not_take_write_lock(mu_isolated_root):
+    secret_file = mu_isolated_root / "data" / "system" / "auth" / "auth_secret"
+    secret_file.parent.mkdir(parents=True)
+    secret_file.write_text("stable-secret", encoding="utf-8")
+
+    assert identity.load_or_create_auth_secret() == "stable-secret"
+    assert not (secret_file.parent / "users.lock").exists()
+
+
 def test_invite_writes_reuse_auth_store_write_lock(mu_isolated_root, monkeypatch):
     from deeptutor.multi_user import invites
 
