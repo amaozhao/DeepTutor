@@ -4,13 +4,13 @@
 
 目标：把当前“受控私有多用户部署”推进到“可开放注册、可运营”的 SaaS 基础。注册方案限定为邮箱 + 密码；不做手机号/SMS 验证码注册。本轮不实现账单/支付。
 
-当前状态（2026-07-07）：Milestone 0-4 的最小闭环已完成，其中 TTS/STT/search/embedding 已按调用次数纳入 usage/quota；Milestone 5 已完成管理员用户操作、停用原因、全局 `auth.max_users` 账号上限、grant、skill 安装、模型目录、MCP 配置、用户导出、用户清单 CSV 导出、邮箱密码批量导入普通用户、用户自助导出、账号自助注销、覆盖 workspace/grant/avatar 的删除数据策略、审计查询、注册审核开关、注册协议版本同意记录、保留期配置和管理员手动保留期清理入口的文件型 beta 闭环；Milestone 6 已修复 GHCR compose 的多用户持久化挂载，补充备份/恢复 runbook，在系统状态里暴露 storage/quota store 可写性和 `multi_replica_ready=false` 的单副本部署状态，并把 PocketBase 明确标为非 SaaS 多用户底座。仍不建议直接公开商用 SaaS；后续重点是外部共享存储、多副本一致性和完整合规治理。
+当前状态（2026-07-07）：Milestone 0-4 的最小闭环已完成，其中 TTS/STT/search/embedding 已按调用次数纳入 usage/quota；Milestone 5 已完成管理员用户操作、停用原因、全局 `auth.max_users` 账号上限、grant、skill 安装、模型目录、MCP 配置、用户导出、用户清单 CSV 导出、邮箱密码批量导入普通用户、用户自助导出、账号自助注销、覆盖 workspace/grant/avatar 的删除数据策略、审计查询、注册审核开关、注册协议版本同意记录、保留期配置和管理员手动保留期清理入口的文件型 beta 闭环；Milestone 6 已修复 GHCR compose 的多用户持久化挂载，补充备份/恢复 runbook，并接入 PostgreSQL shared_state 覆盖 auth secret、用户记录/token_version、注册邀请码、rate limit、grant quota 和 usage ledger。PocketBase 明确标为非 SaaS 多用户底座。仍不建议直接公开商用 SaaS；后续重点是对象存储、审计查询存储、运营监控和完整合规治理。
 
 ## 原则
 
 - 先做可控 beta，再做公开 SaaS。
 - 先堵认证、额度、数据隔离这些会导致事故的洞，再做增长功能。
-- 保持默认 JSON/SQLite 路径可用于私有部署；公开 SaaS 需要外部用户库、外部 token-version/session 撤销状态源和强一致 quota 存储。
+- 保持默认 JSON/SQLite 路径可用于私有部署；公开 SaaS 应使用 PostgreSQL shared_state，并继续补对象存储、审计存储和运营治理。
 - PocketBase 要么完成多用户支持矩阵，要么在 SaaS 路径中明确禁用。
 
 ## Milestone 0：基线确认
@@ -32,7 +32,7 @@
 
 ## Milestone 1：认证与账号生命周期
 
-状态：已完成最小闭环；生产级多副本还需要外部 token-version/session 撤销状态源。
+状态：已完成。文件模式使用本地 token_version；PostgreSQL shared_state 模式下用户记录和 token_version 进入数据库，可跨多副本共享撤销状态。
 
 目标：让“用户状态变化”能被系统即时执行。
 
@@ -103,7 +103,7 @@
 
 ## Milestone 3：安全边界和限流
 
-状态：已完成文件型 beta 最小闭环；多副本部署前仍需要外部 token-version 撤销状态源和强一致 quota 存储。限流已从进程内改为文件型共享 beta。
+状态：已完成。文件模式提供单副本 beta 限流；PostgreSQL shared_state 模式下限流 bucket 进入数据库，可跨多副本共享。
 
 目标：公开网络下不容易被撞库、CSRF、滥用拖垮。
 
@@ -133,7 +133,7 @@
 
 ## Milestone 4：用量、额度和成本控制
 
-状态：已完成文件型最小闭环。LLM turn 会记录 `cost_summary`；TTS、STT、search、embedding 已按调用次数纳入同一 usage/quota。当前实现适合单副本 beta，不是支付/订阅账单系统；embedding 目前按返回向量数量计调用，不估算真实 token 成本。
+状态：已完成。LLM turn 会记录 `cost_summary`；TTS、STT、search、embedding 已按调用次数纳入同一 usage/quota。文件模式适合单副本 beta；PostgreSQL shared_state 模式下 grant quota 和 usage ledger 进入数据库，可跨多副本共享。当前实现仍不是支付/订阅账单系统；embedding 目前按返回向量数量计调用，不估算真实 token 成本。
 
 目标：每个用户的模型成本可记录、可查询、可限制。
 
@@ -204,18 +204,18 @@
 
 ## Milestone 6：部署和外部存储
 
-状态：部分完成。`docker-compose.ghcr.yml` 已改为完整 `./data:/app/data` 挂载，已补充 `docs/SAAS_DEPLOYMENT_RUNBOOK.md`，系统状态会检查 storage/auth/quota/rate store 可写性，并明确当前 `multi_replica_ready=false`。PocketBase 保留为单用户集成，启用时会在生产告警和部署状态里标记为不支持多用户/SaaS；限流已改为文件型共享 beta，用户文件写路径和 usage ledger 已加本机文件锁，配置多个 backend worker 时仍会明确告警并让 `/health` 失败，因为 auth/token-version revocation 和强一致 quota 还不是外部共享状态。已增加 `shared_state` runtime 配置和 `DEEPTUTOR_SHARED_STATE_PROVIDER` / `DEEPTUTOR_DATABASE_URL` 环境变量，用于声明计划使用的共享状态来源；配置为 `postgres` 只会改变部署状态说明，不会把多副本标记为 ready。外部用户库、外部 token-version/session 撤销状态源、强一致 quota store、多副本一致性仍未完成。
+状态：底座完成。`docker-compose.ghcr.yml` 已改为完整 `./data:/app/data` 挂载，已补充 `docs/SAAS_DEPLOYMENT_RUNBOOK.md`。默认文件模式仍是 `single_replica_beta`；配置 `shared_state.provider=postgres` / `DEEPTUTOR_SHARED_STATE_PROVIDER=postgres` 和 `DEEPTUTOR_DATABASE_URL` 后，auth secret、用户记录/token_version、注册邀请码、rate limit、grant quota 和 usage ledger 会进入 PostgreSQL，系统状态会把 auth/token/rate/quota 标为 `postgres` 并允许多 worker 通过 `/health`。PocketBase 保留为单用户集成，启用时会在生产告警和部署状态里标记为不支持多用户/SaaS。附件、知识库和导出文件仍依赖共享 `data/` volume 或后续对象存储。
 
 目标：支持正式 SaaS 的多 worker / 多副本部署。
 
 任务：
 
-1. 选择并接入外部用户库，以及外部 token-version/session 撤销状态源。
-2. 已完成 beta：用户文件写路径使用本机文件锁，普通鉴权读取不加锁；限流状态放入文件型共享存储，usage ledger 使用本机文件锁；强一致 quota 仍需外部共享存储。
+1. 已完成：选择并接入 PostgreSQL 共享状态，覆盖 auth secret、用户记录/token_version、注册邀请码、rate limit、grant quota 和 usage ledger。
+2. 已完成 beta：文件模式保留为单副本 beta；用户文件写路径使用本机文件锁，普通鉴权读取不加锁；限流状态放入文件型共享存储，usage ledger 使用本机文件锁。
 3. 已完成：修复 `docker-compose.ghcr.yml`，改成单一 `./data:/app/data` volume。
 4. 已完成 beta：明确 PocketBase 路线。当前保留单用户集成；SaaS 多用户路径在生产告警和部署状态中标记为 unsupported。
 5. 已完成：增加备份/恢复文档。
-6. 已完成 beta：系统状态已包含 auth/CORS/cookie/PocketBase/多 worker 告警、provider 配置状态、storage/auth/quota/rate store 可写性，并暴露当前文件状态导致 `multi_replica_ready=false`；`shared_state` 配置只作为部署状态输入，正式多副本仍需接入外部共享存储后再改为 ready。
+6. 已完成：系统状态已包含 auth/CORS/cookie/PocketBase/多 worker 告警、provider 配置状态、storage/auth/quota/rate store 或 PostgreSQL shared-state store 健康检查；PostgreSQL 模式下 `multi_replica_ready=true`，文件模式下保持 `multi_replica_ready=false`。
 
 验收：
 
