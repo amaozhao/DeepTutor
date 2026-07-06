@@ -29,7 +29,11 @@ def _seed_admin_and_user(seed_user) -> tuple[str, str]:
 
 def test_export_user_data_includes_workspace_grant_and_usage(seed_user):
     from deeptutor.multi_user import paths
-    from deeptutor.multi_user.identity import record_terms_acceptance, set_disabled
+    from deeptutor.multi_user.identity import (
+        record_terms_acceptance,
+        save_avatar_file,
+        set_disabled,
+    )
 
     username, user_id = _seed_admin_and_user(seed_user)
     set_disabled(username, True, reason="policy review")
@@ -40,6 +44,7 @@ def test_export_user_data_includes_workspace_grant_and_usage(seed_user):
     )
     workspace = paths.ensure_user_workspace(user_id)
     (workspace / "notes.txt").write_text("private notes", encoding="utf-8")
+    save_avatar_file(user_id, b"\x89PNG\r\n\x1a\navatar", "png")
     save_grant(user_id, {"quota": {"daily_call_limit": 3}})
     record_usage(
         user_id=user_id,
@@ -60,8 +65,10 @@ def test_export_user_data_includes_workspace_grant_and_usage(seed_user):
         assert "workspace/notes.txt" in names
         assert "system/account.json" in names
         assert "system/grant.json" in names
+        assert "system/avatar.png" in names
         assert "system/usage.jsonl" in names
         assert "private notes" == zf.read("workspace/notes.txt").decode()
+        assert zf.read("system/avatar.png") == b"\x89PNG\r\n\x1a\navatar"
         account = json.loads(zf.read("system/account.json").decode())
         assert account["username"] == username
         assert account["disabled_reason"] == "policy review"
@@ -73,29 +80,36 @@ def test_export_user_data_includes_workspace_grant_and_usage(seed_user):
 
 def test_delete_policy_archive_moves_workspace_and_grant(seed_user):
     from deeptutor.multi_user import paths
+    from deeptutor.multi_user.identity import get_avatar_file, save_avatar_file
 
     _username, user_id = _seed_admin_and_user(seed_user)
     workspace = paths.ensure_user_workspace(user_id)
     (workspace / "notes.txt").write_text("private notes", encoding="utf-8")
+    save_avatar_file(user_id, b"\x89PNG\r\n\x1a\navatar", "png")
     save_grant(user_id, {"quota": {"daily_call_limit": 3}})
 
     result = apply_user_delete_policy(user_id, "archive")
 
     archive = result["archive"]
     assert result["workspace"] == "archived"
+    assert result["avatar"] == "archived"
     assert not workspace.exists()
+    assert get_avatar_file(user_id) is None
     assert (paths.SYSTEM_ROOT / "grants" / f"{user_id}.json").exists() is False
     assert (paths.SYSTEM_ROOT / "deleted_users").exists()
     assert "deleted_users" in archive
     assert (Path(archive) / "manifest.json").exists()
+    assert (Path(archive) / "avatar.png").read_bytes() == b"\x89PNG\r\n\x1a\navatar"
     assert not (Path(archive) / "manifest.tmp").exists()
     assert (paths.SYSTEM_ROOT / "grants" / f"{user_id}.lock").exists()
 
 
 def test_delete_policy_hard_delete_uses_grant_write_lock(seed_user):
     from deeptutor.multi_user import paths
+    from deeptutor.multi_user.identity import get_avatar_file, save_avatar_file
 
     _username, user_id = _seed_admin_and_user(seed_user)
+    save_avatar_file(user_id, b"\x89PNG\r\n\x1a\navatar", "png")
     save_grant(user_id, {"quota": {"daily_call_limit": 3}})
     lock_file = paths.SYSTEM_ROOT / "grants" / f"{user_id}.lock"
     if lock_file.exists():
@@ -104,6 +118,8 @@ def test_delete_policy_hard_delete_uses_grant_write_lock(seed_user):
     result = apply_user_delete_policy(user_id, "delete")
 
     assert result["grant"] == "deleted"
+    assert result["avatar"] == "deleted"
+    assert get_avatar_file(user_id) is None
     assert not (paths.SYSTEM_ROOT / "grants" / f"{user_id}.json").exists()
     assert lock_file.exists()
 

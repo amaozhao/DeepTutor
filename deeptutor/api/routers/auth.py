@@ -845,12 +845,8 @@ def _apply_user_data_policy(
         except OSError as exc:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"User was deleted but data policy failed: {exc}",
+                detail=f"User data policy failed: {exc}",
             ) from exc
-        if data_action != "keep":
-            from deeptutor.multi_user.identity import delete_avatar_file
-
-            delete_avatar_file(user_id)
         return data_policy
     return {"action": data_action, "workspace": "skipped", "grant": "skipped"}
 
