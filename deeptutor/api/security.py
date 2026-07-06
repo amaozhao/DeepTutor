@@ -3,9 +3,13 @@
 from __future__ import annotations
 
 from collections import defaultdict, deque
+from contextlib import contextmanager
+import hashlib
+import json
 import os
+from pathlib import Path
 import time
-from typing import Any, Iterable, Mapping
+from typing import Any, Iterable, Iterator, Mapping
 from urllib.parse import urlparse
 
 from fastapi import HTTPException, Request, status
@@ -43,7 +47,95 @@ class SlidingWindowRateLimiter:
         self._hits.clear()
 
 
-rate_limiter = SlidingWindowRateLimiter()
+class FileSlidingWindowRateLimiter:
+    """File-backed sliding-window limiter for the single-node beta path.
+
+    ponytail: this is shared across local worker processes through data/system;
+    replace with Redis or the chosen external store for real multi-replica SaaS.
+    """
+
+    def __init__(self, root: Path | None = None) -> None:
+        self._root = root
+        self._fallback = SlidingWindowRateLimiter()
+
+    @property
+    def root(self) -> Path:
+        if self._root is not None:
+            return self._root
+        from deeptutor.multi_user import paths
+
+        paths.ensure_system_dirs()
+        root = paths.SYSTEM_ROOT / "rate"
+        root.mkdir(parents=True, exist_ok=True)
+        return root
+
+    def _path_for(self, key: str) -> Path:
+        digest = hashlib.sha256(key.encode("utf-8")).hexdigest()
+        return self.root / f"{digest}.json"
+
+    def allow(self, key: str, *, limit: int, window_seconds: int, now: float | None = None) -> bool:
+        current = time.time() if now is None else now
+        if limit <= 0:
+            return False
+        path = self._path_for(key)
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            with self._lock(path):
+                cutoff = current - window_seconds
+                try:
+                    hits = json.loads(path.read_text(encoding="utf-8"))
+                except FileNotFoundError:
+                    hits = []
+                if not isinstance(hits, list):
+                    hits = []
+                bucket = [
+                    float(item) for item in hits if isinstance(item, int | float) and item > cutoff
+                ]
+                if len(bucket) >= limit:
+                    self._write(path, bucket)
+                    return False
+                bucket.append(current)
+                self._write(path, bucket)
+            return True
+        except Exception:
+            return self._fallback.allow(key, limit=limit, window_seconds=window_seconds, now=now)
+
+    @contextmanager
+    def _lock(self, path: Path) -> Iterator[None]:
+        lock_path = path.with_suffix(".lock")
+        handle = lock_path.open("a+", encoding="utf-8")
+        try:
+            import fcntl
+
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+            yield
+        finally:
+            try:
+                import fcntl
+
+                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+            finally:
+                handle.close()
+
+    def _write(self, path: Path, hits: list[float]) -> None:
+        tmp = path.with_suffix(".tmp")
+        tmp.write_text(json.dumps(hits, separators=(",", ":")), encoding="utf-8")
+        tmp.replace(path)
+
+    def clear(self) -> None:
+        self._fallback.clear()
+        try:
+            for child in self.root.glob("*.json"):
+                child.unlink(missing_ok=True)
+            for child in self.root.glob("*.tmp"):
+                child.unlink(missing_ok=True)
+            for child in self.root.glob("*.lock"):
+                child.unlink(missing_ok=True)
+        except Exception:
+            pass
+
+
+rate_limiter = FileSlidingWindowRateLimiter()
 
 _WORKER_ENV_VARS = ("WEB_CONCURRENCY", "UVICORN_WORKERS", "GUNICORN_WORKERS")
 
@@ -123,8 +215,8 @@ def production_security_warnings() -> list[str]:
     worker_count = configured_worker_count()
     if worker_count > 1:
         warnings.append(
-            f"{worker_count} backend workers configured, but auth, rate limiting, and quota "
-            "state are not shared. Use one worker until external shared storage is added."
+            f"{worker_count} backend workers configured, but auth and quota state are not "
+            "multi-worker safe. Use one worker until external shared storage is added."
         )
     return warnings
 

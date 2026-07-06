@@ -123,7 +123,7 @@ def ensure_scope_workspace(scope: UserScope) -> Path:
 
 def ensure_system_dirs() -> None:
     migrate_legacy_multi_user_tree()
-    for child in ("auth", "grants", "audit", "indexes", "usage"):
+    for child in ("auth", "grants", "audit", "indexes", "usage", "rate"):
         (SYSTEM_ROOT / child).mkdir(parents=True, exist_ok=True)
 
 
