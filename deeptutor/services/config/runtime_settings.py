@@ -73,6 +73,13 @@ DEFAULT_INTEGRATIONS_SETTINGS: dict[str, Any] = {
     "pocketbase_admin_password": "",
 }
 
+DEFAULT_SHARED_STATE_SETTINGS: dict[str, Any] = {
+    "version": 1,
+    "provider": "file",
+    "database_url": "",
+}
+_SHARED_STATE_PROVIDERS = frozenset({"file", "postgres"})
+
 # Document parsing settings. The parse layer (deeptutor/services/parsing)
 # supports several pluggable engines; one is active at a time. The persisted
 # shape is v2::
@@ -399,6 +406,21 @@ class RuntimeSettingsService:
         _atomic_write_json(self.path_for("integrations"), payload)
         return payload
 
+    def load_shared_state(self, *, include_process_overrides: bool = True) -> dict[str, Any]:
+        payload = self._load_or_create(
+            "shared_state",
+            DEFAULT_SHARED_STATE_SETTINGS,
+            self._normalize_shared_state,
+        )
+        if include_process_overrides:
+            payload = self._apply_shared_state_process_overrides(payload)
+        return payload
+
+    def save_shared_state(self, settings: dict[str, Any]) -> dict[str, Any]:
+        payload = self._normalize_shared_state({**DEFAULT_SHARED_STATE_SETTINGS, **settings})
+        _atomic_write_json(self.path_for("shared_state"), payload)
+        return payload
+
     def load_document_parsing(self, *, include_process_overrides: bool = True) -> dict[str, Any]:
         """Return the full v2 document-parsing structure (all engines)."""
         self._migrate_legacy_document_parsing_file()
@@ -498,6 +520,7 @@ class RuntimeSettingsService:
         self.load_system(include_process_overrides=False)
         self.load_auth(include_process_overrides=False)
         self.load_integrations(include_process_overrides=False)
+        self.load_shared_state(include_process_overrides=False)
         self.load_mineru(include_process_overrides=False)
         self.load_pageindex(include_process_overrides=False)
         self.load_llamaindex(include_process_overrides=False)
@@ -509,6 +532,7 @@ class RuntimeSettingsService:
         system = self.load_system()
         auth = self.load_auth()
         integrations = self.load_integrations()
+        shared_state = self.load_shared_state()
         return {
             "BACKEND_PORT": str(system["backend_port"]),
             "FRONTEND_PORT": str(system["frontend_port"]),
@@ -551,6 +575,8 @@ class RuntimeSettingsService:
             "POCKETBASE_EXTERNAL_URL": integrations["pocketbase_external_url"],
             "POCKETBASE_ADMIN_EMAIL": integrations["pocketbase_admin_email"],
             "POCKETBASE_ADMIN_PASSWORD": integrations["pocketbase_admin_password"],
+            "DEEPTUTOR_SHARED_STATE_PROVIDER": shared_state["provider"],
+            "DEEPTUTOR_DATABASE_URL": shared_state["database_url"],
         }
 
     def export_environment(self, *, overwrite: bool = True) -> dict[str, str]:
@@ -693,6 +719,20 @@ class RuntimeSettingsService:
         if value := self._process_env_value("POCKETBASE_ADMIN_PASSWORD"):
             payload["pocketbase_admin_password"] = value
         return self._normalize_integrations(payload)
+
+    def _apply_shared_state_process_overrides(self, settings: dict[str, Any]) -> dict[str, Any]:
+        payload = dict(settings)
+        if value := (
+            self._process_env_value("DEEPTUTOR_SHARED_STATE_PROVIDER")
+            or self._process_env_value("SHARED_STATE_PROVIDER")
+        ):
+            payload["provider"] = value
+        if value := (
+            self._process_env_value("DEEPTUTOR_DATABASE_URL")
+            or self._process_env_value("DATABASE_URL")
+        ):
+            payload["database_url"] = value
+        return self._normalize_shared_state(payload)
 
     def _apply_mineru_process_overrides(self, settings: dict[str, Any]) -> dict[str, Any]:
         payload = dict(settings)
@@ -967,6 +1007,16 @@ class RuntimeSettingsService:
             "pocketbase_admin_password": _string(settings.get("pocketbase_admin_password")),
         }
 
+    def _normalize_shared_state(self, settings: dict[str, Any]) -> dict[str, Any]:
+        provider = _string(settings.get("provider")).lower().replace("-", "_")
+        if provider not in _SHARED_STATE_PROVIDERS:
+            provider = "file"
+        return {
+            "version": 1,
+            "provider": provider,
+            "database_url": _string(settings.get("database_url")),
+        }
+
 
 def _bool_env(value: Any) -> str:
     return "true" if _coerce_bool(value, False) else "false"
@@ -1059,6 +1109,10 @@ def load_integrations_settings() -> dict[str, Any]:
     return get_runtime_settings_service().load_integrations()
 
 
+def load_shared_state_settings() -> dict[str, Any]:
+    return get_runtime_settings_service().load_shared_state()
+
+
 def load_mineru_settings() -> dict[str, Any]:
     return get_runtime_settings_service().load_mineru()
 
@@ -1095,6 +1149,7 @@ __all__ = [
     "DEFAULT_LLAMAINDEX_SETTINGS",
     "DEFAULT_MINERU_SETTINGS",
     "DEFAULT_PAGEINDEX_SETTINGS",
+    "DEFAULT_SHARED_STATE_SETTINGS",
     "DEFAULT_SYSTEM_SETTINGS",
     "DOCUMENT_PARSING_ENGINE_DOCLING",
     "DOCUMENT_PARSING_ENGINE_MARKITDOWN",
@@ -1115,6 +1170,7 @@ __all__ = [
     "load_document_parsing_settings",
     "load_graphrag_settings",
     "load_integrations_settings",
+    "load_shared_state_settings",
     "load_lightrag_settings",
     "load_llamaindex_settings",
     "load_mineru_settings",

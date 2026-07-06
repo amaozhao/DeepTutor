@@ -17,6 +17,7 @@ from fastapi import HTTPException, Request, status
 from deeptutor.services.config import (
     load_auth_settings,
     load_integrations_settings,
+    load_shared_state_settings,
     load_system_settings,
 )
 from deeptutor.services.config.origins import normalize_origins
@@ -214,6 +215,17 @@ def production_security_warnings() -> list[str]:
         )
     worker_count = configured_worker_count()
     if worker_count > 1:
+        shared_state = load_shared_state_settings()
+        if (
+            shared_state.get("provider") == "postgres"
+            and shared_state.get("database_url")
+        ):
+            warnings.append(
+                f"{worker_count} backend workers configured, but auth, rate limiting, "
+                "and quota are still file-backed until the shared-state migration is active. "
+                "Use one worker until then."
+            )
+            return warnings
         warnings.append(
             f"{worker_count} backend workers configured, but auth and quota still need "
             "external storage for supported multi-worker SaaS. Use one worker until then."
