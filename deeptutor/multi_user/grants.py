@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 from copy import deepcopy
 import json
 from pathlib import Path
+import threading
 from typing import Any
 
 from .identity import get_user_by_id
@@ -12,6 +14,7 @@ from .paths import SYSTEM_ROOT, ensure_system_dirs
 from .usage import empty_quota, normalize_quota
 
 GRANTS_DIR = SYSTEM_ROOT / "grants"
+_GRANTS_WRITE_LOCK = threading.Lock()
 
 
 def empty_grant(user_id: str) -> dict[str, Any]:
@@ -54,6 +57,29 @@ def _normalize_tool_list(value: Any) -> list[str] | None:
 def grant_path(user_id: str) -> Path:
     ensure_system_dirs()
     return GRANTS_DIR / f"{user_id}.json"
+
+
+@contextmanager
+def _grant_write_lock(user_id: str):
+    path = grant_path(user_id)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    lock_path = path.with_suffix(".lock")
+    with _GRANTS_WRITE_LOCK:
+        with lock_path.open("a+", encoding="utf-8") as handle:
+            fcntl_module = None
+            locked = False
+            try:
+                import fcntl as fcntl_module
+
+                fcntl_module.flock(handle.fileno(), fcntl_module.LOCK_EX)
+                locked = True
+            except (ImportError, OSError):
+                pass
+            try:
+                yield path
+            finally:
+                if locked and fcntl_module is not None:
+                    fcntl_module.flock(handle.fileno(), fcntl_module.LOCK_UN)
 
 
 def normalize_grant(user_id: str, payload: dict[str, Any] | None) -> dict[str, Any]:
@@ -102,9 +128,10 @@ def save_grant(user_id: str, payload: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("Admin users use the main workspace and cannot receive assignments.")
     grant = normalize_grant(user_id, payload)
     validate_grant(grant)
-    path = grant_path(user_id)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(grant, indent=2, ensure_ascii=False), encoding="utf-8")
+    with _grant_write_lock(user_id) as path:
+        tmp = path.with_suffix(".tmp")
+        tmp.write_text(json.dumps(grant, indent=2, ensure_ascii=False), encoding="utf-8")
+        tmp.replace(path)
     return grant
 
 
