@@ -79,7 +79,7 @@ def ensure_schema() -> None:
             """
             CREATE TABLE IF NOT EXISTS dt_grants (
                 user_id text PRIMARY KEY,
-                grant jsonb NOT NULL
+                record jsonb NOT NULL
             )
             """
         )
@@ -195,10 +195,10 @@ def load_grant(user_id: str) -> dict[str, Any] | None:
     ensure_schema()
     with connect() as conn:
         row = conn.execute(
-            "SELECT grant FROM dt_grants WHERE user_id = %s",
+            "SELECT record FROM dt_grants WHERE user_id = %s",
             (user_id,),
         ).fetchone()
-    return _dict(row["grant"]) if row else None
+    return _dict(row["record"]) if row else None
 
 
 def save_grant(user_id: str, grant: dict[str, Any]) -> None:
@@ -206,9 +206,9 @@ def save_grant(user_id: str, grant: dict[str, Any]) -> None:
     with connect() as conn:
         conn.execute(
             """
-            INSERT INTO dt_grants (user_id, grant)
+            INSERT INTO dt_grants (user_id, record)
             VALUES (%s, %s::jsonb)
-            ON CONFLICT (user_id) DO UPDATE SET grant = EXCLUDED.grant
+            ON CONFLICT (user_id) DO UPDATE SET record = EXCLUDED.record
             """,
             (user_id, _json(grant)),
         )
