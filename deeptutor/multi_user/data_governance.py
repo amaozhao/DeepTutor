@@ -143,16 +143,20 @@ def apply_data_retention_policy() -> dict[str, Any]:
     """Prune data covered by the configured retention windows."""
     paths.ensure_system_dirs()
     settings = load_data_governance_settings()
+    from .usage import usage_ledger_lock
+
+    with usage_ledger_lock():
+        usage_result = _prune_jsonl(
+            paths.SYSTEM_ROOT / "usage" / "llm_usage.jsonl",
+            settings["usage_retention_days"],
+        )
     result = {
         "settings": settings,
         "audit": _prune_jsonl(
             paths.SYSTEM_ROOT / "audit" / "usage.jsonl",
             settings["audit_retention_days"],
         ),
-        "usage": _prune_jsonl(
-            paths.SYSTEM_ROOT / "usage" / "llm_usage.jsonl",
-            settings["usage_retention_days"],
-        ),
+        "usage": usage_result,
         "deleted_users": _prune_deleted_user_archives(
             paths.SYSTEM_ROOT / "deleted_users",
             settings["deleted_user_retention_days"],
@@ -202,6 +206,7 @@ def export_user_data(user_id: str, username: str) -> Path:
     usage_file = paths.SYSTEM_ROOT / "usage" / "llm_usage.jsonl"
     audit_file = paths.SYSTEM_ROOT / "audit" / "usage.jsonl"
     from .identity import get_user
+    from .usage import usage_ledger_lock
 
     record = get_user(username) or {}
     account = {
@@ -240,11 +245,11 @@ def export_user_data(user_id: str, username: str) -> Path:
         _add_tree(archive, workspace, "workspace")
         if grant_file.exists():
             archive.write(grant_file, "system/grant.json")
-        _write_jsonl_to_zip(
-            archive,
-            "system/usage.jsonl",
-            [row for row in _read_jsonl(usage_file) if str(row.get("user_id") or "") == user_id],
-        )
+        with usage_ledger_lock():
+            usage_rows = [
+                row for row in _read_jsonl(usage_file) if str(row.get("user_id") or "") == user_id
+            ]
+        _write_jsonl_to_zip(archive, "system/usage.jsonl", usage_rows)
         _write_jsonl_to_zip(
             archive,
             "system/audit.jsonl",

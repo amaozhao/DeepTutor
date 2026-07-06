@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import datetime, timezone
 import json
 import threading
@@ -87,6 +89,29 @@ def _usage_file():
     return root / "llm_usage.jsonl"
 
 
+@contextmanager
+def usage_ledger_lock() -> Iterator[None]:
+    """Lock the usage ledger across local worker processes."""
+    target = _usage_file()
+    lock_path = target.with_suffix(".lock")
+    with _LOCK:
+        with lock_path.open("a+", encoding="utf-8") as handle:
+            fcntl_module = None
+            locked = False
+            try:
+                import fcntl as fcntl_module
+
+                fcntl_module.flock(handle.fileno(), fcntl_module.LOCK_EX)
+                locked = True
+            except (ImportError, OSError):
+                pass
+            try:
+                yield
+            finally:
+                if locked and fcntl_module is not None:
+                    fcntl_module.flock(handle.fileno(), fcntl_module.LOCK_UN)
+
+
 def record_current_user_usage(
     *,
     session_id: str,
@@ -134,7 +159,7 @@ def record_usage(
         "model": model,
         "usage": metrics,
     }
-    with _LOCK:
+    with usage_ledger_lock():
         with _usage_file().open("a", encoding="utf-8") as handle:
             handle.write(json.dumps(event, ensure_ascii=False) + "\n")
     return event
@@ -152,10 +177,10 @@ def _empty_metrics() -> dict[str, int | float]:
 
 def _read_events() -> list[dict[str, Any]]:
     target = _usage_file()
-    if not target.exists():
-        return []
     events: list[dict[str, Any]] = []
-    with _LOCK:
+    with usage_ledger_lock():
+        if not target.exists():
+            return []
         lines = target.read_text(encoding="utf-8").splitlines()
     for line in lines:
         try:

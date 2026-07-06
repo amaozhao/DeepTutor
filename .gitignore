@@ -14,6 +14,7 @@ deeptutor/services/rag/eg_only_for_analysis/
 /docs/*
 !/docs/SAAS_READINESS_REVIEW.md
 !/docs/SAAS_TASK_PLAN.md
+!/docs/SAAS_DEPLOYMENT_RUNBOOK.md
 /site/
 .claude
 .agents/
