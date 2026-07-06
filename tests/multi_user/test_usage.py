@@ -81,6 +81,7 @@ def test_usage_ledger_aggregates_current_day_and_month(mu_isolated_root):
 
     summary = usage_summary("u_alice", now=datetime.now(timezone.utc))
 
+    assert (mu_isolated_root / "data" / "system" / "usage" / "llm_usage.lock").exists()
     assert summary["today"]["total_tokens"] == 18
     assert summary["month"]["total_calls"] == 2
     assert summary["all"]["total_cost_usd"] == 0.012345
