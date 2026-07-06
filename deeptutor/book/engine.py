@@ -247,7 +247,7 @@ class BookEngine:
             # first health-check run treats every selected KB as "newly added"
             # and surfaces a spurious drift warning.
             try:
-                from .kb_health import fingerprint_kbs
+                from .health import fingerprint_kbs
 
                 if book.knowledge_bases:
                     book.kb_fingerprints = fingerprint_kbs(book.knowledge_bases)
@@ -757,7 +757,7 @@ class BookEngine:
         # soon as the very first page is compiled.
         if page.status == PageStatus.READY:
             try:
-                from .kb_health import refresh_book_fingerprints
+                from .health import refresh_book_fingerprints
 
                 refreshed = self.storage.load_book(book_id)
                 if refreshed is not None and not refreshed.kb_fingerprints:
@@ -982,7 +982,7 @@ class BookEngine:
 
     def kb_drift_report(self, book_id: str) -> dict[str, Any]:
         """Compute and persist the current KB drift report for *book_id*."""
-        from .kb_health import mark_drift_on_book
+        from .health import mark_drift_on_book
 
         report = mark_drift_on_book(book_id, storage=self.storage)
         if report is None:
@@ -990,7 +990,7 @@ class BookEngine:
         return report.to_dict()
 
     def refresh_kb_fingerprints(self, book_id: str) -> dict[str, Any] | None:
-        from .kb_health import refresh_book_fingerprints
+        from .health import refresh_book_fingerprints
 
         book = refresh_book_fingerprints(book_id, storage=self.storage)
         if book is None:
@@ -1002,7 +1002,7 @@ class BookEngine:
         }
 
     def log_health(self, book_id: str) -> dict[str, Any]:
-        from .kb_health import scan_log_health
+        from .health import scan_log_health
 
         return scan_log_health(book_id, storage=self.storage).to_dict()
 
