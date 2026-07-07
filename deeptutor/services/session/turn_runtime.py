@@ -22,10 +22,10 @@ from deeptutor.services.session.events import (
     event_usage_summary as _event_usage_summary,
 )
 from deeptutor.services.session.events import (
-    merge_usage_summary as _merge_usage_summary,
+    flush_buffered_events as _flush_buffered_events,
 )
 from deeptutor.services.session.events import (
-    mirror_events_to_workspace as _mirror_events_to_workspace,
+    merge_usage_summary as _merge_usage_summary,
 )
 from deeptutor.services.session.events import (
     narration_marker_call_id as _narration_marker_call_id,
@@ -1507,61 +1507,12 @@ class TurnRuntimeManager:
             execution.events_flushed = True
             events = list(execution.events)
 
-        # Prefer the store's batch append (single transaction) when available:
-        # per-event commits fsync once per event, which on slow storage (NAS
-        # spinning disks) stretches this flush — and the visible spinner — to
-        # minutes for a long turn.
-        append_batch = getattr(self.store, "append_turn_events", None)
-        if callable(append_batch):
-            try:
-                persisted_batch = await append_batch(execution.turn_id, events)
-            except ValueError as exc:
-                # A turn can disappear when the session is deleted while the
-                # turn task is draining post-stream persistence.
-                if "Turn not found:" not in str(exc):
-                    raise
-                logger.warning(
-                    "Skip persisting %d buffered event(s) for missing turn %s",
-                    len(events),
-                    execution.turn_id,
-                )
-                return
-            await _mirror_events_to_workspace(
-                capability=execution.capability,
-                turn_id=execution.turn_id,
-                payloads=persisted_batch,
-            )
-            return
-
-        persisted_events: list[dict[str, Any]] = []
-        try:
-            for index, payload in enumerate(events):
-                try:
-                    persisted = await self.store.append_turn_event(execution.turn_id, payload)
-                except ValueError as exc:
-                    # A turn can disappear when the session is deleted while the turn
-                    # task is draining post-stream persistence. Avoid cascading
-                    # failures. The turn will not come back, so drop the whole
-                    # remaining batch with one summary line instead of logging once
-                    # per buffered event.
-                    if "Turn not found:" not in str(exc):
-                        raise
-                    logger.warning(
-                        "Skip persisting %d buffered event(s) for missing turn %s (first: %s)",
-                        len(events) - index,
-                        execution.turn_id,
-                        payload.get("type", ""),
-                    )
-                    break
-                persisted_events.append(persisted)
-        finally:
-            # Mirror whatever actually persisted, even when the loop broke or
-            # raised part-way — matches the previous per-event behaviour.
-            await _mirror_events_to_workspace(
-                capability=execution.capability,
-                turn_id=execution.turn_id,
-                payloads=persisted_events,
-            )
+        await _flush_buffered_events(
+            store=self.store,
+            turn_id=execution.turn_id,
+            capability=execution.capability,
+            events=events,
+        )
 
 
 import threading

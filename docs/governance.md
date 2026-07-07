@@ -60,7 +60,7 @@
 
 ### 2. TurnRuntime 过大，长任务生命周期和异常边界耦合
 
-证据：`deeptutor/services/session/turn_runtime.py` 原约 2090 行，当前已把附件准备、stream event 解析、terminal event 合成、workspace event mirror、payload/title 归一化、follow-up 上下文处理拆到 `deeptutor/services/session/attachments.py`、`events.py`、`payloads.py`、`followup.py`，并把对应测试拆到 `tests/services/session/test_attachments.py`、`test_events.py`、`test_payloads.py`、`test_followup.py`。主 runtime 仍约 1532 行，并包含多处 `asyncio.create_task` 和宽泛 `except Exception`。
+证据：`deeptutor/services/session/turn_runtime.py` 原约 2090 行，当前已把附件准备、stream event 解析、terminal event 合成、buffered event 落库、workspace event mirror、payload/title 归一化、follow-up 上下文处理拆到 `deeptutor/services/session/attachments.py`、`events.py`、`payloads.py`、`followup.py`，并把对应测试拆到 `tests/services/session/test_attachments.py`、`test_events.py`、`test_payloads.py`、`test_followup.py`。主 runtime 仍约 1519 行，并包含多处 `asyncio.create_task` 和宽泛 `except Exception`。
 
 问题：会话 turn 执行、状态推送、取消、上下文构建、错误兜底、持久化更新集中在一个模块，导致失败路径难以验证。长任务一旦泄漏或吞错，用户侧表现会是“卡住”“结果丢失”“状态不一致”。
 

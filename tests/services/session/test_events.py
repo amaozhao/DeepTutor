@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import pytest
+
 from deeptutor.core.stream import StreamEvent, StreamEventType
 from deeptutor.services.session import events as events_module
 from deeptutor.services.session.events import (
     artifact_attachments,
     event_usage_summary,
+    flush_buffered_events,
     mirror_event_to_workspace,
     narration_marker_call_id,
     should_capture_assistant_content,
@@ -215,4 +218,67 @@ def test_mirror_event_to_workspace_writes_jsonl(monkeypatch, tmp_path) -> None:
 
     assert (tmp_path / "chat" / "t1" / "events.jsonl").read_text() == (
         '{"type": "done", "content": "你好"}\n'
+    )
+
+
+class FakeEventStore:
+    def __init__(self, *, fail: ValueError | None = None) -> None:
+        self.fail = fail
+        self.appended: list[tuple[str, dict]] = []
+
+    async def append_turn_event(self, turn_id: str, payload: dict) -> dict:
+        if self.fail is not None:
+            raise self.fail
+        self.appended.append((turn_id, payload))
+        return {**payload, "seq": 1}
+
+
+@pytest.mark.asyncio
+async def test_flush_buffered_events_appends_and_mirrors(monkeypatch) -> None:
+    mirrored: list[dict] = []
+
+    async def _mirror(**kwargs) -> None:
+        mirrored.append(kwargs)
+
+    monkeypatch.setattr(
+        events_module,
+        "mirror_events_to_workspace",
+        _mirror,
+    )
+    store = FakeEventStore()
+
+    await flush_buffered_events(
+        store=store,
+        turn_id="t1",
+        capability="chat",
+        events=[{"type": "done"}],
+    )
+
+    assert store.appended == [("t1", {"type": "done"})]
+    assert mirrored == [
+        {
+            "capability": "chat",
+            "turn_id": "t1",
+            "payloads": [{"type": "done", "seq": 1}],
+        }
+    ]
+
+
+@pytest.mark.asyncio
+async def test_flush_buffered_events_skips_missing_turn(monkeypatch) -> None:
+    async def _fail_if_called(**_kwargs) -> None:
+        raise AssertionError("should not mirror")
+
+    monkeypatch.setattr(
+        events_module,
+        "mirror_events_to_workspace",
+        _fail_if_called,
+    )
+    store = FakeEventStore(fail=ValueError("Turn not found: t1"))
+
+    await flush_buffered_events(
+        store=store,
+        turn_id="t1",
+        capability="chat",
+        events=[{"type": "done"}],
     )
