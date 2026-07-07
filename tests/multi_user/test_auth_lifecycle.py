@@ -1,11 +1,24 @@
 from __future__ import annotations
 
 import csv
+import hashlib
 from io import StringIO
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 import pytest
+
+
+def _proof_for_registration(auth_router, email: str) -> str:
+    token = auth_router._new_registration_challenge(email)
+    nonce = next(
+        str(i)
+        for i in range(100_000)
+        if hashlib.sha256(f"{token}:{i}".encode("utf-8")).hexdigest().startswith(
+            "0" * auth_router._REGISTER_CHALLENGE_DIFFICULTY
+        )
+    )
+    return f"{token}:{nonce}"
 
 
 def test_disabled_user_cannot_authenticate(mu_isolated_root, seed_user, monkeypatch):
@@ -148,6 +161,7 @@ def registration_client(mu_isolated_root, monkeypatch):
 
 
 def test_public_registration_creates_regular_email_user(registration_client):
+    import deeptutor.api.routers.auth as auth_router
     from deeptutor.multi_user.identity import get_user
 
     response = registration_client.post(
@@ -156,6 +170,7 @@ def test_public_registration_creates_regular_email_user(registration_client):
             "username": "learner@example.com",
             "password": "password1234",
             "terms_accepted": True,
+            "captcha_token": _proof_for_registration(auth_router, "learner@example.com"),
         },
     )
 
@@ -171,6 +186,80 @@ def test_public_registration_creates_regular_email_user(registration_client):
     assert record["terms_accepted_at"]
     assert record["terms_version"] == "terms-2026-06"
     assert record["privacy_version"] == "privacy-2026-06"
+
+
+def test_first_admin_registration_requires_challenge(mu_isolated_root, monkeypatch):
+    import deeptutor.api.routers.auth as auth_router
+
+    monkeypatch.setattr(auth_router, "AUTH_ENABLED", True)
+    monkeypatch.setattr(auth_router, "POCKETBASE_ENABLED", False)
+
+    app = FastAPI()
+    app.include_router(auth_router.router, prefix="/api/v1/auth")
+    client = TestClient(app)
+
+    missing = client.post(
+        "/api/v1/auth/register",
+        json={"username": "admin@example.com", "password": "password1234"},
+    )
+    assert missing.status_code == 400
+
+    response = client.post(
+        "/api/v1/auth/register",
+        json={
+            "username": "admin@example.com",
+            "password": "password1234",
+            "captcha_token": _proof_for_registration(auth_router, "admin@example.com"),
+        },
+    )
+    assert response.status_code == 201
+    assert response.json()["is_admin"] is True
+
+
+def test_public_registration_requires_challenge(registration_client):
+    response = registration_client.post(
+        "/api/v1/auth/register",
+        json={
+            "username": "blocked@example.com",
+            "password": "password1234",
+            "terms_accepted": True,
+        },
+    )
+
+    assert response.status_code == 400
+    assert "challenge" in response.json()["detail"].lower()
+
+
+def test_registration_challenge_uses_email_and_accepts_valid_proof(registration_client):
+    from deeptutor.multi_user.identity import get_user
+
+    challenge = registration_client.get(
+        "/api/v1/auth/register/challenge",
+        params={"email": "proof@example.com"},
+    )
+    assert challenge.status_code == 200
+    token = challenge.json()["token"]
+    difficulty = int(challenge.json()["difficulty"])
+    nonce = next(
+        str(i)
+        for i in range(100_000)
+        if hashlib.sha256(f"{token}:{i}".encode("utf-8")).hexdigest().startswith(
+            "0" * difficulty
+        )
+    )
+
+    response = registration_client.post(
+        "/api/v1/auth/register",
+        json={
+            "username": "proof@example.com",
+            "password": "password1234",
+            "terms_accepted": True,
+            "captcha_token": f"{token}:{nonce}",
+        },
+    )
+
+    assert response.status_code == 201
+    assert get_user("proof@example.com") is not None
 
 
 def test_public_registration_review_creates_disabled_user(registration_client, monkeypatch):
@@ -196,6 +285,7 @@ def test_public_registration_review_creates_disabled_user(registration_client, m
             "username": "review@example.com",
             "password": "password1234",
             "terms_accepted": True,
+            "captcha_token": _proof_for_registration(auth_router, "review@example.com"),
         },
     )
 
@@ -241,7 +331,11 @@ def test_public_registration_does_not_invent_terms_acceptance(registration_clien
 
     response = registration_client.post(
         "/api/v1/auth/register",
-        json={"username": "no-terms@example.com", "password": "password1234"},
+        json={
+            "username": "no-terms@example.com",
+            "password": "password1234",
+            "captcha_token": _proof_for_registration(auth_router, "no-terms@example.com"),
+        },
     )
 
     assert response.status_code == 201
@@ -273,6 +367,7 @@ def test_public_registration_respects_max_users(registration_client, monkeypatch
             "username": "full@example.com",
             "password": "password1234",
             "terms_accepted": True,
+            "captcha_token": _proof_for_registration(auth_router, "full@example.com"),
         },
     )
 

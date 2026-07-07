@@ -1,10 +1,16 @@
 """Auth router — login, logout, status, registration, profile, and user-management endpoints."""
 
+import base64
 from contextvars import Token as _CtxToken
 import csv
+import hashlib
+import hmac
 import io
+import json
 import logging
 import re
+import secrets
+import time
 from typing import Literal
 
 from fastapi import (
@@ -74,6 +80,8 @@ router = APIRouter()
 _COOKIE_NAME = "dt_token"
 _COOKIE_MAX_AGE = TOKEN_EXPIRE_HOURS * 3600
 _CSV_IMPORT_MAX_BYTES = 1_000_000
+_REGISTER_CHALLENGE_TTL_SECONDS = 10 * 60
+_REGISTER_CHALLENGE_DIFFICULTY = 3
 
 
 def _cookie_attrs() -> dict:
@@ -154,6 +162,12 @@ class InviteInfo(BaseModel):
     created_at: str = ""
     used_by: str = ""
     used_at: str = ""
+
+
+class RegisterChallenge(BaseModel):
+    token: str
+    difficulty: int
+    expires_in: int
 
 
 class SetRoleRequest(BaseModel):
@@ -295,6 +309,100 @@ def _rate_key(prefix: str, request: Request, identity: str) -> str:
 
 def _is_email(value: str) -> bool:
     return bool(re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", value.strip()))
+
+
+def _captcha_secret() -> str:
+    from deeptutor.multi_user.identity import load_or_create_auth_secret
+
+    return load_or_create_auth_secret()
+
+
+def _challenge_signature(payload: str) -> str:
+    return hmac.new(
+        _captcha_secret().encode("utf-8"),
+        payload.encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
+
+
+def _encode_challenge(payload: dict[str, object]) -> str:
+    body = base64.urlsafe_b64encode(
+        json.dumps(payload, separators=(",", ":")).encode("utf-8")
+    ).decode("ascii").rstrip("=")
+    return f"{body}.{_challenge_signature(body)}"
+
+
+def _decode_challenge(token: str) -> dict[str, object] | None:
+    try:
+        body, signature = token.split(".", 1)
+    except ValueError:
+        return None
+    if not hmac.compare_digest(signature, _challenge_signature(body)):
+        return None
+    try:
+        padded = body + ("=" * (-len(body) % 4))
+        loaded = json.loads(base64.urlsafe_b64decode(padded).decode("utf-8"))
+    except Exception:
+        return None
+    return loaded if isinstance(loaded, dict) else None
+
+
+def _new_registration_challenge(email: str) -> str:
+    expires_at = int(time.time()) + _REGISTER_CHALLENGE_TTL_SECONDS
+    return _encode_challenge(
+        {
+            "email": email.strip().lower(),
+            "nonce": secrets.token_urlsafe(16),
+            "exp": expires_at,
+            "difficulty": _REGISTER_CHALLENGE_DIFFICULTY,
+        }
+    )
+
+
+def _require_registration_challenge(email: str, captcha_token: str | None) -> None:
+    """Validate a tiny proof-of-work challenge for public registrations.
+
+    ponytail: avoids adding a CAPTCHA provider; replace when real bot pressure
+    justifies third-party risk scoring.
+    """
+    raw = (captcha_token or "").strip()
+    try:
+        token, nonce = raw.rsplit(":", 1)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Registration challenge is required.",
+        ) from exc
+    challenge = _decode_challenge(token)
+    if not challenge:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Registration challenge is invalid.",
+        )
+    if str(challenge.get("email") or "") != email.strip().lower():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Registration challenge is for a different email.",
+        )
+    try:
+        expires_at = int(challenge.get("exp") or 0)
+        difficulty = max(1, int(challenge.get("difficulty") or _REGISTER_CHALLENGE_DIFFICULTY))
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Registration challenge is invalid.",
+        ) from exc
+    if expires_at < int(time.time()):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Registration challenge expired.",
+        )
+    digest = hashlib.sha256(f"{token}:{nonce}".encode("utf-8")).hexdigest()
+    if not digest.startswith("0" * difficulty):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Registration challenge proof is invalid.",
+        )
 
 
 def _csv_bool(value: str) -> bool:
@@ -663,6 +771,27 @@ async def logout(response: Response) -> dict:
     return {"ok": True}
 
 
+@router.get("/register/challenge", response_model=RegisterChallenge)
+async def registration_challenge(email: str, request: Request) -> RegisterChallenge:
+    """Issue a lightweight registration challenge for public signups."""
+    normalized = email.strip().lower()
+    if not _is_email(normalized):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Enter a valid email address",
+        )
+    require_rate_limit(
+        _rate_key("register-challenge", request, normalized),
+        limit=20,
+        window_seconds=300,
+    )
+    return RegisterChallenge(
+        token=_new_registration_challenge(normalized),
+        difficulty=_REGISTER_CHALLENGE_DIFFICULTY,
+        expires_in=_REGISTER_CHALLENGE_TTL_SECONDS,
+    )
+
+
 @router.post("/register", status_code=status.HTTP_201_CREATED)
 async def register(body: RegisterRequest, request: Request) -> dict:
     """
@@ -690,6 +819,7 @@ async def register(body: RegisterRequest, request: Request) -> dict:
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Self-registration is closed. Ask an administrator to create your account.",
             )
+        _require_registration_challenge(body.username, body.captcha_token)
         _enforce_user_seats()
         result = register_pb(username=body.username, email=body.username, password=body.password)
         if not result:
@@ -734,6 +864,8 @@ async def register(body: RegisterRequest, request: Request) -> dict:
                 status_code=status.HTTP_409_CONFLICT,
                 detail="Username already taken",
             )
+        if public_registration and not invite_code:
+            _require_registration_challenge(body.username, body.captcha_token)
         _enforce_user_seats()
         if invite_code and not consume_invite(invite_code, email=body.username):
             raise HTTPException(
@@ -744,11 +876,18 @@ async def register(body: RegisterRequest, request: Request) -> dict:
             public_registration and not invite_code and _registration_review_required()
         )
         try:
-            add_user(body.username, body.password, role="user")
+            created = add_user(body.username, body.password, role="user")
         except Exception:
             if invite_code:
                 unconsume_invite(invite_code, email=body.username)
             raise
+        if created is None:
+            if invite_code:
+                unconsume_invite(invite_code, email=body.username)
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Username already taken",
+            )
         if review_required:
             set_disabled(body.username, True, reason="pending registration review")
         if body.terms_accepted:
@@ -775,7 +914,13 @@ async def register(body: RegisterRequest, request: Request) -> dict:
         )
 
     _enforce_user_seats()
-    add_user(body.username, body.password)
+    _require_registration_challenge(body.username, body.captcha_token)
+    created = add_user(body.username, body.password)
+    if created is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Username already taken",
+        )
     user_id = ""
     role = "user"
     for item in list_users():
@@ -1196,7 +1341,12 @@ async def import_users_csv(
     usernames: list[str] = []
     for row in rows:
         email = str(row["email"])
-        add_user(email, str(row["password"]), role="user")
+        created = add_user(email, str(row["password"]), role="user")
+        if created is None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Email already exists: {email}",
+            )
         if row["disabled"]:
             set_disabled(email, True, reason=str(row["disabled_reason"]))
         usernames.append(email)
@@ -1296,7 +1446,12 @@ async def admin_create_user(
         )
 
     _enforce_user_seats()
-    add_user(body.username, body.password)
+    created = add_user(body.username, body.password)
+    if created is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Username already taken",
+        )
     user_id = ""
     role = "user"
     for item in list_users():

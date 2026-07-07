@@ -352,6 +352,58 @@ def save_user(username: str, hashed_password: str, role: Role = "user") -> dict[
     return record
 
 
+def create_user(username: str, hashed_password: str, role: Role = "user") -> dict[str, Any] | None:
+    """Create a user only when the username is still free."""
+    if _postgres_enabled():
+        from .shared_state import update_users
+
+        def mutate(users: dict[str, dict[str, Any]]) -> dict[str, Any] | None:
+            if username in users:
+                return None
+            effective_role: Role = "admin" if not users else role
+            record = {
+                "id": new_user_id(),
+                "hash": hashed_password,
+                "role": effective_role,
+                "created_at": utc_now(),
+                "disabled": False,
+                "disabled_reason": "",
+                "avatar": "",
+                "token_version": 1,
+                "terms_accepted": False,
+                "terms_accepted_at": "",
+                "terms_version": "",
+                "privacy_version": "",
+            }
+            users[username] = record
+            return record
+
+        return update_users(mutate)
+    USERS_FILE.parent.mkdir(parents=True, exist_ok=True)
+    with auth_store_write_lock():
+        users = _load_users_unlocked()
+        if username in users:
+            return None
+        effective_role: Role = "admin" if not users else role
+        record = {
+            "id": new_user_id(),
+            "hash": hashed_password,
+            "role": effective_role,
+            "created_at": utc_now(),
+            "disabled": False,
+            "disabled_reason": "",
+            "avatar": "",
+            "token_version": 1,
+            "terms_accepted": False,
+            "terms_accepted_at": "",
+            "terms_version": "",
+            "privacy_version": "",
+        }
+        users[username] = record
+        _write_users(users)
+        return record
+
+
 def record_terms_acceptance(
     username: str,
     *,

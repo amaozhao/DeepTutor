@@ -138,9 +138,9 @@ def is_first_user() -> bool:
     return len(_load_users()) == 0
 
 
-def add_user(username: str, plain_password: str, role: str = "user") -> None:
+def add_user(username: str, plain_password: str, role: str = "user") -> dict[str, Any] | None:
     """
-    Add or update a user in data/user/auth_users.json.
+    Add a user if the username is still free.
 
     The role defaults to 'user'. Pass role='admin' to elevate. When the store
     is empty the first user is automatically promoted to 'admin' regardless of
@@ -148,10 +148,13 @@ def add_user(username: str, plain_password: str, role: str = "user") -> None:
 
     Creates the file (and parent directories) if they don't exist.
     """
-    from deeptutor.multi_user.identity import save_user
+    from deeptutor.multi_user.identity import create_user
 
-    record = save_user(username, hash_password(plain_password), role=role)  # type: ignore[arg-type]
+    record = create_user(username, hash_password(plain_password), role=role)  # type: ignore[arg-type]
+    if record is None:
+        return None
     logger.info("User '%s' saved with role=%r", username, record.get("role", "user"))
+    return record
 
 
 def update_password(username: str, plain_password: str) -> bool:

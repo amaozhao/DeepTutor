@@ -92,6 +92,7 @@ export async function register(
   error?: string;
 }> {
   try {
+    const captchaToken = inviteCode ? "" : await registrationChallenge(username);
     const res = await apiFetch(apiUrl("/api/v1/auth/register"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -100,6 +101,7 @@ export async function register(
         password,
         terms_accepted: termsAccepted,
         invite_code: inviteCode || undefined,
+        captcha_token: captchaToken || undefined,
       }),
       // Registration validation failures (e.g. 400/401) should surface inline
       // rather than bounce the user through the global login redirect.
@@ -113,6 +115,33 @@ export async function register(
   } catch {
     return { ok: false, error: "Could not reach the server" };
   }
+}
+
+async function registrationChallenge(username: string): Promise<string> {
+  if (typeof crypto === "undefined" || !crypto.subtle) return "";
+  const res = await apiFetch(
+    apiUrl(`/api/v1/auth/register/challenge?email=${encodeURIComponent(username)}`),
+    { skipAuthRedirect: true },
+  );
+  if (!res.ok) return "";
+  const data = await res.json().catch(() => ({}));
+  const token = String(data.token || "");
+  const difficulty = Math.max(1, Number(data.difficulty || 3));
+  const prefix = "0".repeat(difficulty);
+  for (let i = 0; i < 1_000_000; i += 1) {
+    const nonce = i.toString(36);
+    const digest = await sha256Hex(`${token}:${nonce}`);
+    if (digest.startsWith(prefix)) return `${token}:${nonce}`;
+  }
+  return "";
+}
+
+async function sha256Hex(value: string): Promise<string> {
+  const bytes = new TextEncoder().encode(value);
+  const hash = await crypto.subtle.digest("SHA-256", bytes);
+  return Array.from(new Uint8Array(hash), (byte) =>
+    byte.toString(16).padStart(2, "0"),
+  ).join("");
 }
 
 /**
