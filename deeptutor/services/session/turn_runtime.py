@@ -9,13 +9,11 @@ from collections.abc import AsyncIterator, Callable
 import contextlib
 from contextvars import Token
 from dataclasses import dataclass, field
-import json
 import logging
 from typing import TYPE_CHECKING, Any
 
 from deeptutor.core.stream import StreamEvent, StreamEventType
 from deeptutor.services.llm.utils import clean_thinking_tags
-from deeptutor.services.path_service import get_path_service
 from deeptutor.services.session.attachments import prepare_attachments
 from deeptutor.services.session.events import (
     artifact_attachments as _artifact_attachments,
@@ -27,10 +25,19 @@ from deeptutor.services.session.events import (
     merge_usage_summary as _merge_usage_summary,
 )
 from deeptutor.services.session.events import (
+    mirror_events_to_workspace as _mirror_events_to_workspace,
+)
+from deeptutor.services.session.events import (
     narration_marker_call_id as _narration_marker_call_id,
 )
 from deeptutor.services.session.events import (
     should_capture_assistant_content as _should_capture_assistant_content,
+)
+from deeptutor.services.session.events import (
+    synthesize_done_event as _synthesize_done_event,
+)
+from deeptutor.services.session.events import (
+    synthesize_error_event as _synthesize_error_event,
 )
 from deeptutor.services.session.followup import (
     extract_followup_question_context as _extract_followup_question_context,
@@ -647,10 +654,10 @@ class TurnRuntimeManager:
                 # still close out its streaming state cleanly.
                 if not done_yielded:
                     if turn is not None and str(turn.get("status") or "") == "failed":
-                        error_event = self._synthesize_error_event(turn_id, turn)
+                        error_event = _synthesize_error_event(turn_id, turn)
                         if error_event is not None:
                             yield error_event
-                    yield self._synthesize_done_event(turn_id, turn)
+                    yield _synthesize_done_event(turn_id, turn)
                 return
         try:
             while True:
@@ -682,57 +689,7 @@ class TurnRuntimeManager:
                 final_turn = await self.store.get_turn(turn_id)
                 final_status = str((final_turn or {}).get("status") or "").strip()
                 if final_turn is None or final_status in {"failed", "cancelled", "completed"}:
-                    yield self._synthesize_done_event(turn_id, final_turn)
-
-    @staticmethod
-    def _synthesize_done_event(turn_id: str, turn: dict[str, Any] | None) -> dict[str, Any]:
-        """Build a DONE event payload from the persisted turn status.
-
-        Used as a recovery path when ``subscribe_turn`` finishes without
-        ever observing a live or persisted DONE event for a turn that has
-        nonetheless terminated server-side. Mirrors the shape of the
-        events the runtime would normally publish so the frontend doesn't
-        need a special code path to consume it.
-        """
-        status = "completed"
-        error: str | None = None
-        if turn is not None:
-            raw_status = str(turn.get("status") or "").strip()
-            if raw_status in {"failed", "cancelled", "completed"}:
-                status = raw_status
-            error_text = str(turn.get("error") or "").strip()
-            if error_text:
-                error = error_text
-        metadata: dict[str, Any] = {"status": status, "synthesized": True}
-        if error:
-            metadata["error"] = error
-        return {
-            "type": "done",
-            "source": "turn_runtime",
-            "stage": "",
-            "content": "",
-            "metadata": metadata,
-            "session_id": "",
-            "turn_id": turn_id,
-            "seq": 0,
-        }
-
-    @staticmethod
-    def _synthesize_error_event(turn_id: str, turn: dict[str, Any] | None) -> dict[str, Any] | None:
-        """Build a terminal ERROR event from a failed persisted turn."""
-        error = str((turn or {}).get("error") or "").strip()
-        if not error:
-            return None
-        return {
-            "type": "error",
-            "source": "turn_runtime",
-            "stage": "",
-            "content": error,
-            "metadata": {"status": "failed", "synthesized": True},
-            "session_id": str((turn or {}).get("session_id") or ""),
-            "turn_id": turn_id,
-            "seq": 0,
-        }
+                    yield _synthesize_done_event(turn_id, final_turn)
 
     async def subscribe_session(
         self,
@@ -1569,7 +1526,11 @@ class TurnRuntimeManager:
                     execution.turn_id,
                 )
                 return
-            await self._mirror_events_to_workspace(execution, persisted_batch)
+            await _mirror_events_to_workspace(
+                capability=execution.capability,
+                turn_id=execution.turn_id,
+                payloads=persisted_batch,
+            )
             return
 
         persisted_events: list[dict[str, Any]] = []
@@ -1596,39 +1557,11 @@ class TurnRuntimeManager:
         finally:
             # Mirror whatever actually persisted, even when the loop broke or
             # raised part-way — matches the previous per-event behaviour.
-            await self._mirror_events_to_workspace(execution, persisted_events)
-
-    async def _mirror_events_to_workspace(
-        self, execution: _TurnExecution, payloads: list[dict[str, Any]]
-    ) -> None:
-        """Mirror turn events to the task-local ``events.jsonl`` under ``data/user/workspace``.
-
-        One open/write for the whole batch, off the event loop: the previous
-        per-event ``open()+append`` ran synchronously on the loop thread and
-        stretched turn finalisation (and every other connection) on slow
-        storage. ``to_thread`` copies contextvars, so the per-user path scope
-        resolves the same as on the loop.
-        """
-        if not payloads:
-            return
-        await asyncio.to_thread(self._mirror_events_to_workspace_sync, execution, payloads)
-
-    @staticmethod
-    def _mirror_events_to_workspace_sync(
-        execution: _TurnExecution, payloads: list[dict[str, Any]]
-    ) -> None:
-        try:
-            path_service = get_path_service()
-            task_dir = path_service.get_task_workspace(execution.capability, execution.turn_id)
-            task_dir.mkdir(parents=True, exist_ok=True)
-            event_file = task_dir / "events.jsonl"
-            lines = "".join(
-                json.dumps(payload, ensure_ascii=False, default=str) + "\n" for payload in payloads
+            await _mirror_events_to_workspace(
+                capability=execution.capability,
+                turn_id=execution.turn_id,
+                payloads=persisted_events,
             )
-            with open(event_file, "a", encoding="utf-8") as f:
-                f.write(lines)
-        except Exception:
-            logger.debug("Failed to mirror turn events to workspace", exc_info=True)
 
 
 import threading

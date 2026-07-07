@@ -135,7 +135,7 @@ def stub_workspace(monkeypatch, tmp_path):
             return tmp_path / "workspace" / feature / task_id
 
     monkeypatch.setattr(
-        "deeptutor.services.session.turn_runtime.get_path_service",
+        "deeptutor.services.session.events.get_path_service",
         lambda: _StubPathService(),
     )
     return tmp_path / "workspace"

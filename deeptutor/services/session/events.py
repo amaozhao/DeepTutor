@@ -2,9 +2,15 @@
 
 from __future__ import annotations
 
+import asyncio
+import json
+import logging
 from typing import Any
 
 from deeptutor.core.stream import StreamEvent, StreamEventType
+from deeptutor.services.path_service import get_path_service
+
+logger = logging.getLogger(__name__)
 
 # Content call_kinds that make up the persisted answer. The chat agent loop
 # streams every round's text as ``content`` with ``agent_loop_round``; the
@@ -95,3 +101,83 @@ def merge_usage_summary(
         value = left + right
         merged[key] = round(value, 8) if key.endswith("_usd") else int(value)
     return merged
+
+
+def synthesize_done_event(turn_id: str, turn: dict[str, Any] | None) -> dict[str, Any]:
+    status = "completed"
+    error: str | None = None
+    if turn is not None:
+        raw_status = str(turn.get("status") or "").strip()
+        if raw_status in {"failed", "cancelled", "completed"}:
+            status = raw_status
+        error_text = str(turn.get("error") or "").strip()
+        if error_text:
+            error = error_text
+    metadata: dict[str, Any] = {"status": status, "synthesized": True}
+    if error:
+        metadata["error"] = error
+    return {
+        "type": "done",
+        "source": "turn_runtime",
+        "stage": "",
+        "content": "",
+        "metadata": metadata,
+        "session_id": "",
+        "turn_id": turn_id,
+        "seq": 0,
+    }
+
+
+def synthesize_error_event(turn_id: str, turn: dict[str, Any] | None) -> dict[str, Any] | None:
+    error = str((turn or {}).get("error") or "").strip()
+    if not error:
+        return None
+    return {
+        "type": "error",
+        "source": "turn_runtime",
+        "stage": "",
+        "content": error,
+        "metadata": {"status": "failed", "synthesized": True},
+        "session_id": str((turn or {}).get("session_id") or ""),
+        "turn_id": turn_id,
+        "seq": 0,
+    }
+
+
+async def mirror_events_to_workspace(
+    *, capability: str, turn_id: str, payloads: list[dict[str, Any]]
+) -> None:
+    """Append a batch of turn events to the workspace mirror off the event loop."""
+    if payloads:
+        await asyncio.to_thread(
+            _mirror_events_to_workspace_sync,
+            capability=capability,
+            turn_id=turn_id,
+            payloads=payloads,
+        )
+
+
+def mirror_event_to_workspace(*, capability: str, turn_id: str, payload: dict[str, Any]) -> None:
+    _mirror_events_to_workspace_sync(
+        capability=capability,
+        turn_id=turn_id,
+        payloads=[payload],
+    )
+
+
+def _mirror_events_to_workspace_sync(
+    *, capability: str, turn_id: str, payloads: list[dict[str, Any]]
+) -> None:
+    try:
+        task_dir = get_path_service().get_task_workspace(capability, turn_id)
+        task_dir.mkdir(parents=True, exist_ok=True)
+        event_file = task_dir / "events.jsonl"
+        with open(event_file, "a", encoding="utf-8") as file:
+            file.write(
+                "".join(
+                    json.dumps(payload, ensure_ascii=False, default=str) + "\n"
+                    for payload in payloads
+                )
+            )
+    except Exception:
+        logger.debug("Failed to mirror turn events to workspace", exc_info=True)
