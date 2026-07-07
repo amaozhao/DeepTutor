@@ -12,21 +12,8 @@ import {
 import { useParams, useRouter } from "next/navigation";
 
 import {
-  BarChart3,
-  BrainCircuit,
-  Clapperboard,
-  Code2,
-  Compass,
   Database,
-  FileSearch,
-  Globe,
-  GraduationCap,
-  Image as ImageIcon,
-  Lightbulb,
-  MessageSquare,
-  Microscope,
   PenLine,
-  Sparkles,
   type LucideIcon,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
@@ -105,6 +92,12 @@ import {
   selectedBooksToPayload,
   type SelectedBookReference,
 } from "@/lib/book-references";
+import {
+  ALL_TOOLS,
+  CAPABILITIES,
+  getCapability,
+  type ToolName,
+} from "@/lib/capabilities";
 
 const NotebookRecordPicker = dynamic(
   () => import("@/components/notebook/NotebookRecordPicker"),
@@ -169,113 +162,6 @@ const ResearchConfigPanel = dynamic(
 /*  Type & data definitions                                           */
 /* ------------------------------------------------------------------ */
 
-type ToolName =
-  | "brainstorm"
-  | "geogebra_analysis"
-  | "web_search"
-  | "code_execution"
-  | "reason"
-  | "paper_search"
-  | "imagegen"
-  | "videogen";
-
-interface ToolDef {
-  name: ToolName;
-  label: string;
-  icon: LucideIcon;
-}
-
-const ALL_TOOLS: ToolDef[] = [
-  { name: "brainstorm", label: "Brainstorm", icon: Lightbulb },
-  { name: "geogebra_analysis", label: "GeoGebra", icon: Compass },
-  { name: "web_search", label: "Web Search", icon: Globe },
-  { name: "code_execution", label: "Code", icon: Code2 },
-  { name: "reason", label: "Reason", icon: Sparkles },
-  { name: "paper_search", label: "Arxiv Search", icon: FileSearch },
-  { name: "imagegen", label: "Image Gen", icon: ImageIcon },
-  { name: "videogen", label: "Video Gen", icon: Clapperboard },
-];
-
-interface CapabilityDef {
-  value: string;
-  label: string;
-  description: string;
-  icon: LucideIcon;
-  allowedTools: ToolName[];
-  defaultTools: ToolName[];
-  // Loop-engine capabilities run on the chat agent loop (solve / mastery) rather
-  // than a bespoke pipeline. They are collapsed into the "More" flyout in the
-  // capability picker instead of listed directly. Driven by the loop-capability
-  // registry on the backend; mirrored here as a static flag.
-  loopEngine?: boolean;
-}
-
-const CAPABILITIES: CapabilityDef[] = [
-  {
-    value: "",
-    label: "Chat",
-    description: "Flexible conversation with any tool",
-    icon: MessageSquare,
-    allowedTools: [
-      "brainstorm",
-      "geogebra_analysis",
-      "web_search",
-      "code_execution",
-      "reason",
-      "paper_search",
-      "imagegen",
-      "videogen",
-    ],
-    defaultTools: [],
-  },
-  {
-    value: "deep_solve",
-    label: "Solve",
-    description: "Multi-step reasoning & problem solving",
-    icon: BrainCircuit,
-    allowedTools: ["web_search", "code_execution", "reason"],
-    defaultTools: ["web_search", "code_execution", "reason"],
-    loopEngine: true,
-  },
-  {
-    value: "deep_question",
-    label: "Quiz",
-    description: "Auto-validated question generation",
-    icon: PenLine,
-    allowedTools: ["web_search", "code_execution"],
-    defaultTools: ["web_search", "code_execution"],
-  },
-  {
-    value: "deep_research",
-    label: "Research",
-    description: "Comprehensive multi-agent research",
-    icon: Microscope,
-    allowedTools: ["web_search", "paper_search", "code_execution"],
-    defaultTools: ["web_search", "paper_search", "code_execution"],
-  },
-  {
-    value: "visualize",
-    label: "Visualize",
-    description:
-      "Generate charts, diagrams, interactive pages, or math animations",
-    icon: BarChart3,
-    allowedTools: [],
-    defaultTools: [],
-  },
-  {
-    value: "mastery_path",
-    label: "Mastery Path",
-    description: "Mastery-based tutoring with a hard gate",
-    icon: GraduationCap,
-    // The mastery tools (status/quiz/grade/assess/build) auto-mount server-side
-    // when this capability is active; rag auto-mounts when a KB is attached.
-    // These are only the extra optional tools the tutor may also reach for.
-    allowedTools: ["web_search", "code_execution"],
-    defaultTools: [],
-    loopEngine: true,
-  },
-];
-
 interface KnowledgeBase {
   name: string;
   is_default?: boolean;
@@ -294,14 +180,6 @@ interface PendingAttachment {
   previewUrl?: string;
   size?: number;
   mimeType?: string;
-}
-
-/* ------------------------------------------------------------------ */
-/*  Helpers                                                           */
-/* ------------------------------------------------------------------ */
-
-function getCapability(value: string | null): CapabilityDef {
-  return CAPABILITIES.find((c) => c.value === (value || "")) ?? CAPABILITIES[0];
 }
 
 /* ------------------------------------------------------------------ */
