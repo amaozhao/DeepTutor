@@ -76,11 +76,11 @@
 
 ### 4. 前端聊天主页面和上下文过大
 
-证据：`web/app/(workspace)/home/[[...sessionId]]/page.tsx` 约 2193 行，`web/context/UnifiedChatContext.tsx` 约 1885 行。
+证据：`web/app/(workspace)/home/[[...sessionId]]/page.tsx` 原约 2193 行，当前约 2071 行；`web/context/UnifiedChatContext.tsx` 原约 1885 行，当前约 1754 行。已把首页 capability/tool catalog 拆到 `web/lib/capabilities.ts`，把持久化 session hydration helper 拆到 `web/lib/chat/hydration.ts`，对应测试归位到 `web/tests/lib/capabilities.test.ts` 和 `web/tests/lib/chat/hydration.test.ts`。
 
 问题：页面、状态管理、网络请求、流式事件和 UI 控制耦合，导致聊天页任何小改都可能影响登录后主流程。
 
-治理动作：优先拆出稳定 hook、状态 reducer、transport 层和纯展示组件；先补流式消息、重连、取消、错误提示的回归测试。
+治理动作：已先拆出纯数据 catalog 和 hydration helper，避免继续扩大聊天页和上下文。下一轮优先拆状态 reducer、transport 层和纯展示组件；补足流式消息、重连、取消、错误提示的回归测试。
 
 ### 5. LLM 配置和进程环境变量写入分散
 
@@ -188,11 +188,11 @@
 
 ### 18. 测试目录层级未严格镜像源码，且部分测试文件过大
 
-证据：`AGENTS.md` 要求变更测试布局前先检查现有实现和测试，`standards/testing.md` 已明确“新增 Python 测试默认镜像 owning package path”。当前 `tests/` 只是部分按顶层包分组，并未严格镜像 `deeptutor/`：例如源码存在 `deeptutor/agents/vision_solver`、`deeptutor/agents/visualize`、`deeptutor/api/utils`、`deeptutor/services/settings`、`deeptutor/services/storage` 等目录，而测试侧没有完整对应层级；同时历史上存在 `tests/multi_user` 这种按行为域组织的目录。大文件问题也仍存在：`tests/api/routers/test_unified_ws.py` 约 921 行，`tests/agents/question/test_pipeline.py` 约 986 行，`tests/services/partners/test_zulip_channel.py` 约 1261 行。`tests/api/routers/test_knowledge.py` 已降到约 805 行，但仍偏大。
+证据：`AGENTS.md` 要求变更测试布局前先检查现有实现和测试，`standards/testing.md` 已明确“新增 Python 测试默认镜像 owning package path”。当前 `tests/` 只是部分按顶层包分组，并未严格镜像 `deeptutor/`：例如源码存在 `deeptutor/agents/vision_solver`、`deeptutor/agents/visualize`、`deeptutor/api/utils`、`deeptutor/services/settings`、`deeptutor/services/storage` 等目录，而测试侧没有完整对应层级；同时历史上存在 `tests/multi_user` 这种按行为域组织的目录。前端历史测试仍大量平铺在 `web/tests/` 根目录，但本轮新增 `web/lib/capabilities.ts`、`web/lib/chat/hydration.ts` 已按路径归位到 `web/tests/lib/capabilities.test.ts`、`web/tests/lib/chat/hydration.test.ts`。大文件问题也仍存在：`tests/api/routers/test_unified_ws.py` 约 921 行，`tests/agents/question/test_pipeline.py` 约 986 行，`tests/services/partners/test_zulip_channel.py` 约 1261 行。`tests/api/routers/test_knowledge.py` 已降到约 805 行，但仍偏大。
 
 问题：目录层级不镜像源码会让“某个模块由哪些测试保护”变得不清楚。大测试文件本身不一定错误，但如果 fixture、场景和断言继续堆叠在行为域目录中，失败时很难判断是业务变更、测试假设过旧还是环境问题，也容易在拆模块时漏掉对应测试迁移。
 
-治理动作：不要全仓一次性搬测试目录；历史行为域测试可以保留，但不能继续作为新拆模块的默认落点。新模块和被修改模块的测试必须优先归位到对应包路径，例如 `deeptutor/services/session/events.py` -> `tests/services/session/test_events.py`、`deeptutor/api/routers/invites.py` -> `tests/api/routers/test_invites.py`。确实跨多个包的行为测试可以留在行为域目录，但需要在测试模块或 review summary 中说明原因。继续按行为切分超大测试文件，把重 fixture 下沉到共享 fixture/helper，并对可选外部依赖加清晰 skip 条件。
+治理动作：不要全仓一次性搬测试目录；历史行为域测试可以保留，但不能继续作为新拆模块的默认落点。新模块和被修改模块的测试必须优先归位到对应包路径，例如 `deeptutor/services/session/events.py` -> `tests/services/session/test_events.py`、`deeptutor/api/routers/invites.py` -> `tests/api/routers/test_invites.py`、`web/lib/chat/hydration.ts` -> `web/tests/lib/chat/hydration.test.ts`。确实跨多个包的行为测试可以留在行为域目录，但需要在测试模块或 review summary 中说明原因。继续按行为切分超大测试文件，把重 fixture 下沉到共享 fixture/helper，并对可选外部依赖加清晰 skip 条件。
 
 ### 19. 多用户治理模块存在静默失败风险
 
