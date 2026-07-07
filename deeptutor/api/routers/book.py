@@ -500,7 +500,8 @@ async def book_websocket(ws: WebSocket) -> None:
         {"type": "regenerate_block", "book_id": "...", "page_id": "...", "block_id": "...", "params_override": {}}
     """
     from deeptutor.api.routers.auth import ws_auth_failed, ws_require_auth
-    from deeptutor.multi_user.context import reset_current_user
+    from deeptutor.api.security import require_ws_turn_rate_limit
+    from deeptutor.multi_user.context import get_current_user, reset_current_user
 
     user_token = await ws_require_auth(ws)
     if user_token is ws_auth_failed:
@@ -547,6 +548,11 @@ async def book_websocket(ws: WebSocket) -> None:
             msg_type = str(data.get("type") or "").strip()
             if not msg_type:
                 await send({"type": "error", "content": "Missing 'type' field"})
+                continue
+            try:
+                require_ws_turn_rate_limit(ws, "book", get_current_user())
+            except HTTPException as exc:
+                await send({"type": "error", "content": str(exc.detail), "status": 429})
                 continue
 
             bus = StreamBus()

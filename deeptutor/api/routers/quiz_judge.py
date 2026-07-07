@@ -12,7 +12,7 @@ import base64 as _b64
 import logging
 from typing import Any
 
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 
 from deeptutor.services.config import PROJECT_ROOT, load_config_with_main
 from deeptutor.services.llm import stream as llm_stream
@@ -228,7 +228,8 @@ async def websocket_quiz_judge(websocket: WebSocket):
         {"type": "error", "content": "..."}
     """
     from deeptutor.api.routers.auth import ws_auth_failed, ws_require_auth
-    from deeptutor.multi_user.context import reset_current_user
+    from deeptutor.api.security import require_ws_turn_rate_limit
+    from deeptutor.multi_user.context import get_current_user, reset_current_user
 
     user_token = await ws_require_auth(websocket)
     if user_token is ws_auth_failed:
@@ -263,6 +264,20 @@ async def websocket_quiz_judge(websocket: WebSocket):
     question_text = (data.get("question") or "").strip()
     if not question_text:
         await safe_send({"type": "error", "content": "Question is required"})
+        try:
+            await websocket.close()
+        except Exception:
+            pass
+        if user_token is not None:
+            try:
+                reset_current_user(user_token)
+            except Exception:
+                pass
+        return
+    try:
+        require_ws_turn_rate_limit(websocket, "quiz-judge", get_current_user())
+    except HTTPException as exc:
+        await safe_send({"type": "error", "content": str(exc.detail), "status": 429})
         try:
             await websocket.close()
         except Exception:

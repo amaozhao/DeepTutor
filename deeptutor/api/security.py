@@ -178,6 +178,15 @@ def require_rate_limit(key: str, *, limit: int, window_seconds: int) -> None:
         )
 
 
+def require_ws_turn_rate_limit(ws: Any, kind: str, user: Any, *, limit: int = 30) -> None:
+    principal = getattr(user, "id", "") or getattr(user, "username", "") or "local"
+    require_rate_limit(
+        f"llm-turn:{kind}:{websocket_ip(ws)}:{principal}",
+        limit=limit,
+        window_seconds=60,
+    )
+
+
 def configured_worker_count(env: Mapping[str, str] | None = None) -> int:
     source = os.environ if env is None else env
     counts: list[int] = []

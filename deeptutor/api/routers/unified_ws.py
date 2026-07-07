@@ -44,7 +44,7 @@ logger = logging.getLogger(__name__)
 @router.websocket("/ws")
 async def unified_websocket(ws: WebSocket) -> None:
     from deeptutor.api.routers.auth import ws_auth_failed, ws_require_auth
-    from deeptutor.api.security import require_rate_limit, websocket_ip
+    from deeptutor.api.security import require_ws_turn_rate_limit
     from deeptutor.multi_user.context import get_current_user, reset_current_user
 
     user_token = await ws_require_auth(ws)
@@ -54,7 +54,6 @@ async def unified_websocket(ws: WebSocket) -> None:
     await ws.accept()
     closed = False
     subscription_tasks: dict[str, asyncio.Task[None]] = {}
-    ws_ip = websocket_ip(ws)
 
     async def safe_send(data: dict[str, Any]) -> None:
         nonlocal closed
@@ -80,13 +79,8 @@ async def unified_websocket(ws: WebSocket) -> None:
 
     async def allow_turn_start(kind: str) -> bool:
         user = get_current_user()
-        principal = user.id or user.username or "local"
         try:
-            require_rate_limit(
-                f"llm-turn:{kind}:{ws_ip}:{principal}",
-                limit=30,
-                window_seconds=60,
-            )
+            require_ws_turn_rate_limit(ws, kind, user)
         except HTTPException as exc:
             await safe_send({"type": "error", "content": str(exc.detail), "status": 429})
             return False
