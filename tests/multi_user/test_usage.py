@@ -20,6 +20,7 @@ from deeptutor.multi_user.usage import (
 from deeptutor.services.config.provider_runtime import ResolvedSearchConfig
 from deeptutor.services.embedding.client import EmbeddingClient
 from deeptutor.services.embedding.config import EmbeddingConfig
+from deeptutor.services.llm.config import LLMConfig
 from deeptutor.services.search.types import WebSearchResponse
 from deeptutor.services.session.turn_runtime import _event_usage_summary
 
@@ -285,3 +286,60 @@ async def test_embedding_success_records_usage(seed_user, as_user, monkeypatch) 
 
     assert len(vectors) == 3
     assert usage_summary(user_id)["today"]["total_calls"] == 3
+
+
+@pytest.mark.asyncio
+async def test_turn_quota_blocks_before_context_builder(seed_user, as_user, monkeypatch) -> None:
+    from deeptutor.services.session.turn_runtime import TurnRuntimeManager, _TurnExecution
+
+    seed_user("admin", role="admin")
+    user = seed_user("alice")
+    user_id = str(user["id"])
+    save_grant(user_id, {"quota": {"daily_call_limit": 1}})
+    record_usage(
+        user_id=user_id,
+        username="alice",
+        session_id="s1",
+        turn_id="t1",
+        capability="chat",
+        provider="minimax",
+        model="M3",
+        summary={"total_calls": 1},
+    )
+
+    class _Store:
+        async def add_message(self, *args, **kwargs):  # pragma: no cover - failure path
+            raise AssertionError("quota should fail before persisting messages")
+
+        async def update_turn_status(self, turn_id, status, error=None):
+            self.status = (turn_id, status, error)
+
+    class _ContextBuilder:
+        def __init__(self, store):  # pragma: no cover - failure path
+            raise AssertionError("quota should fail before context building")
+
+    monkeypatch.setattr(
+        "deeptutor.services.model_selection.runtime.activate_llm_selection",
+        lambda _selection: (
+            LLMConfig(model="M3", api_key="sk-test", provider_name="minimax"),
+            None,
+        ),
+    )
+    monkeypatch.setattr(
+        "deeptutor.services.session.context_builder.ContextBuilder",
+        _ContextBuilder,
+    )
+
+    store = _Store()
+    runtime = TurnRuntimeManager(store=store)
+    execution = _TurnExecution(
+        turn_id="turn-1",
+        session_id="session-1",
+        capability="chat",
+        payload={"content": "hello", "config": {}, "attachments": []},
+    )
+
+    with as_user(user_id, username="alice"):
+        await runtime._run_turn(execution)
+
+    assert store.status == ("turn-1", "failed", "Usage quota exceeded: daily call limit reached.")
