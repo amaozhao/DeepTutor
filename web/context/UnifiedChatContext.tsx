@@ -58,6 +58,16 @@ import {
   type SessionStatusSnapshot,
   type SessionRuntimeStatus,
 } from "@/context/chat/state";
+import {
+  effectiveRunnerKey,
+  eventStatus,
+  isRegenerateRejection,
+  moveRunner,
+  sessionEventIds,
+  sessionMetaTitle,
+  terminalErrorInfo,
+  type ChatRunner,
+} from "@/context/chat/transport";
 export type {
   ChatState,
   MessageAttachment,
@@ -134,15 +144,7 @@ export function UnifiedChatProvider({
 }) {
   const [state, dispatch] = useReducer(chatReducer, initialState);
   const stateRef = useRef(initialState);
-  const runnersRef = useRef<
-    Map<
-      string,
-      {
-        key: string;
-        client: UnifiedWSClient;
-      }
-    >
-  >(new Map());
+  const runnersRef = useRef<Map<string, ChatRunner>>(new Map());
   const draftCounterRef = useRef(0);
   const retryTimersRef = useRef<Set<ReturnType<typeof setTimeout>>>(new Set());
   // Tracks in-flight regenerate requests so we can restore the popped
@@ -208,28 +210,11 @@ export function UnifiedChatProvider({
     [],
   );
 
-  const moveRunner = useCallback((oldKey: string, newKey: string) => {
-    if (oldKey === newKey) return;
-    const runner = runnersRef.current.get(oldKey);
-    if (!runner) return;
-    runnersRef.current.delete(oldKey);
-    runner.key = newKey;
-    runnersRef.current.set(newKey, runner);
-  }, []);
-
   const handleRunnerEvent = useCallback(
     (runnerKey: string, event: StreamEvent) => {
-      const runner = runnersRef.current.get(runnerKey);
-      const effectiveKey = runner?.key || runnerKey;
+      const effectiveKey = effectiveRunnerKey(runnersRef.current, runnerKey);
       if (event.type === "session") {
-        const sessionId =
-          (event.metadata as { session_id?: string } | undefined)?.session_id ||
-          event.session_id ||
-          "";
-        const turnId =
-          (event.metadata as { turn_id?: string } | undefined)?.turn_id ||
-          event.turn_id ||
-          null;
+        const { sessionId, turnId } = sessionEventIds(event);
         if (sessionId) {
           dispatch({
             type: "BIND_SERVER_SESSION",
@@ -237,7 +222,7 @@ export function UnifiedChatProvider({
             sessionId,
             turnId,
           });
-          moveRunner(effectiveKey, sessionId);
+          moveRunner(runnersRef.current, effectiveKey, sessionId);
         }
         return;
       }
@@ -247,9 +232,7 @@ export function UnifiedChatProvider({
         // title to its store *before* sending this event. Update the
         // active header immediately and bump the sidebar so history
         // rows refresh to the generated title without a flicker.
-        const title = String(
-          (event.metadata as { title?: string } | undefined)?.title || "",
-        ).trim();
+        const title = sessionMetaTitle(event);
         if (title) {
           dispatch({
             type: "SET_SESSION_TITLE",
@@ -262,14 +245,11 @@ export function UnifiedChatProvider({
         return;
       }
       if (event.type === "done") {
-        const status = String(
-          (event.metadata as { status?: string } | undefined)?.status ||
-            "completed",
-        );
+        const status = eventStatus(event, "completed");
         dispatch({
           type: "STREAM_END",
           key: effectiveKey,
-          status: (status as SessionRuntimeStatus) || "completed",
+          status,
           turnId: event.turn_id || null,
         });
         pendingRegenerateRef.current.delete(effectiveKey);
@@ -318,23 +298,12 @@ export function UnifiedChatProvider({
         return;
       }
       dispatch({ type: "STREAM_EVENT", key: effectiveKey, event });
-      if (
-        event.type === "error" &&
-        Boolean(
-          (event.metadata as { turn_terminal?: boolean } | undefined)
-            ?.turn_terminal,
-        )
-      ) {
-        const reason = String(
-          (event.metadata as { reason?: string } | undefined)?.reason || "",
-        );
+      const errorInfo = terminalErrorInfo(event);
+      if (errorInfo.terminal) {
         // Pre-flight regenerate rejections never mutate server state, so we
         // roll back the optimistic POP_LAST_ASSISTANT/STREAM_START placeholder
         // to keep the transcript in sync with the server.
-        if (
-          reason === "regenerate_busy" ||
-          reason === "nothing_to_regenerate"
-        ) {
+        if (isRegenerateRejection(errorInfo.reason)) {
           const stash = pendingRegenerateRef.current.get(effectiveKey);
           if (stash) {
             dispatch({
@@ -345,19 +314,15 @@ export function UnifiedChatProvider({
           }
         }
         pendingRegenerateRef.current.delete(effectiveKey);
-        const status = String(
-          (event.metadata as { status?: string } | undefined)?.status ||
-            "failed",
-        );
         dispatch({
           type: "STREAM_END",
           key: effectiveKey,
-          status: status as SessionRuntimeStatus,
+          status: errorInfo.status,
           turnId: event.turn_id || null,
         });
       }
     },
-    [moveRunner],
+    [],
   );
 
   const ensureRunner = useCallback(
