@@ -53,8 +53,12 @@ import {
   extractBase64FromDataUrl,
   readFileAsDataUrl,
 } from "@/lib/file-attachments";
-import { classifyFile, isSvgFilename } from "@/lib/doc-attachments";
 import { useAttachmentLimits } from "@/lib/attachment-limits";
+import {
+  fileToAttachment,
+  filterAttachments,
+  type PendingAttachment,
+} from "@/lib/attachments";
 import { useChatAutoScroll } from "@/hooks/useChatAutoScroll";
 import { useMeasuredHeight } from "@/hooks/useMeasuredHeight";
 import {
@@ -171,15 +175,6 @@ interface KnowledgeBase {
     /** Backend of a connected subagent: "claude_code" | "codex" | "partner". */
     agent_kind?: string;
   };
-}
-
-interface PendingAttachment {
-  type: string;
-  filename: string;
-  base64?: string;
-  previewUrl?: string;
-  size?: number;
-  mimeType?: string;
 }
 
 /* ------------------------------------------------------------------ */
@@ -1006,31 +1001,6 @@ export default function ChatPage() {
     [capabilityConfigs, setCapability, setKBs, setTools, userEnabledTools],
   );
 
-  const fileToAttachment = useCallback(
-    (f: File): Promise<PendingAttachment> =>
-      new Promise((resolve, reject) => {
-        readFileAsDataUrl(f)
-          .then((raw) => {
-            // SVG: treat as file (text extraction on server, vision models
-            // reject SVG) but keep the data URL so the chip can render a
-            // thumbnail via a raw <img> tag.
-            const svg = isSvgFilename(f.name) || f.type === "image/svg+xml";
-            const isImage = !svg && f.type.startsWith("image/");
-            const b64 = extractBase64FromDataUrl(raw);
-            resolve({
-              type: isImage ? "image" : "file",
-              filename: f.name,
-              base64: b64,
-              previewUrl: isImage || svg ? raw : undefined,
-              size: f.size,
-              mimeType: f.type || undefined,
-            });
-          })
-          .catch(reject);
-      }),
-    [],
-  );
-
   const showAttachmentError = useCallback((message: string) => {
     setAttachmentError(message);
     if (attachmentErrorTimer.current) {
@@ -1044,29 +1014,11 @@ export default function ChatPage() {
 
   const filterAndReportFiles = useCallback(
     (files: File[]): File[] => {
-      let runningTotal = attachments.reduce((s, a) => s + (a.size ?? 0), 0);
-      const accepted: File[] = [];
-      const rejected: {
-        name: string;
-        reason: "unsupported" | "too_large" | "quota";
-      }[] = [];
-      for (const f of files) {
-        const kind = classifyFile(f);
-        if (!kind) {
-          rejected.push({ name: f.name, reason: "unsupported" });
-          continue;
-        }
-        if (f.size > attachmentLimits.maxFileBytes) {
-          rejected.push({ name: f.name, reason: "too_large" });
-          continue;
-        }
-        if (runningTotal + f.size > attachmentLimits.maxTotalBytes) {
-          rejected.push({ name: f.name, reason: "quota" });
-          break;
-        }
-        runningTotal += f.size;
-        accepted.push(f);
-      }
+      const { accepted, rejected } = filterAttachments(
+        files,
+        attachments,
+        attachmentLimits,
+      );
       if (rejected.length) {
         const first = rejected[0];
         let msg: string;
@@ -1097,7 +1049,7 @@ export default function ChatPage() {
       const next = await Promise.all(accepted.map(fileToAttachment));
       setAttachments((prev) => [...prev, ...next]);
     },
-    [fileToAttachment, filterAndReportFiles],
+    [filterAndReportFiles],
   );
 
   const removeAttachment = useCallback((index: number) => {
@@ -1269,7 +1221,7 @@ export default function ChatPage() {
       const next = await Promise.all(accepted.map(fileToAttachment));
       setAttachments((prev) => [...prev, ...next]);
     },
-    [fileToAttachment, filterAndReportFiles],
+    [filterAndReportFiles],
   );
 
   const handleAddFiles = useCallback(
@@ -1279,7 +1231,7 @@ export default function ChatPage() {
       const next = await Promise.all(accepted.map(fileToAttachment));
       setAttachments((prev) => [...prev, ...next]);
     },
-    [fileToAttachment, filterAndReportFiles],
+    [filterAndReportFiles],
   );
 
   // Connected subagents are stored as ``type: subagent`` KBs. Derive the
