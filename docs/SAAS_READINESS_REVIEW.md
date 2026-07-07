@@ -90,9 +90,9 @@
 
 1. 自助注册体系不完整
 
-当前代码已支持默认关闭的普通用户邮箱 + 密码注册，不做手机号/SMS/OTP 验证码；首个管理员 bootstrap 也要求邮箱 + 密码；公开注册提交同意时会持久化 `terms_accepted` / `terms_accepted_at` / `terms_version` / `privacy_version`；`auth.registration_review_required=true` 时，公开自助注册用户会先进入 disabled 待审核状态；管理员可生成一次性邀请码，公开注册关闭时用户也可凭邀请码用邮箱 + 密码注册普通账号；管理员手动创建和 CSV 批量导入普通用户也只走邮箱密码；`auth.max_users` 可作为受控 beta 的全局账号上限。它适合受控 beta，但离公开 SaaS 仍缺邮件确认、忘记密码、真实 CAPTCHA/反机器人服务、注册风控，以及法务文本快照等更完整的同意证明。
+当前代码已支持默认关闭的普通用户邮箱 + 密码注册，不做手机号/SMS/OTP 验证码；首个管理员 bootstrap 也要求邮箱 + 密码；公开注册提交同意时会持久化 `terms_accepted` / `terms_accepted_at` / `terms_version` / `privacy_version`；公开邮箱注册需要通过注册限流和服务端签名 proof-of-work challenge；`auth.registration_review_required=true` 时，公开自助注册用户会先进入 disabled 待审核状态；管理员可生成一次性邀请码，公开注册关闭时用户也可凭邀请码用邮箱 + 密码注册普通账号；管理员手动创建和 CSV 批量导入普通用户也只走邮箱密码；`auth.max_users` 可作为受控 beta 的全局账号上限。它适合受控 beta，但离公开 SaaS 仍缺邮件确认、忘记密码、真实 CAPTCHA/风控服务，以及法务文本快照等更完整的同意证明。
 
-证据：默认开关在 `deeptutor/services/config/runtime_settings.py:32` 到 `deeptutor/services/config/runtime_settings.py:42`；邮箱注册、邀请码和同意记录路径在 `deeptutor/api/routers/auth.py:90` 到 `deeptutor/api/routers/auth.py:128`，`deeptutor/api/routers/auth.py:632` 到 `deeptutor/api/routers/auth.py:746`，邀请存储在 `deeptutor/multi_user/invites.py`，用户记录字段在 `deeptutor/multi_user/identity.py:47` 到 `deeptutor/multi_user/identity.py:225`，CSV 导入导出在 `deeptutor/api/routers/auth.py:285` 到 `deeptutor/api/routers/auth.py:345` 和 `deeptutor/api/routers/auth.py:1060` 到 `deeptutor/api/routers/auth.py:1136`，全局账号上限配置在 `deeptutor/services/config/runtime_settings.py:32` 到 `deeptutor/services/config/runtime_settings.py:42` 和 `deeptutor/api/routers/auth.py:354` 到 `deeptutor/api/routers/auth.py:366`。
+证据：默认开关在 `deeptutor/services/config/runtime_settings.py:32` 到 `deeptutor/services/config/runtime_settings.py:42`；邮箱注册、注册 challenge、邀请码和同意记录路径在 `deeptutor/api/routers/auth.py`，邀请存储在 `deeptutor/multi_user/invites.py`，用户记录字段在 `deeptutor/multi_user/identity.py`，CSV 导入导出在 `deeptutor/api/routers/auth.py`，全局账号上限配置在 `deeptutor/services/config/runtime_settings.py` 和 `deeptutor/api/routers/auth.py`。
 
 2. 账号生命周期不完整
 

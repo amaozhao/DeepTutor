@@ -83,6 +83,21 @@ def test_postgres_shared_state_drives_auth_secret_users_and_token_version(monkey
     assert auth_service.decode_token(token) is None
 
 
+def test_postgres_shared_state_create_user_does_not_overwrite(monkeypatch):
+    from deeptutor.multi_user import identity
+
+    fake = _FakeSharedState()
+    monkeypatch.setattr(identity, "_postgres_enabled", fake.postgres_enabled)
+    monkeypatch.setattr("deeptutor.multi_user.shared_state.update_users", fake.update_users)
+
+    created = identity.create_user("alice@example.com", "h1", role="user")
+    duplicate = identity.create_user("alice@example.com", "h2", role="user")
+
+    assert created is not None
+    assert duplicate is None
+    assert fake.users["alice@example.com"]["hash"] == "h1"
+
+
 def test_postgres_shared_state_imports_file_users_and_secret(mu_isolated_root, monkeypatch):
     from deeptutor.multi_user import identity
 
