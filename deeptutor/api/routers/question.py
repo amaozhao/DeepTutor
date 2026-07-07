@@ -7,7 +7,7 @@ import re
 import sys
 import traceback
 
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 
 from deeptutor.agents.question import AgentCoordinator
 from deeptutor.api.utils.task_id_manager import TaskIDManager
@@ -67,7 +67,8 @@ async def websocket_mimic_generate(websocket: WebSocket):
     }
     """
     from deeptutor.api.routers.auth import ws_auth_failed, ws_require_auth
-    from deeptutor.multi_user.context import reset_current_user
+    from deeptutor.api.security import require_ws_turn_rate_limit
+    from deeptutor.multi_user.context import get_current_user, reset_current_user
 
     user_token = await ws_require_auth(websocket)
     if user_token is ws_auth_failed:
@@ -84,6 +85,11 @@ async def websocket_mimic_generate(websocket: WebSocket):
         mode = data.get("mode", "parsed")  # "upload" or "parsed"
         kb_name = data.get("kb_name", "ai_textbook")
         max_questions = data.get("max_questions")
+        try:
+            require_ws_turn_rate_limit(websocket, "question-mimic", get_current_user())
+        except HTTPException as exc:
+            await websocket.send_json({"type": "error", "content": str(exc.detail), "status": 429})
+            return
 
         logger.info(f"Starting mimic generation (mode: {mode}, kb: {kb_name})")
 
@@ -353,7 +359,8 @@ async def websocket_mimic_generate(websocket: WebSocket):
 @router.websocket("/generate")
 async def websocket_question_generate(websocket: WebSocket):
     from deeptutor.api.routers.auth import ws_auth_failed, ws_require_auth
-    from deeptutor.multi_user.context import reset_current_user
+    from deeptutor.api.security import require_ws_turn_rate_limit
+    from deeptutor.multi_user.context import get_current_user, reset_current_user
 
     user_token = await ws_require_auth(websocket)
     if user_token is ws_auth_failed:
@@ -376,6 +383,11 @@ async def websocket_question_generate(websocket: WebSocket):
                 await websocket.send_json({"type": "error", "content": "Requirement is required"})
             except (RuntimeError, WebSocketDisconnect):
                 pass
+            return
+        try:
+            require_ws_turn_rate_limit(websocket, "question-generate", get_current_user())
+        except HTTPException as exc:
+            await websocket.send_json({"type": "error", "content": str(exc.detail), "status": 429})
             return
 
         # Generate task ID

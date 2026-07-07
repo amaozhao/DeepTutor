@@ -59,7 +59,7 @@ async def delete_session(session_id: str):
 @router.websocket("/chat")
 async def websocket_chat(websocket: WebSocket):
     from deeptutor.api.routers.auth import ws_auth_failed, ws_require_auth
-    from deeptutor.api.security import require_rate_limit, websocket_ip
+    from deeptutor.api.security import require_ws_turn_rate_limit
     from deeptutor.multi_user.context import get_current_user, reset_current_user
 
     user_token = await ws_require_auth(websocket)
@@ -67,7 +67,6 @@ async def websocket_chat(websocket: WebSocket):
         return
 
     await websocket.accept()
-    ws_ip = websocket_ip(websocket)
 
     try:
         while True:
@@ -92,11 +91,7 @@ async def websocket_chat(websocket: WebSocket):
                 continue
             user = get_current_user()
             try:
-                require_rate_limit(
-                    f"llm-turn:legacy-chat:{ws_ip}:{user.id or user.username or 'local'}",
-                    limit=30,
-                    window_seconds=60,
-                )
+                require_ws_turn_rate_limit(websocket, "legacy-chat", user)
             except HTTPException as exc:
                 await websocket.send_json({"type": "error", "message": str(exc.detail)})
                 continue

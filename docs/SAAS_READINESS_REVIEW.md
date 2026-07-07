@@ -122,7 +122,7 @@
 
 已加入滑动窗口限流：登录按 IP + username，注册按 IP + email，非 auth 写接口按 IP + principal，WebSocket 认证入口也有限流。文件模式 bucket 可在同一 `data/system/rate` 挂载下跨本机 worker 共享；PostgreSQL shared_state 模式下 bucket 进入数据库，可跨多副本共享。剩余问题是没有账号锁定策略、真实 CAPTCHA 服务、风控评分和租户级限流。
 
-证据：限流器在 `deeptutor/api/security.py`；登录/注册限流在 `deeptutor/api/routers/auth.py`；API 写限流在 `deeptutor/api/main.py`；WebSocket 连接和 turn 限流在 `deeptutor/api/routers/auth.py`、`deeptutor/api/routers/unified_ws.py`。
+证据：限流器在 `deeptutor/api/security.py`；登录/注册限流在 `deeptutor/api/routers/auth.py`；API 写限流在 `deeptutor/api/main.py`；WebSocket 连接和 turn 限流在 `deeptutor/api/routers/auth.py`、`deeptutor/api/routers/unified_ws.py`、`deeptutor/api/routers/chat.py`、`deeptutor/api/routers/question.py`、`deeptutor/api/routers/book.py`、`deeptutor/api/routers/quiz_judge.py` 和 `deeptutor/api/routers/partners.py`。
 
 7. Cookie 写接口已有 Origin/Referer 防护，但还不是完整 CSRF 体系
 
