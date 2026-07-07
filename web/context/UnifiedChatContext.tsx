@@ -58,6 +58,16 @@ import {
   type SessionStatusSnapshot,
   type SessionRuntimeStatus,
 } from '@/context/chat/state'
+import {
+  effectiveRunnerKey,
+  eventStatus,
+  isRegenerateRejection,
+  moveRunner,
+  sessionEventIds,
+  sessionMetaTitle,
+  terminalErrorInfo,
+  type ChatRunner,
+} from '@/context/chat/transport'
 export type {
   ChatState,
   MessageAttachment,
@@ -139,15 +149,7 @@ const ChatCtx = createContext<ChatContextValue | null>(null)
 export function UnifiedChatProvider({ children }: { children: React.ReactNode }) {
   const [state, dispatch] = useReducer(chatReducer, initialState)
   const stateRef = useRef(initialState)
-  const runnersRef = useRef<
-    Map<
-      string,
-      {
-        key: string
-        client: UnifiedWSClient
-      }
-    >
-  >(new Map())
+  const runnersRef = useRef<Map<string, ChatRunner>>(new Map())
   const draftCounterRef = useRef(0)
   const retryTimersRef = useRef<Set<ReturnType<typeof setTimeout>>>(new Set())
   // Tracks in-flight regenerate requests so we can restore the popped
@@ -199,143 +201,117 @@ export function UnifiedChatProvider({ children }: { children: React.ReactNode })
       })
   }, [])
 
-  const moveRunner = useCallback((oldKey: string, newKey: string) => {
-    if (oldKey === newKey) return
-    const runner = runnersRef.current.get(oldKey)
-    if (!runner) return
-    runnersRef.current.delete(oldKey)
-    runner.key = newKey
-    runnersRef.current.set(newKey, runner)
-  }, [])
-
-  const handleRunnerEvent = useCallback(
-    (runnerKey: string, event: StreamEvent) => {
-      const runner = runnersRef.current.get(runnerKey)
-      const effectiveKey = runner?.key || runnerKey
-      if (event.type === 'session') {
-        const sessionId =
-          (event.metadata as { session_id?: string } | undefined)?.session_id ||
-          event.session_id ||
-          ''
-        const turnId =
-          (event.metadata as { turn_id?: string } | undefined)?.turn_id || event.turn_id || null
-        if (sessionId) {
-          dispatch({
-            type: 'BIND_SERVER_SESSION',
-            key: effectiveKey,
-            sessionId,
-            turnId,
-          })
-          moveRunner(effectiveKey, sessionId)
-        }
-        return
+  const handleRunnerEvent = useCallback((runnerKey: string, event: StreamEvent) => {
+    const effectiveKey = effectiveRunnerKey(runnersRef.current, runnerKey)
+    if (event.type === 'session') {
+      const { sessionId, turnId } = sessionEventIds(event)
+      if (sessionId) {
+        dispatch({
+          type: 'BIND_SERVER_SESSION',
+          key: effectiveKey,
+          sessionId,
+          turnId,
+        })
+        moveRunner(runnersRef.current, effectiveKey, sessionId)
       }
-      if (event.type === 'session_meta') {
-        // Post-turn metadata push (currently only used for the
-        // LLM-generated session title). The backend writes the new
-        // title to its store *before* sending this event. Update the
-        // active header immediately and bump the sidebar so history
-        // rows refresh to the generated title without a flicker.
-        const title = String((event.metadata as { title?: string } | undefined)?.title || '').trim()
-        if (title) {
+      return
+    }
+    if (event.type === 'session_meta') {
+      // Post-turn metadata push (currently only used for the
+      // LLM-generated session title). The backend writes the new
+      // title to its store *before* sending this event. Update the
+      // active header immediately and bump the sidebar so history
+      // rows refresh to the generated title without a flicker.
+      const title = sessionMetaTitle(event)
+      if (title) {
+        dispatch({
+          type: 'SET_SESSION_TITLE',
+          key: effectiveKey,
+          title,
+        })
+      } else {
+        dispatch({ type: 'BUMP_SIDEBAR_REFRESH' })
+      }
+      return
+    }
+    if (event.type === 'done') {
+      const status = eventStatus(event, 'completed')
+      dispatch({
+        type: 'STREAM_END',
+        key: effectiveKey,
+        status,
+        turnId: event.turn_id || null,
+      })
+      pendingRegenerateRef.current.delete(effectiveKey)
+      const runner = runnersRef.current.get(effectiveKey)
+      // Hold the WS open briefly so post-turn ``session_meta`` events
+      // (e.g. the LLM-generated title for the first user/assistant
+      // pair) can still reach us. The backend generates the title
+      // before its finally block sends the subscriber sentinel, but
+      // the title model can take a couple of seconds — disconnecting
+      // synchronously on ``done`` would race that publish.
+      if (runner) {
+        runnersRef.current.delete(effectiveKey)
+        window.setTimeout(() => {
+          runner.client.disconnect()
+        }, POST_DONE_DISCONNECT_DELAY_MS)
+      }
+      // Reconcile optimistic client-side message ids with the
+      // server's real ids after the turn finishes. Without this the
+      // Edit button (which needs a real id to attach the new branch
+      // under) and branch navigation (which keys off real ids) would
+      // stay disabled until the user navigates away and back.
+      if (status === 'completed') {
+        const doneMeta = event.metadata as {
+          user_message_id?: number
+          assistant_message_id?: number
+        } | null
+        const assistantMessageId = doneMeta?.assistant_message_id ?? null
+        if (assistantMessageId != null) {
           dispatch({
-            type: 'SET_SESSION_TITLE',
+            type: 'RECONCILE_TURN',
             key: effectiveKey,
-            title,
+            turnId: event.turn_id || null,
+            userMessageId: doneMeta?.user_message_id ?? null,
+            assistantMessageId,
           })
         } else {
-          dispatch({ type: 'BUMP_SIDEBAR_REFRESH' })
-        }
-        return
-      }
-      if (event.type === 'done') {
-        const status = String(
-          (event.metadata as { status?: string } | undefined)?.status || 'completed'
-        )
-        dispatch({
-          type: 'STREAM_END',
-          key: effectiveKey,
-          status: (status as SessionRuntimeStatus) || 'completed',
-          turnId: event.turn_id || null,
-        })
-        pendingRegenerateRef.current.delete(effectiveKey)
-        const runner = runnersRef.current.get(effectiveKey)
-        // Hold the WS open briefly so post-turn ``session_meta`` events
-        // (e.g. the LLM-generated title for the first user/assistant
-        // pair) can still reach us. The backend generates the title
-        // before its finally block sends the subscriber sentinel, but
-        // the title model can take a couple of seconds — disconnecting
-        // synchronously on ``done`` would race that publish.
-        if (runner) {
-          runnersRef.current.delete(effectiveKey)
-          window.setTimeout(() => {
-            runner.client.disconnect()
-          }, POST_DONE_DISCONNECT_DELAY_MS)
-        }
-        // Reconcile optimistic client-side message ids with the
-        // server's real ids after the turn finishes. Without this the
-        // Edit button (which needs a real id to attach the new branch
-        // under) and branch navigation (which keys off real ids) would
-        // stay disabled until the user navigates away and back.
-        if (status === 'completed') {
-          const doneMeta = event.metadata as {
-            user_message_id?: number
-            assistant_message_id?: number
-          } | null
-          const assistantMessageId = doneMeta?.assistant_message_id ?? null
-          if (assistantMessageId != null) {
-            dispatch({
-              type: 'RECONCILE_TURN',
-              key: effectiveKey,
-              turnId: event.turn_id || null,
-              userMessageId: doneMeta?.user_message_id ?? null,
-              assistantMessageId,
-            })
-          } else {
-            const finishedSession = stateRef.current.sessions[effectiveKey]
-            const sessionId = finishedSession?.sessionId
-            if (sessionId) {
-              loadSessionRef.current?.(sessionId).catch(() => {
-                /* non-fatal — local state remains usable */
-              })
-            }
-          }
-        }
-        return
-      }
-      dispatch({ type: 'STREAM_EVENT', key: effectiveKey, event })
-      if (
-        event.type === 'error' &&
-        Boolean((event.metadata as { turn_terminal?: boolean } | undefined)?.turn_terminal)
-      ) {
-        const reason = String((event.metadata as { reason?: string } | undefined)?.reason || '')
-        // Pre-flight regenerate rejections never mutate server state, so we
-        // roll back the optimistic POP_LAST_ASSISTANT/STREAM_START placeholder
-        // to keep the transcript in sync with the server.
-        if (reason === 'regenerate_busy' || reason === 'nothing_to_regenerate') {
-          const stash = pendingRegenerateRef.current.get(effectiveKey)
-          if (stash) {
-            dispatch({
-              type: 'RESTORE_ASSISTANT',
-              key: effectiveKey,
-              message: stash,
+          const finishedSession = stateRef.current.sessions[effectiveKey]
+          const sessionId = finishedSession?.sessionId
+          if (sessionId) {
+            loadSessionRef.current?.(sessionId).catch(() => {
+              /* non-fatal — local state remains usable */
             })
           }
         }
-        pendingRegenerateRef.current.delete(effectiveKey)
-        const status = String(
-          (event.metadata as { status?: string } | undefined)?.status || 'failed'
-        )
-        dispatch({
-          type: 'STREAM_END',
-          key: effectiveKey,
-          status: status as SessionRuntimeStatus,
-          turnId: event.turn_id || null,
-        })
       }
-    },
-    [moveRunner]
-  )
+      return
+    }
+    dispatch({ type: 'STREAM_EVENT', key: effectiveKey, event })
+    const errorInfo = terminalErrorInfo(event)
+    if (errorInfo.terminal) {
+      // Pre-flight regenerate rejections never mutate server state, so we
+      // roll back the optimistic POP_LAST_ASSISTANT/STREAM_START placeholder
+      // to keep the transcript in sync with the server.
+      if (isRegenerateRejection(errorInfo.reason)) {
+        const stash = pendingRegenerateRef.current.get(effectiveKey)
+        if (stash) {
+          dispatch({
+            type: 'RESTORE_ASSISTANT',
+            key: effectiveKey,
+            message: stash,
+          })
+        }
+      }
+      pendingRegenerateRef.current.delete(effectiveKey)
+      dispatch({
+        type: 'STREAM_END',
+        key: effectiveKey,
+        status: errorInfo.status,
+        turnId: event.turn_id || null,
+      })
+    }
+  }, [])
 
   const ensureRunner = useCallback(
     (key: string) => {
