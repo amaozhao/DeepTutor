@@ -68,11 +68,11 @@
 
 ### 3. 认证路由同时承担登录、注册、管理员和导入导出
 
-证据：`deeptutor/api/routers/auth.py` 约 1620 行，覆盖注册、登录、用户管理、邀请、CSV、导出、自助账户等逻辑。
+证据：`deeptutor/api/routers/auth.py` 原约 1620 行，当前已把管理员邀请码管理拆到 `deeptutor/api/routers/invites.py`，把管理员用户响应模型、CSV 导入大小限制和 CSV 解析 helper 拆到 `deeptutor/api/routers/users.py`；对应测试已归位到 `tests/api/routers/test_invites.py` 和 `tests/api/routers/test_users.py`。`auth.router` 继续保持 `/api/v1/auth/invites`、`/api/v1/auth/users...` URL 不变。主 auth 路由仍约 1489 行，继续覆盖注册、登录、个人资料、用户管理端点、导出、自助账户等逻辑。
 
 问题：认证和用户管理属于高风险边界，文件过大让权限判断、公开接口和管理员接口难以审计。后续增加 SaaS 能力时，最容易在这里产生越权或绕过。
 
-治理动作：拆成 `session`、`registration`、`admin users`、`invites` 等窄路由；每个公开接口都要有权限测试。
+治理动作：已完成第一轮 invites 和用户 CSV/helper 拆分，并补上新拆模块的镜像测试；后续继续按 `session`、`registration`、`profile`、`admin users` 等边界拆成窄路由。每个公开接口都要有权限测试，且保持 `/api/v1/auth/...` 路径兼容。
 
 ### 4. 前端聊天主页面和上下文过大
 
@@ -186,13 +186,13 @@
 
 治理动作：按 pipeline stage 拆文件；每个 stage 明确输入、输出、可失败类型和可观测事件。
 
-### 18. 测试文件过大，回归定位成本高
+### 18. 测试目录层级未严格镜像源码，且部分测试文件过大
 
-证据：`tests/api/routers/test_unified_ws.py` 约 921 行，`tests/agents/question/test_pipeline.py` 约 986 行，`tests/services/partners/test_zulip_channel.py` 约 1261 行。`tests/api/routers/test_knowledge.py` 已降到约 805 行，但仍偏大。当前测试目录整体按顶层包大致分组，不是全量严格镜像源码；`standards/testing.md` 的要求是“when practical”，但新拆出的模块测试应优先放到对应包路径，例如 `deeptutor/services/session/events.py` -> `tests/services/session/test_events.py`。
+证据：`AGENTS.md` 要求变更测试布局前先检查现有实现和测试，`standards/testing.md` 已明确“新增 Python 测试默认镜像 owning package path”。当前 `tests/` 只是部分按顶层包分组，并未严格镜像 `deeptutor/`：例如源码存在 `deeptutor/agents/vision_solver`、`deeptutor/agents/visualize`、`deeptutor/api/utils`、`deeptutor/services/settings`、`deeptutor/services/storage` 等目录，而测试侧没有完整对应层级；同时历史上存在 `tests/multi_user` 这种按行为域组织的目录。大文件问题也仍存在：`tests/api/routers/test_unified_ws.py` 约 921 行，`tests/agents/question/test_pipeline.py` 约 986 行，`tests/services/partners/test_zulip_channel.py` 约 1261 行。`tests/api/routers/test_knowledge.py` 已降到约 805 行，但仍偏大。
 
-问题：大测试文件本身不一定错误，但如果 fixture、场景和断言堆叠，失败时很难判断是业务变更、测试假设过旧还是环境问题。
+问题：目录层级不镜像源码会让“某个模块由哪些测试保护”变得不清楚。大测试文件本身不一定错误，但如果 fixture、场景和断言继续堆叠在行为域目录中，失败时很难判断是业务变更、测试假设过旧还是环境问题，也容易在拆模块时漏掉对应测试迁移。
 
-治理动作：按行为切分测试文件；把重 fixture 下沉到 helper；对可选外部依赖加清晰 skip 条件。不要全仓一次性搬测试目录；随实际代码拆分，把新模块和被修改模块的测试增量归位到对应包路径。
+治理动作：不要全仓一次性搬测试目录；历史行为域测试可以保留，但不能继续作为新拆模块的默认落点。新模块和被修改模块的测试必须优先归位到对应包路径，例如 `deeptutor/services/session/events.py` -> `tests/services/session/test_events.py`、`deeptutor/api/routers/invites.py` -> `tests/api/routers/test_invites.py`。确实跨多个包的行为测试可以留在行为域目录，但需要在测试模块或 review summary 中说明原因。继续按行为切分超大测试文件，把重 fixture 下沉到共享 fixture/helper，并对可选外部依赖加清晰 skip 条件。
 
 ### 19. 多用户治理模块存在静默失败风险
 
