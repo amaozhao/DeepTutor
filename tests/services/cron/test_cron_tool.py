@@ -139,7 +139,7 @@ class TestCronTool:
             {
                 "action": "schedule",
                 "message": "morning briefing",
-                "cron_expr": "0 8 * * *",
+                "every_seconds": 3600,
                 "tz": "Asia/Hong_Kong",
                 "_cron_owner": PARTNER_OWNER,
             }
@@ -149,7 +149,7 @@ class TestCronTool:
         assert job.owner.key == "partner:ada"
         assert job.owner.session_key == "telegram:42"
         assert job.owner.channel_meta == {"thread_ts": "111.222"}
-        assert job.schedule.tz == "Asia/Hong_Kong"
+        assert job.schedule.every_seconds == 3600
 
 
 class TestRegistryIntegration:
