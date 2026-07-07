@@ -35,6 +35,16 @@ def test_identity_writes_under_local_auth_store_write_lock(mu_isolated_root):
     assert (mu_isolated_root / "data" / "system" / "auth" / "users.lock").exists()
 
 
+def test_create_user_does_not_overwrite_existing_email(mu_isolated_root):
+    created = identity.create_user("alice@example.com", "h1", role="user")
+    duplicate = identity.create_user("alice@example.com", "h2", role="user")
+
+    users = identity.load_users()
+    assert created is not None
+    assert duplicate is None
+    assert users["alice@example.com"]["hash"] == "h1"
+
+
 def test_identity_plain_reads_do_not_take_write_lock(mu_isolated_root):
     identity.save_user("alice", "h1", role="user")
     lock_file = mu_isolated_root / "data" / "system" / "auth" / "users.lock"

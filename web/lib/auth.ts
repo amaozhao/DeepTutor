@@ -1,6 +1,6 @@
 import { apiFetch, apiUrl, setRuntimeAuthEnabled } from "@/lib/api";
 
-// Auth state is resolved at runtime from the backend (`/api/auth/status`),
+// Auth state is resolved at runtime from the backend (`/api/v1/auth/status`),
 // not from a build-time/env constant: the browser bundle never sees
 // `DEEPTUTOR_AUTH_ENABLED` (not a `NEXT_PUBLIC_` var), and auth is runtime
 // config that must not be baked into the bundle. Components observe it via the
@@ -14,70 +14,26 @@ export interface AuthStatus {
   username?: string;
   role?: string;
   is_admin?: boolean;
-  /** Server-side account preset; null for identities without a local account. */
-  preset?: "standard" | "learner" | "custom" | null;
   /** Avatar marker: "", "icon:<name>:<color>", or "img:<version>". */
   avatar?: string;
-  learning_policy?: {
-    age_band: string;
-    locked_persona: string;
-    allowed_capabilities: string[];
-    default_capability: string;
-    allowed_surfaces?: string[];
-    reading?: {
-      allow_upload: boolean;
-      material_ids: string[];
-      extensions: string[];
-    };
-  } | null;
-}
-
-const AUTH_STATUS_CACHE_MS = 5_000;
-let authStatusRequest: Promise<AuthStatus | null> | null = null;
-let cachedAuthStatus: { value: AuthStatus | null; expiresAt: number } | null =
-  null;
-
-export function invalidateAuthStatusCache(): void {
-  authStatusRequest = null;
-  cachedAuthStatus = null;
 }
 
 /**
  * Call the backend to check whether the current session is authenticated.
  * Returns null on network error so callers can decide how to handle it.
  */
-export function fetchAuthStatus(): Promise<AuthStatus | null> {
-  if (cachedAuthStatus && cachedAuthStatus.expiresAt > Date.now()) {
-    return Promise.resolve(cachedAuthStatus.value);
+export async function fetchAuthStatus(): Promise<AuthStatus | null> {
+  try {
+    const res = await apiFetch(apiUrl("/api/v1/auth/status"));
+    if (!res.ok) return null;
+    const status: AuthStatus = await res.json();
+    // Record the real auth state so apiFetch's in-session 401 → /login redirect
+    // fires only when auth is actually enabled.
+    setRuntimeAuthEnabled(Boolean(status.enabled));
+    return status;
+  } catch {
+    return null;
   }
-  if (!authStatusRequest) {
-    authStatusRequest = (async () => {
-      try {
-        const res = await apiFetch(apiUrl("/api/auth/status"));
-        if (!res.ok) return null;
-        const status: AuthStatus = await res.json();
-        // Record the real auth state so apiFetch's in-session 401 → /login redirect
-        // fires only when auth is actually enabled.
-        setRuntimeAuthEnabled(Boolean(status.enabled));
-        return status;
-      } catch {
-        return null;
-      }
-    })()
-      .then((status) => {
-        cachedAuthStatus = {
-          value: status,
-          // Retry unavailable backends quickly; stable answers can be shared
-          // across the shell and Settings providers for one navigation.
-          expiresAt: Date.now() + (status === null ? 1_000 : AUTH_STATUS_CACHE_MS),
-        };
-        return status;
-      })
-      .finally(() => {
-        authStatusRequest = null;
-      });
-  }
-  return authStatusRequest;
 }
 
 /**
@@ -88,7 +44,7 @@ export async function login(
   password: string,
 ): Promise<{ ok: boolean; error?: string }> {
   try {
-    const res = await apiFetch(apiUrl("/api/auth/login"), {
+    const res = await apiFetch(apiUrl("/api/v1/auth/login"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ username, password }),
@@ -97,10 +53,7 @@ export async function login(
       skipAuthRedirect: true,
     });
 
-    if (res.ok) {
-      invalidateAuthStatusCache();
-      return { ok: true };
-    }
+    if (res.ok) return { ok: true };
 
     const data = await res.json().catch(() => ({}));
     return { ok: false, error: extractDetail(data.detail) ?? "Login failed" };
@@ -139,7 +92,8 @@ export async function register(
   error?: string;
 }> {
   try {
-    const res = await apiFetch(apiUrl("/api/auth/register"), {
+    const captchaToken = inviteCode ? "" : await registrationChallenge(username);
+    const res = await apiFetch(apiUrl("/api/v1/auth/register"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -147,6 +101,7 @@ export async function register(
         password,
         terms_accepted: termsAccepted,
         invite_code: inviteCode || undefined,
+        captcha_token: captchaToken || undefined,
       }),
       // Registration validation failures (e.g. 400/401) should surface inline
       // rather than bounce the user through the global login redirect.
@@ -154,14 +109,39 @@ export async function register(
     });
 
     const data = await res.json().catch(() => ({}));
-    if (res.ok) {
-      invalidateAuthStatusCache();
+    if (res.ok)
       return { ok: true, role: data.role, is_first_user: data.is_first_user };
-    }
     return { ok: false, error: extractDetail(data.detail) };
   } catch {
     return { ok: false, error: "Could not reach the server" };
   }
+}
+
+async function registrationChallenge(username: string): Promise<string> {
+  if (typeof crypto === "undefined" || !crypto.subtle) return "";
+  const res = await apiFetch(
+    apiUrl(`/api/v1/auth/register/challenge?email=${encodeURIComponent(username)}`),
+    { skipAuthRedirect: true },
+  );
+  if (!res.ok) return "";
+  const data = await res.json().catch(() => ({}));
+  const token = String(data.token || "");
+  const difficulty = Math.max(1, Number(data.difficulty || 3));
+  const prefix = "0".repeat(difficulty);
+  for (let i = 0; i < 1_000_000; i += 1) {
+    const nonce = i.toString(36);
+    const digest = await sha256Hex(`${token}:${nonce}`);
+    if (digest.startsWith(prefix)) return `${token}:${nonce}`;
+  }
+  return "";
+}
+
+async function sha256Hex(value: string): Promise<string> {
+  const bytes = new TextEncoder().encode(value);
+  const hash = await crypto.subtle.digest("SHA-256", bytes);
+  return Array.from(new Uint8Array(hash), (byte) =>
+    byte.toString(16).padStart(2, "0"),
+  ).join("");
 }
 
 /**
@@ -169,7 +149,7 @@ export async function register(
  */
 export async function checkIsFirstUser(): Promise<boolean> {
   try {
-    const res = await apiFetch(apiUrl("/api/auth/is_first_user"));
+    const res = await apiFetch(apiUrl("/api/v1/auth/is_first_user"));
     if (!res.ok) return false;
     const data = await res.json();
     return Boolean(data.is_first_user);
@@ -183,12 +163,10 @@ export async function checkIsFirstUser(): Promise<boolean> {
  */
 export async function logout(): Promise<void> {
   try {
-    await apiFetch(apiUrl("/api/auth/logout"), {
+    await apiFetch(apiUrl("/api/v1/auth/logout"), {
       method: "POST",
     });
   } catch {
     // Ignore — we'll redirect regardless
-  } finally {
-    invalidateAuthStatusCache();
   }
 }
