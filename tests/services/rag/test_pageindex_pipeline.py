@@ -182,6 +182,7 @@ def test_remove_document_updates_sdk_and_manifest(tmp_path) -> None:
 
 
 def test_factory_dispatches_by_provider(tmp_path, monkeypatch) -> None:
+    pytest.importorskip("llama_index.core")
     # Constructing a real LlamaIndexPipeline resolves the active embedding model
     # from the catalog; CI has none, so stub the settings hook (the same way the
     # llamaindex pipeline tests do) — this test only asserts factory routing.

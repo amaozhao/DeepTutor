@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import pytest
+
+pytest.importorskip("llama_index.core")
+
 from llama_index.core import Document
 from llama_index.core.schema import TextNode
 

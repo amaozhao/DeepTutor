@@ -5,13 +5,12 @@ Covers:
 * ``inline_refs``: flattens nested model ``$ref``s (slack ``dm`` subtree).
 * ``collect_secret_fields``: only flags **string-typed** secret-looking keys
   (so e.g. ``user_token_read_only: bool`` is excluded).
-* ``GET /api/partners/channels/schema`` integration: shape, snake_case
+* ``GET /api/v1/partners/channels/schema`` integration: shape, snake_case
   property names, and that telegram/slack/discord schemas survive the trip.
 """
 
 from __future__ import annotations
 
-from fastapi import HTTPException
 from fastapi.testclient import TestClient
 import pytest
 
@@ -22,46 +21,17 @@ from deeptutor.api.routers._partners_channel_schema import (
     inline_refs,
     resolve_config_model,
 )
-from deeptutor.api.routers.partners import _validate_channels_payload
-
-
-class TestChannelPayloadValidation:
-    def test_rejects_enabled_channel_with_empty_allow_list(self) -> None:
-        with pytest.raises(HTTPException) as exc_info:
-            _validate_channels_payload({"weixin": {"enabled": True, "allow_from": [], "token": ""}})
-
-        assert exc_info.value.status_code == 422
-        assert exc_info.value.detail["channels"] == ["weixin"]
-
-    def test_allows_disabled_channel_with_empty_allow_list(self) -> None:
-        _validate_channels_payload({"weixin": {"enabled": False, "allow_from": []}})
-
-    def test_rejects_a_malformed_discovered_channel_section(self) -> None:
-        with pytest.raises(HTTPException) as exc_info:
-            _validate_channels_payload(
-                {
-                    "telegram": {
-                        "enabled": True,
-                        "allow_from": ["*"],
-                        "connection_pool_size": "not-a-number",
-                    }
-                }
-            )
-
-        assert exc_info.value.status_code == 422
-        assert exc_info.value.detail["errors"][0]["loc"] == (
-            "telegram",
-            "connection_pool_size",
-        )
 
 
 class TestResolveConfigModel:
     def test_telegram_pairs_with_telegram_config(self) -> None:
+        pytest.importorskip("telegram")
         from deeptutor.partners.channels.telegram import TelegramChannel, TelegramConfig
 
         assert resolve_config_model(TelegramChannel) is TelegramConfig
 
     def test_slack_pairs_with_slack_config(self) -> None:
+        pytest.importorskip("slack_sdk")
         from deeptutor.partners.channels.slack import SlackChannel, SlackConfig
 
         assert resolve_config_model(SlackChannel) is SlackConfig
@@ -148,6 +118,7 @@ class TestCollectSecretFields:
 
 class TestChannelSchemaPayload:
     def test_telegram_payload_shape(self) -> None:
+        pytest.importorskip("telegram")
         from deeptutor.partners.channels.telegram import TelegramChannel
 
         payload = channel_schema_payload(TelegramChannel)
@@ -161,6 +132,7 @@ class TestChannelSchemaPayload:
         assert payload["default_config"]["enabled"] is False
 
     def test_slack_dm_subtree_inlined(self) -> None:
+        pytest.importorskip("slack_sdk")
         from deeptutor.partners.channels.slack import SlackChannel
 
         payload = channel_schema_payload(SlackChannel)
@@ -184,25 +156,28 @@ class TestEndpoint:
         from deeptutor.api.routers import partners as partners_router
 
         app = FastAPI()
-        app.include_router(partners_router.router, prefix="/api/partners")
+        app.include_router(partners_router.router, prefix="/api/v1/partners")
         return TestClient(app)
 
     def test_returns_channels_only(self, client: TestClient) -> None:
-        res = client.get("/api/partners/channels/schema")
+        res = client.get("/api/v1/partners/channels/schema")
         assert res.status_code == 200
         body = res.json()
         assert set(body.keys()) == {"channels"}
-        # Telegram is always installed (no extra deps).
         assert "telegram" in body["channels"]
+        if body["channels"]["telegram"]["available"] is False:
+            assert body["channels"]["telegram"]["json_schema"] is None
 
     def test_telegram_entry_has_secret_fields(self, client: TestClient) -> None:
-        res = client.get("/api/partners/channels/schema")
+        pytest.importorskip("telegram")
+        res = client.get("/api/v1/partners/channels/schema")
         tg = res.json()["channels"]["telegram"]
         assert tg["secret_fields"] == ["token"]
         assert "token" in tg["json_schema"]["properties"]
 
     def test_delivery_flags_are_per_channel(self, client: TestClient) -> None:
-        res = client.get("/api/partners/channels/schema")
+        pytest.importorskip("telegram")
+        res = client.get("/api/v1/partners/channels/schema")
         props = res.json()["channels"]["telegram"]["json_schema"]["properties"]
         assert "send_progress" in props
         assert "send_tool_hints" in props

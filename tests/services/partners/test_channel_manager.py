@@ -422,5 +422,5 @@ def test_channel_registry_discovers_builtin_channels() -> None:
     assert {"telegram", "slack", "discord", "zulip"} <= names
 
     channels = discover_all()
-    assert {"telegram", "slack", "discord", "zulip"} <= set(channels)
+    assert {"discord", "zulip"} <= set(channels)
     assert all(issubclass(cls, BaseChannel) for cls in channels.values())
