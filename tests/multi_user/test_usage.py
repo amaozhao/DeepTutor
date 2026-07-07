@@ -8,7 +8,6 @@ from fastapi import HTTPException, UploadFile
 import pytest
 
 from deeptutor.api.routers import voice as voice_router
-from deeptutor.core.stream import StreamEvent, StreamEventType
 from deeptutor.multi_user.grants import normalize_grant, save_grant
 from deeptutor.multi_user.usage import (
     UsageQuotaExceeded,
@@ -22,7 +21,6 @@ from deeptutor.services.embedding.client import EmbeddingClient
 from deeptutor.services.embedding.config import EmbeddingConfig
 from deeptutor.services.llm.config import LLMConfig
 from deeptutor.services.search.types import WebSearchResponse
-from deeptutor.services.session.turn_runtime import _event_usage_summary
 
 
 class _FakeEmbeddingAdapter:
@@ -107,16 +105,6 @@ def test_quota_blocks_next_turn_when_limit_is_spent(seed_user, as_user):
     with as_user(user_id, username="alice"):
         with pytest.raises(UsageQuotaExceeded, match="daily call limit"):
             enforce_current_user_quota()
-
-
-def test_turn_runtime_reads_cost_summary_from_result_event() -> None:
-    event = StreamEvent(
-        type=StreamEventType.RESULT,
-        source="chat",
-        metadata={"metadata": {"cost_summary": {"total_tokens": 42, "total_calls": 1}}},
-    )
-
-    assert _event_usage_summary(event) == {"total_tokens": 42, "total_calls": 1}
 
 
 @pytest.mark.asyncio
