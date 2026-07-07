@@ -1,8 +1,8 @@
 # DeepTutor SaaS Deployment Runbook
 
-日期：2026-06-30
+日期：2026-07-07
 
-本文覆盖当前代码可支持的受控 beta / 私有多用户部署，以及 PostgreSQL shared_state 支撑的多副本基础。当前已有 MVP 数据治理底线：基础审计 JSONL、用户数据导出、删除数据策略和手动保留期清理。正式公开 SaaS 仍需要对象存储、生产级审计存储、运营监控，以及审批流、法务文本快照、区域化存储等合规增强；当前文件型限流、用户文件写锁和带文件锁的 usage ledger 只适合单副本 beta。账单/支付本轮不纳入。
+本文覆盖当前代码可支持的受控 beta / 私有多用户部署，以及 PostgreSQL shared_state 支撑的多副本基础。当前已有 MVP 数据治理底线：best-effort 审计 JSONL、用户数据导出、删除数据策略和管理员手动保留期清理。正式公开 SaaS 仍需要对象存储、生产级审计存储、运营监控，以及审批流、法务文本快照、区域化存储等合规增强；当前文件型限流、用户文件写锁和带文件锁的 usage ledger 只适合单副本 beta。账单/支付本轮不纳入。
 
 ## 当前推荐拓扑
 
@@ -14,7 +14,7 @@
 
 ## 需要备份的数据
 
-完整备份项目运行目录下的 `data/`：
+文件模式下，完整备份项目运行目录下的 `data/`：
 
 - `data/system/auth/`：用户、JWT secret、头像。
 - `data/system/grants/`：用户资源授权和 quota。
@@ -26,18 +26,24 @@
 
 `data/user/settings/model_catalog.json` 含 provider API key，备份介质必须按密钥处理。
 
+PostgreSQL shared_state 模式下，还必须备份 `DEEPTUTOR_DATABASE_URL`
+指向的数据库；auth secret、用户记录/token_version、注册邀请码、grant
+quota 和 usage ledger 已进入 PostgreSQL，不能只备份 `data/`。
+
 ## 备份流程
 
 1. 暂停应用写入，或先停止容器。
 2. 归档整个 `data/` 目录。
-3. 将归档上传到加密存储。
-4. 记录应用版本、镜像 tag、备份时间和恢复目标。
+3. 如果启用 PostgreSQL shared_state，同时导出数据库。
+4. 将归档上传到加密存储。
+5. 记录应用版本、镜像 tag、备份时间和恢复目标。
 
 示例：
 
 ```bash
 docker compose stop deeptutor
 tar -czf deeptutor-data-$(date -u +%Y%m%dT%H%M%SZ).tgz data
+pg_dump "$DEEPTUTOR_DATABASE_URL" -Fc -f deeptutor-shared-state-$(date -u +%Y%m%dT%H%M%SZ).dump
 docker compose start deeptutor
 ```
 
@@ -46,8 +52,9 @@ docker compose start deeptutor
 1. 停止应用。
 2. 将现有 `data/` 移走保留，不要覆盖。
 3. 解压备份为新的 `data/`。
-4. 启动应用。
-5. 用 admin 登录验证用户列表、grants、usage、知识库和最近会话。
+4. 如果启用 PostgreSQL shared_state，先恢复数据库备份。
+5. 启动应用。
+6. 用 admin 登录验证用户列表、grants、usage、知识库和最近会话。
 
 示例：
 
@@ -55,6 +62,7 @@ docker compose start deeptutor
 docker compose stop deeptutor
 mv data data.before-restore.$(date -u +%Y%m%dT%H%M%SZ)
 tar -xzf deeptutor-data-YYYYMMDDTHHMMSSZ.tgz
+pg_restore --clean --if-exists -d "$DEEPTUTOR_DATABASE_URL" deeptutor-shared-state-YYYYMMDDTHHMMSSZ.dump
 docker compose up -d
 ```
 

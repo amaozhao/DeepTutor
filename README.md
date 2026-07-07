@@ -759,7 +759,7 @@ Whatever the source, every import passes the **same safety gate** before anythin
 - frontmatter is normalized to DeepTutor's schema and `always:` is **stripped**, so a downloaded skill can never force itself into every system prompt;
 - provenance — hub, version, verdict, and install time — is written to `.hub-lock.json` for audits and updates.
 
-In multi-user deployments, installing is admin-only: a new skill lands in the admin catalog and stays invisible to other users until a grant assigns it, so an admin can vet it before rolling it out.
+In multi-user deployments, shared-catalog installs are admin-only: a new admin-installed skill lands in the admin catalog and stays invisible to other users until a grant assigns it, so an admin can vet it before rolling it out. The regular in-app skill import still installs into the caller's own skill layer.
 
 </details>
 
