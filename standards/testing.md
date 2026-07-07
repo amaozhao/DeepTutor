@@ -11,6 +11,8 @@ dependency handling, or verification commands.
 - Frontend tests live under `web/tests/` or existing web test locations.
 - New Python tests must mirror the owning package path by default, for example
   `deeptutor/services/session/...` -> `tests/services/session/...`.
+- New frontend tests should mirror the owning web path by default, for example
+  `web/lib/chat/hydration.ts` -> `web/tests/lib/chat/hydration.test.ts`.
 - Existing behavior-domain folders may stay in place, but do not add new tests
   there for a newly split module unless the test genuinely spans multiple
   packages. If a mirrored test is impractical, state the reason in the test
