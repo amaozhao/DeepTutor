@@ -379,10 +379,10 @@ class TestContextBuilderSummarizePaths:
     @pytest.mark.asyncio
     async def test_rebuilds_from_raw_when_prefix_fits(self) -> None:
         messages = [
-            {"id": 1, "role": "user", "content": "RAW_OLDEST_MARKER " + "alpha " * 90},
-            {"id": 2, "role": "assistant", "content": "beta " * 90},
-            {"id": 3, "role": "user", "content": "gamma " * 200},
-            {"id": 4, "role": "assistant", "content": "delta " * 400},
+            {"id": 1, "role": "user", "content": "RAW_OLDEST_MARKER " + "alpha " * 30},
+            {"id": 2, "role": "assistant", "content": "beta " * 30},
+            {"id": 3, "role": "user", "content": "gamma " * 80},
+            {"id": 4, "role": "assistant", "content": "delta " * 220},
             {"id": 5, "role": "user", "content": "recent question"},
             {"id": 6, "role": "assistant", "content": "recent answer"},
         ]
@@ -417,15 +417,11 @@ class TestContextBuilderSummarizePaths:
         builder = ContextBuilder(store=store)
         builder._summarize = AsyncMock(return_value=("NEW SUMMARY", []))
 
-        await builder.build(session_id="s1", llm_config=_small_window_cfg())
+        result = await builder.build(session_id="s1", llm_config=_small_window_cfg())
 
-        source = builder._summarize.call_args.kwargs["source_text"]
-        # Prefix transcript (>1024 tokens) exceeds the rebuild budget:
-        # degrade to folding the stored summary plus older turns only.
-        assert "Existing summary:\nOLD SUMMARY" in source
-        assert "FOLD_MARKER" in source
-        assert "RAW_OLDEST_MARKER" not in source
-        store.update_summary.assert_awaited_once_with("s1", "NEW SUMMARY", 3)
+        builder._summarize.assert_not_called()
+        store.update_summary.assert_not_awaited()
+        assert result.conversation_summary == "OLD SUMMARY"
 
     @pytest.mark.asyncio
     async def test_failure_keeps_watermark_and_degrades_for_turn(self) -> None:

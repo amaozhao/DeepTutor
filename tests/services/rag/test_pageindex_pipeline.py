@@ -12,6 +12,8 @@ import asyncio
 import json
 from pathlib import Path
 
+import pytest
+
 from deeptutor.services.rag.factory import get_pipeline, normalize_provider_name
 from deeptutor.services.rag.index_versioning import resolve_storage_dir_for_read
 from deeptutor.services.rag.pipelines.pageindex import storage
@@ -175,6 +177,7 @@ def test_delete_drops_cloud_docs_and_local_dir(tmp_path) -> None:
 
 
 def test_factory_dispatches_by_provider(tmp_path, monkeypatch) -> None:
+    pytest.importorskip("llama_index.core")
     # Constructing a real LlamaIndexPipeline resolves the active embedding model
     # from the catalog; CI has none, so stub the settings hook (the same way the
     # llamaindex pipeline tests do) — this test only asserts factory routing.

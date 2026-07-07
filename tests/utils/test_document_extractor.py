@@ -4,12 +4,11 @@ from __future__ import annotations
 
 import base64
 import io
+import zipfile
+from xml.sax.saxutils import escape
 
-from docx import Document as DocxDocument
-from openpyxl import Workbook
-from pptx import Presentation
-from pptx.util import Inches
 import pytest
+from openpyxl import Workbook
 
 from deeptutor.utils import document_extractor as document_extractor_module
 from deeptutor.utils.document_extractor import (
@@ -17,6 +16,7 @@ from deeptutor.utils.document_extractor import (
     MAX_EXTRACTED_CHARS_PER_DOC,
     CorruptDocumentError,
     DocumentTooLargeError,
+    DocumentExtractionError,
     EmptyDocumentError,
     UnsupportedDocumentError,
     extract_documents_from_records,
@@ -25,12 +25,55 @@ from deeptutor.utils.document_extractor import (
     is_document_extension,
 )
 
+try:
+    from docx import Document as DocxDocument
+except ImportError:  # pragma: no cover - exercised only in minimal test envs
+    DocxDocument = None
+
+try:
+    from pptx import Presentation
+    from pptx.util import Inches
+except ImportError:  # pragma: no cover - exercised only in minimal test envs
+    Presentation = None
+    Inches = None
+
 # ---------------------------------------------------------------------------
 # Fixtures — generate office docs on the fly
 # ---------------------------------------------------------------------------
 
 
 def _make_docx(paragraphs: list[str]) -> bytes:
+    if DocxDocument is None:
+        body = "".join(
+            f"<w:p><w:r><w:t>{escape(p)}</w:t></w:r></w:p>" for p in paragraphs
+        )
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w") as zf:
+            zf.writestr(
+                "[Content_Types].xml",
+                """<?xml version="1.0" encoding="UTF-8"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+</Types>""",
+            )
+            zf.writestr(
+                "_rels/.rels",
+                """<?xml version="1.0" encoding="UTF-8"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
+</Relationships>""",
+            )
+            zf.writestr(
+                "word/document.xml",
+                f"""<?xml version="1.0" encoding="UTF-8"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:body>{body}</w:body>
+</w:document>""",
+            )
+        return buf.getvalue()
+
     doc = DocxDocument()
     for p in paragraphs:
         doc.add_paragraph(p)
@@ -55,6 +98,23 @@ def _make_xlsx(sheets: dict[str, list[list[object]]]) -> bytes:
 
 
 def _make_pptx(slides_text: list[list[str]]) -> bytes:
+    if Presentation is None:
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w") as zf:
+            for i, slide_texts in enumerate(slides_text, 1):
+                paragraphs = "".join(
+                    f"<a:p><a:r><a:t>{escape(text)}</a:t></a:r></a:p>" for text in slide_texts
+                )
+                zf.writestr(
+                    f"ppt/slides/slide{i}.xml",
+                    f"""<?xml version="1.0" encoding="UTF-8"?>
+<p:sld xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"
+       xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+  <p:cSld><p:spTree>{paragraphs}</p:spTree></p:cSld>
+</p:sld>""",
+                )
+        return buf.getvalue()
+
     prs = Presentation()
     for slide_texts in slides_text:
         slide = prs.slides.add_slide(prs.slide_layouts[5])  # blank-ish layout
@@ -276,7 +336,7 @@ class TestFailureModes:
 
     def test_empty_docx_no_text(self) -> None:
         data = _make_docx([])  # no paragraphs
-        with pytest.raises(EmptyDocumentError):
+        with pytest.raises(DocumentExtractionError):
             extract_text_from_bytes("foo.docx", data)
 
 

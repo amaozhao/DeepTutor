@@ -11,11 +11,15 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+import pytest
+
+pytest.importorskip("llama_index.core")
+pytest.importorskip("llama_index.vector_stores.faiss")
+
 from llama_index.core import Settings, VectorStoreIndex
 from llama_index.core.embeddings import BaseEmbedding
 from llama_index.core.schema import ImageNode, TextNode
 import numpy as np
-import pytest
 
 from deeptutor.services.rag.pipelines.llamaindex import storage as storage_module
 from deeptutor.services.rag.pipelines.llamaindex import vector_store

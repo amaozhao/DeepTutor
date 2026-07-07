@@ -25,11 +25,13 @@ from deeptutor.api.routers._partners_channel_schema import (
 
 class TestResolveConfigModel:
     def test_telegram_pairs_with_telegram_config(self) -> None:
+        pytest.importorskip("telegram")
         from deeptutor.partners.channels.telegram import TelegramChannel, TelegramConfig
 
         assert resolve_config_model(TelegramChannel) is TelegramConfig
 
     def test_slack_pairs_with_slack_config(self) -> None:
+        pytest.importorskip("slack_sdk")
         from deeptutor.partners.channels.slack import SlackChannel, SlackConfig
 
         assert resolve_config_model(SlackChannel) is SlackConfig
@@ -116,6 +118,7 @@ class TestCollectSecretFields:
 
 class TestChannelSchemaPayload:
     def test_telegram_payload_shape(self) -> None:
+        pytest.importorskip("telegram")
         from deeptutor.partners.channels.telegram import TelegramChannel
 
         payload = channel_schema_payload(TelegramChannel)
@@ -129,6 +132,7 @@ class TestChannelSchemaPayload:
         assert payload["default_config"]["enabled"] is False
 
     def test_slack_dm_subtree_inlined(self) -> None:
+        pytest.importorskip("slack_sdk")
         from deeptutor.partners.channels.slack import SlackChannel
 
         payload = channel_schema_payload(SlackChannel)
@@ -160,16 +164,19 @@ class TestEndpoint:
         assert res.status_code == 200
         body = res.json()
         assert set(body.keys()) == {"channels"}
-        # Telegram is always installed (no extra deps).
         assert "telegram" in body["channels"]
+        if body["channels"]["telegram"]["available"] is False:
+            assert body["channels"]["telegram"]["json_schema"] is None
 
     def test_telegram_entry_has_secret_fields(self, client: TestClient) -> None:
+        pytest.importorskip("telegram")
         res = client.get("/api/v1/partners/channels/schema")
         tg = res.json()["channels"]["telegram"]
         assert tg["secret_fields"] == ["token"]
         assert "token" in tg["json_schema"]["properties"]
 
     def test_delivery_flags_are_per_channel(self, client: TestClient) -> None:
+        pytest.importorskip("telegram")
         res = client.get("/api/v1/partners/channels/schema")
         props = res.json()["channels"]["telegram"]["json_schema"]["properties"]
         assert "send_progress" in props

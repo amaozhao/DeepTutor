@@ -7,6 +7,8 @@ import pytest
 
 from deeptutor.services.rag.index_versioning import EmbeddingSignature
 
+pytest.importorskip("llama_index.core")
+
 
 def _signature() -> EmbeddingSignature:
     return EmbeddingSignature(
