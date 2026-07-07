@@ -2,27 +2,22 @@
 
 import base64
 from contextvars import Token as _CtxToken
-import csv
 import hashlib
 import hmac
-import io
 import json
 import logging
 import re
 import secrets
 import time
-from typing import Literal
 
 from fastapi import (
     APIRouter,
     Cookie,
     Depends,
-    File,
     Header,
     HTTPException,
     Request,
     Response,
-    UploadFile,
     WebSocket,
     status,
 )
@@ -37,18 +32,7 @@ from deeptutor.services.config import load_auth_settings
 _SECURE = bool(load_auth_settings()["cookie_secure"])
 _SAMESITE = "none" if _SECURE else "lax"
 
-from deeptutor.api.routers.users import (
-    CSV_IMPORT_MAX_BYTES as _CSV_IMPORT_MAX_BYTES,
-)
-from deeptutor.api.routers.users import (
-    UserImportResult,
-    UserInfo,
-)
-from deeptutor.api.routers.users import (
-    parse_user_import_csv as _parse_user_import_csv,
-)
 from deeptutor.api.security import client_ip, require_rate_limit, websocket_ip
-from deeptutor.multi_user.audit import log_admin_action
 from deeptutor.multi_user.context import set_current_user, user_from_token_payload
 from deeptutor.multi_user.invites import consume_invite, unconsume_invite
 from deeptutor.multi_user.paths import local_admin_user
@@ -62,15 +46,11 @@ from deeptutor.services.auth import (
     authenticate_pb,
     create_token,
     decode_token,
-    delete_user,
     get_user_info,
     is_first_user,
     list_users,
     register_pb,
-    revoke_sessions,
     set_disabled,
-    set_role,
-    update_password,
 )
 
 logger = logging.getLogger(__name__)
@@ -144,40 +124,6 @@ class RegisterChallenge(BaseModel):
     token: str
     difficulty: int
     expires_in: int
-
-
-class SetRoleRequest(BaseModel):
-    """Payload for the PUT /users/{username}/role endpoint."""
-
-    role: str
-
-    @field_validator("role")
-    @classmethod
-    def role_valid(cls, v: str) -> str:
-        if v not in ("admin", "user"):
-            raise ValueError("Role must be 'admin' or 'user'")
-        return v
-
-
-class PasswordResetRequest(BaseModel):
-    password: str
-
-    @field_validator("password")
-    @classmethod
-    def password_valid(cls, v: str) -> str:
-        if len(v) < 8:
-            raise ValueError("Password must be at least 8 characters")
-        return v
-
-
-class DisabledRequest(BaseModel):
-    disabled: bool
-    reason: str = ""
-
-    @field_validator("reason")
-    @classmethod
-    def reason_valid(cls, v: str) -> str:
-        return v.strip()[:500]
 
 
 class AuthStatusResponse(BaseModel):
@@ -807,339 +753,16 @@ async def check_is_first_user() -> dict:
     return {"is_first_user": is_first_user() if AUTH_ENABLED else False}
 
 
-# ---------------------------------------------------------------------------
-# Admin-only endpoints
-# ---------------------------------------------------------------------------
-
-
-@router.get("/users", response_model=list[UserInfo])
-async def get_users(_: TokenPayload = Depends(require_admin)) -> list[UserInfo]:
-    """List all registered users. Requires admin role."""
-    return [UserInfo(**u) for u in list_users()]
-
-
-@router.get("/users/export.csv")
-async def export_users_csv(_: TokenPayload = Depends(require_admin)) -> Response:
-    """Export the user directory as CSV. Password hashes are never included."""
-    output = io.StringIO()
-    writer = csv.DictWriter(
-        output,
-        fieldnames=["email", "role", "disabled", "disabled_reason", "created_at", "user_id"],
-    )
-    writer.writeheader()
-    for user in list_users():
-        writer.writerow(
-            {
-                "email": user.get("username", ""),
-                "role": user.get("role", "user"),
-                "disabled": "true" if user.get("disabled") else "false",
-                "disabled_reason": user.get("disabled_reason", ""),
-                "created_at": user.get("created_at", ""),
-                "user_id": user.get("id", ""),
-            }
-        )
-    return Response(
-        content=output.getvalue(),
-        media_type="text/csv; charset=utf-8",
-        headers={"Content-Disposition": 'attachment; filename="deeptutor-users.csv"'},
-    )
-
-
-@router.post("/users/import.csv", response_model=UserImportResult)
-async def import_users_csv(
-    file: UploadFile = File(...),
-    current: TokenPayload = Depends(require_admin),
-) -> UserImportResult:
-    """Admin-only bulk import for email/password user accounts."""
-    if not AUTH_ENABLED:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Auth is disabled — user import is not available.",
-        )
-    if POCKETBASE_ENABLED:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="User import is not available in PocketBase mode.",
-        )
-
-    data = await file.read()
-    if len(data) > _CSV_IMPORT_MAX_BYTES:
-        raise HTTPException(
-            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="CSV is too large."
-        )
-    rows = _parse_user_import_csv(data)
-    existing = {str(user.get("username") or "").lower() for user in list_users()}
-    for row in rows:
-        email = str(row["email"])
-        if email in existing:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail=f"Email already exists: {email}",
-            )
-
-    _enforce_user_seats(additional=len(rows))
-    usernames: list[str] = []
-    for row in rows:
-        email = str(row["email"])
-        created = add_user(email, str(row["password"]), role="user")
-        if created is None:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail=f"Email already exists: {email}",
-            )
-        if row["disabled"]:
-            set_disabled(email, True, reason=str(row["disabled_reason"]))
-        usernames.append(email)
-
-    log_admin_action(
-        "users_import",
-        summary={
-            "created": len(usernames),
-            "usernames": usernames[:20],
-            "truncated": len(usernames) > 20,
-            "actor": current.username if current else "local",
-        },
-    )
-    return UserImportResult(created=len(usernames), usernames=usernames)
-
-
-@router.post("/users", status_code=status.HTTP_201_CREATED)
-async def admin_create_user(
-    body: RegisterRequest,
-    current: TokenPayload = Depends(require_admin),
-) -> dict:
-    """Admin-only: create a new user account.
-
-    Replaces the public ``/register`` flow once the first admin exists. The
-    new account is always created with role=``user``; admins can promote
-    later via ``PUT /users/{username}/role``.
-    """
-    if not AUTH_ENABLED:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Auth is disabled — user creation is not available.",
-        )
-
-    if POCKETBASE_ENABLED:
-        _enforce_user_seats()
-        result = register_pb(username=body.username, email=body.username, password=body.password)
-        if not result:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="Failed to create user — username may already be taken.",
-            )
-        logger.info(
-            f"Admin '{current.username if current else 'local'}' created PocketBase user "
-            f"'{body.username}'"
-        )
-        log_admin_action(
-            "user_create",
-            target_user_id=str(result.get("id") or ""),
-            summary={"username": body.username, "role": "user", "provider": "pocketbase"},
-        )
-        return {
-            "ok": True,
-            "user_id": result.get("id", ""),
-            "username": body.username,
-            "role": "user",
-            "is_admin": False,
-        }
-
-    existing = {u["username"] for u in list_users()}
-    if body.username in existing:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Username already taken",
-        )
-
-    _enforce_user_seats()
-    created = add_user(body.username, body.password)
-    if created is None:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Username already taken",
-        )
-    user_id = ""
-    role = "user"
-    for item in list_users():
-        if item.get("username") == body.username:
-            user_id = str(item.get("id") or "")
-            role = str(item.get("role") or "user")
-            break
-    logger.info(
-        f"Admin '{current.username if current else 'local'}' created user '{body.username}' "
-        f"(role={role!r})"
-    )
-    log_admin_action(
-        "user_create",
-        target_user_id=user_id,
-        summary={"username": body.username, "role": role, "provider": "local"},
-    )
-    return {
-        "ok": True,
-        "user_id": user_id,
-        "username": body.username,
-        "role": role,
-        "is_admin": role == "admin",
-    }
-
-
-@router.put("/users/{username}/password", status_code=status.HTTP_200_OK)
-async def admin_reset_user_password(
-    username: str,
-    body: PasswordResetRequest,
-    current: TokenPayload = Depends(require_admin),
-) -> dict:
-    """Admin-only: reset another user's password and invalidate their JWTs."""
-    if POCKETBASE_ENABLED:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Password reset is not available in PocketBase mode.",
-        )
-    if current and username == current.username:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Use profile settings to change your own password",
-        )
-    info = get_user_info(username)
-    if not update_password(username, body.password):
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
-    logger.info(
-        "Admin '%s' reset password for '%s'", current.username if current else "local", username
-    )
-    log_admin_action(
-        "user_password_reset",
-        target_user_id=str((info or {}).get("id") or ""),
-        summary={"username": username},
-    )
-    return {"ok": True}
-
-
-@router.put("/users/{username}/disabled", status_code=status.HTTP_200_OK)
-async def update_user_disabled(
-    username: str,
-    body: DisabledRequest,
-    current: TokenPayload = Depends(require_admin),
-) -> dict:
-    """Admin-only: enable or disable a user. Admins cannot disable themselves."""
-    if current and username == current.username:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="You cannot disable your own account",
-        )
-    info = get_user_info(username)
-    if not set_disabled(username, body.disabled, reason=body.reason):
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
-    logger.info(
-        "Admin '%s' set '%s' disabled=%s",
-        current.username if current else "local",
-        username,
-        body.disabled,
-    )
-    log_admin_action(
-        "user_disabled_set",
-        target_user_id=str((info or {}).get("id") or ""),
-        summary={
-            "username": username,
-            "disabled": body.disabled,
-            "reason": body.reason if body.disabled else "",
-        },
-    )
-    return {
-        "ok": True,
-        "username": username,
-        "disabled": body.disabled,
-        "disabled_reason": body.reason if body.disabled else "",
-    }
-
-
-@router.post("/users/{username}/revoke-sessions", status_code=status.HTTP_200_OK)
-async def admin_revoke_user_sessions(
-    username: str,
-    current: TokenPayload = Depends(require_admin),
-) -> dict:
-    """Admin-only: invalidate another user's existing JWTs."""
-    if current and username == current.username:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="You cannot revoke your own current session here",
-        )
-    info = get_user_info(username)
-    if not revoke_sessions(username):
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
-    log_admin_action(
-        "user_sessions_revoked",
-        target_user_id=str((info or {}).get("id") or ""),
-        summary={"username": username},
-    )
-    return {"ok": True, "username": username}
-
-
-@router.delete("/users/{username}", status_code=status.HTTP_200_OK)
-async def remove_user(
-    username: str,
-    data_action: Literal["keep", "archive", "delete"] = "keep",
-    current: TokenPayload = Depends(require_admin),
-) -> dict:
-    """Delete a user. Admins cannot delete their own account."""
-    if current and username == current.username:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="You cannot delete your own account",
-        )
-
-    info = get_user_info(username)
-    if info is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
-
-    user_id = str(info.get("id") or "") if info else ""
-    data_policy = _apply_user_data_policy(user_id, data_action)
-    if not delete_user(username):
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
-
-    logger.info(f"Admin '{current.username if current else 'local'}' deleted user '{username}'")
-    log_admin_action(
-        "user_delete",
-        target_user_id=user_id,
-        summary={"username": username, "data_policy": data_policy},
-    )
-    return {"ok": True, "data_policy": data_policy}
-
-
-@router.put("/users/{username}/role", status_code=status.HTTP_200_OK)
-async def update_user_role(
-    username: str,
-    body: SetRoleRequest,
-    current: TokenPayload = Depends(require_admin),
-) -> dict:
-    """Change a user's role. Admins cannot change their own role."""
-    if current and username == current.username:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="You cannot change your own role",
-        )
-
-    info = get_user_info(username)
-    updated = set_role(username, body.role)
-    if not updated:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
-
-    logger.info(
-        f"Admin '{current.username if current else 'local'}' set '{username}' role to {body.role!r}"
-    )
-    log_admin_action(
-        "user_role_set",
-        target_user_id=str((info or {}).get("id") or ""),
-        summary={"username": username, "role": body.role},
-    )
-    return {"ok": True, "username": username, "role": body.role}
-
-
 from deeptutor.api.routers import invites as invites_router  # noqa: E402
 from deeptutor.api.routers import profile as profile_router  # noqa: E402
+from deeptutor.api.routers import users as users_router  # noqa: E402
 
 _apply_user_data_policy = profile_router._apply_user_data_policy
 _sniff_image = profile_router._sniff_image
+DisabledRequest = users_router.DisabledRequest
+PasswordResetRequest = users_router.PasswordResetRequest
+SetRoleRequest = users_router.SetRoleRequest
 UpdateProfileRequest = profile_router.UpdateProfileRequest
 router.include_router(profile_router.router)
+router.include_router(users_router.router)
 router.include_router(invites_router.router)

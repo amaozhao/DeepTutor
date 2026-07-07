@@ -68,11 +68,11 @@
 
 ### 3. 认证路由同时承担登录、注册、管理员和导入导出
 
-证据：`deeptutor/api/routers/auth.py` 原约 1620 行，当前已把管理员邀请码管理拆到 `deeptutor/api/routers/invites.py`，把个人资料、头像上传/读取、自助导出/注销拆到 `deeptutor/api/routers/profile.py`，把管理员用户响应模型、CSV 导入大小限制和 CSV 解析 helper 拆到 `deeptutor/api/routers/users.py`；对应测试已归位到 `tests/api/routers/test_invites.py`、`tests/api/routers/test_profile.py` 和 `tests/api/routers/test_users.py`。`auth.router` 继续保持 `/api/v1/auth/invites`、`/api/v1/auth/profile...`、`/api/v1/auth/avatar/{user_id}`、`/api/v1/auth/users...` URL 不变。主 auth 路由仍约 1136 行，继续覆盖注册、登录、状态和管理员用户端点等逻辑。
+证据：`deeptutor/api/routers/auth.py` 原约 1620 行，当前已把管理员邀请码管理拆到 `deeptutor/api/routers/invites.py`，把个人资料、头像上传/读取、自助导出/注销拆到 `deeptutor/api/routers/profile.py`，把管理员用户列表、创建、导入/导出、禁用、重置密码、强制登出、删除和角色变更拆到 `deeptutor/api/routers/users.py`；对应测试已归位到 `tests/api/routers/test_invites.py`、`tests/api/routers/test_profile.py` 和 `tests/api/routers/test_users.py`。`auth.router` 继续保持 `/api/v1/auth/invites`、`/api/v1/auth/profile...`、`/api/v1/auth/avatar/{user_id}`、`/api/v1/auth/users...` URL 不变。主 auth 路由约 760 行，继续覆盖认证依赖、状态、登录/登出和公开注册逻辑。
 
 问题：认证和用户管理属于高风险边界，文件过大让权限判断、公开接口和管理员接口难以审计。后续增加 SaaS 能力时，最容易在这里产生越权或绕过。
 
-治理动作：已完成 invites、profile/avatar 和用户 CSV/helper 拆分，并补上新拆模块的镜像测试；后续继续按 `session`、`registration`、`admin users` 等边界拆成窄路由。每个公开接口都要有权限测试，且保持 `/api/v1/auth/...` 路径兼容。
+治理动作：已完成 invites、profile/avatar 和 admin users 拆分，并补上新拆模块的镜像测试；后续如果继续治理，优先把公开注册 challenge/注册流程从 session/login 依赖中拆出。每个公开接口都要有权限测试，且保持 `/api/v1/auth/...` 路径兼容。
 
 ### 4. 前端聊天主页面和上下文过大
 
