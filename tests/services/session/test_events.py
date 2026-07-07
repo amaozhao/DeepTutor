@@ -3,11 +3,15 @@
 from __future__ import annotations
 
 from deeptutor.core.stream import StreamEvent, StreamEventType
+from deeptutor.services.session import events as events_module
 from deeptutor.services.session.events import (
     artifact_attachments,
     event_usage_summary,
+    mirror_event_to_workspace,
     narration_marker_call_id,
     should_capture_assistant_content,
+    synthesize_done_event,
+    synthesize_error_event,
 )
 
 
@@ -181,3 +185,34 @@ def test_event_usage_summary_reads_nested_cost_summary() -> None:
     )
 
     assert event_usage_summary(event) == {"total_tokens": 42, "total_calls": 1}
+
+
+def test_synthesize_done_event_uses_persisted_status_and_error() -> None:
+    event = synthesize_done_event("t1", {"status": "failed", "error": "boom"})
+
+    assert event["type"] == "done"
+    assert event["turn_id"] == "t1"
+    assert event["metadata"]["status"] == "failed"
+    assert event["metadata"]["error"] == "boom"
+
+
+def test_synthesize_error_event_returns_none_without_error() -> None:
+    assert synthesize_error_event("t1", {"status": "failed"}) is None
+
+
+def test_mirror_event_to_workspace_writes_jsonl(monkeypatch, tmp_path) -> None:
+    class FakePathService:
+        def get_task_workspace(self, capability: str, turn_id: str):
+            return tmp_path / capability / turn_id
+
+    monkeypatch.setattr(events_module, "get_path_service", lambda: FakePathService())
+
+    mirror_event_to_workspace(
+        capability="chat",
+        turn_id="t1",
+        payload={"type": "done", "content": "你好"},
+    )
+
+    assert (tmp_path / "chat" / "t1" / "events.jsonl").read_text() == (
+        '{"type": "done", "content": "你好"}\n'
+    )
