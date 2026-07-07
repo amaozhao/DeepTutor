@@ -19,10 +19,7 @@ import pytest
 
 from deeptutor.core.stream import StreamEvent, StreamEventType
 from deeptutor.services.session.sqlite_store import SQLiteSessionStore
-from deeptutor.services.session.turn_runtime import (
-    TurnRuntimeManager,
-    _extract_regenerate_flag,
-)
+from deeptutor.services.session.turn_runtime import TurnRuntimeManager
 
 
 async def _noop_refresh(**_kwargs):
@@ -32,38 +29,6 @@ async def _noop_refresh(**_kwargs):
 @pytest.fixture
 def store(tmp_path: Path) -> SQLiteSessionStore:
     return SQLiteSessionStore(db_path=tmp_path / "regenerate.db")
-
-
-# ---------------------------------------------------------------------------
-# _extract_regenerate_flag
-# ---------------------------------------------------------------------------
-
-
-class TestExtractRegenerateFlag:
-    def test_default_is_false(self) -> None:
-        assert _extract_regenerate_flag({}) is False
-
-    def test_none_config_is_false(self) -> None:
-        assert _extract_regenerate_flag(None) is False
-
-    def test_true_bool(self) -> None:
-        config = {"_regenerate": True}
-        assert _extract_regenerate_flag(config) is True
-        assert "_regenerate" not in config  # popped
-
-    def test_true_string(self) -> None:
-        assert _extract_regenerate_flag({"_regenerate": "true"}) is True
-
-    def test_one_string(self) -> None:
-        assert _extract_regenerate_flag({"_regenerate": "1"}) is True
-
-    def test_false_string(self) -> None:
-        assert _extract_regenerate_flag({"_regenerate": "false"}) is False
-
-
-# ---------------------------------------------------------------------------
-# Store helpers
-# ---------------------------------------------------------------------------
 
 
 class TestStoreTailRollback:

@@ -42,7 +42,7 @@
    - 已抽出已绑定 linked folder 管理/同步路由到 `deeptutor/api/routers/knowledge_linked.py`，保持 `/api/v1/knowledge/...` URL 不变。
    - 已抽出 progress/WebSocket 和 task log 查询路由到 `deeptutor/api/routers/knowledge_progress.py`，保持 `/api/v1/knowledge/...` URL 不变。
    - 已抽出初始化、上传处理、reindex 后台任务主体到 `deeptutor/knowledge/tasks.py`，主路由保留同名导入入口以兼容现有调用和测试。
-   - 已同步拆分测试：直接对应 `deeptutor/api/routers/*` 的 API router 测试移动到 `tests/api/routers/`，`tests/api/` 仅保留 `api/main.py`、`api/security.py`、访问日志这类 API 层边界测试；上传 helper 测试移动到 `tests/knowledge/test_uploads.py`。
+   - 已做第一轮测试归位：直接对应 `deeptutor/api/routers/*` 的 API router 测试移动到 `tests/api/routers/`，上传 helper 测试移动到 `tests/knowledge/test_uploads.py`。这不是全仓测试层级重组；历史测试仍按顶层包或行为域混合组织，后续只应随代码拆分增量归位。
 2. 后续继续补行为保护，尤其覆盖：
    - 普通知识库列表、详情、创建、删除。
    - 多用户写权限：无权限用户不能上传、删除、reindex。
@@ -60,11 +60,11 @@
 
 ### 2. TurnRuntime 过大，长任务生命周期和异常边界耦合
 
-证据：`deeptutor/services/session/turn_runtime.py` 约 2090 行，并包含多处 `asyncio.create_task` 和大量宽泛 `except Exception`。
+证据：`deeptutor/services/session/turn_runtime.py` 原约 2090 行，当前已把附件准备、stream event 解析、payload/title 归一化、follow-up 上下文处理拆到 `deeptutor/services/session/attachments.py`、`events.py`、`payloads.py`、`followup.py`，并把对应测试拆到 `tests/services/session/test_attachments.py`、`test_events.py`、`test_payloads.py`、`test_followup.py`。主 runtime 仍约 1584 行，并包含多处 `asyncio.create_task` 和大量宽泛 `except Exception`。
 
 问题：会话 turn 执行、状态推送、取消、上下文构建、错误兜底、持久化更新集中在一个模块，导致失败路径难以验证。长任务一旦泄漏或吞错，用户侧表现会是“卡住”“结果丢失”“状态不一致”。
 
-治理动作：先为取消、失败、断连、重试建立回归测试；再把任务监督、事件推送、持久化更新拆成明确子模块。
+治理动作：已先拆出纯 helper 并归位测试，避免继续扩大 `turn_runtime.py`。下一轮再处理任务监督、事件推送、持久化更新等仍和长任务生命周期耦合的部分；每轮都要先补或保留取消、失败、断连、重试的回归测试。
 
 ### 3. 认证路由同时承担登录、注册、管理员和导入导出
 
@@ -188,11 +188,11 @@
 
 ### 18. 测试文件过大，回归定位成本高
 
-证据：`tests/api/routers/test_knowledge.py` 仍超过 1000 行，`tests/api/test_unified_ws_turn_runtime.py` 约 921 行，`tests/agents/question/test_pipeline.py` 约 986 行，`tests/services/partners/test_zulip_channel.py` 约 1261 行。
+证据：`tests/api/routers/test_unified_ws.py` 约 921 行，`tests/agents/question/test_pipeline.py` 约 986 行，`tests/services/partners/test_zulip_channel.py` 约 1261 行。`tests/api/routers/test_knowledge.py` 已降到约 805 行，但仍偏大。当前测试目录整体按顶层包大致分组，不是全量严格镜像源码；`standards/testing.md` 的要求是“when practical”，但新拆出的模块测试应优先放到对应包路径，例如 `deeptutor/services/session/events.py` -> `tests/services/session/test_events.py`。
 
 问题：大测试文件本身不一定错误，但如果 fixture、场景和断言堆叠，失败时很难判断是业务变更、测试假设过旧还是环境问题。
 
-治理动作：按行为切分测试文件；把重 fixture 下沉到 helper；对可选外部依赖加清晰 skip 条件。
+治理动作：按行为切分测试文件；把重 fixture 下沉到 helper；对可选外部依赖加清晰 skip 条件。不要全仓一次性搬测试目录；随实际代码拆分，把新模块和被修改模块的测试增量归位到对应包路径。
 
 ### 19. 多用户治理模块存在静默失败风险
 

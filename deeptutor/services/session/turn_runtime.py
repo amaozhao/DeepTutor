@@ -5,17 +5,60 @@ Turn-level runtime manager for unified chat streaming.
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncIterator, Callable, Sequence
+from collections.abc import AsyncIterator, Callable
 import contextlib
 from contextvars import Token
 from dataclasses import dataclass, field
 import json
 import logging
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any
 
 from deeptutor.core.stream import StreamEvent, StreamEventType
 from deeptutor.services.llm.utils import clean_thinking_tags
 from deeptutor.services.path_service import get_path_service
+from deeptutor.services.session.attachments import prepare_attachments
+from deeptutor.services.session.events import (
+    artifact_attachments as _artifact_attachments,
+)
+from deeptutor.services.session.events import (
+    event_usage_summary as _event_usage_summary,
+)
+from deeptutor.services.session.events import (
+    merge_usage_summary as _merge_usage_summary,
+)
+from deeptutor.services.session.events import (
+    narration_marker_call_id as _narration_marker_call_id,
+)
+from deeptutor.services.session.events import (
+    should_capture_assistant_content as _should_capture_assistant_content,
+)
+from deeptutor.services.session.followup import (
+    extract_followup_question_context as _extract_followup_question_context,
+)
+from deeptutor.services.session.followup import (
+    extract_persist_user_message as _extract_persist_user_message,
+)
+from deeptutor.services.session.followup import (
+    extract_regenerate_flag as _extract_regenerate_flag,
+)
+from deeptutor.services.session.followup import (
+    format_followup_question_context as _format_followup_question_context,
+)
+from deeptutor.services.session.payloads import (
+    clip_text as _clip_text,
+)
+from deeptutor.services.session.payloads import (
+    extract_memory_references as _extract_memory_references,
+)
+from deeptutor.services.session.payloads import (
+    llm_selection_dict as _llm_selection_dict,
+)
+from deeptutor.services.session.payloads import (
+    request_snapshot_metadata as _request_snapshot_metadata,
+)
+from deeptutor.services.session.payloads import (
+    sanitize_session_title as _sanitize_session_title,
+)
 from deeptutor.services.session.protocol import SessionStoreProtocol
 
 if TYPE_CHECKING:
@@ -23,248 +66,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-MemoryReference = Literal["recent", "profile", "scope", "preferences", "summary"]
-
-
-# Content call_kinds that make up the persisted answer. The chat agent loop
-# streams every round's text as ``content`` with ``agent_loop_round``; the
-# finish round (and forced-finish) are the answer, narration rounds are
-# filtered back out via their ``call_role`` marker (see _narration_marker_call_id).
-_ANSWER_CONTENT_CALL_KINDS = frozenset({"llm_final_response", "agent_loop_round"})
-
-
-def _should_capture_assistant_content(event: StreamEvent) -> bool:
-    if event.type != StreamEventType.CONTENT:
-        return False
-    metadata = event.metadata or {}
-    call_id = metadata.get("call_id")
-    if not call_id:
-        return True
-    return metadata.get("call_kind") in _ANSWER_CONTENT_CALL_KINDS
-
-
-def _narration_marker_call_id(event: StreamEvent) -> str | None:
-    """call_id of a chat-loop round that resolved as narration (a short
-    preamble streamed alongside a tool call). Its text belongs to the trace,
-    not the persisted answer, so it is excluded when assembling content."""
-    metadata = event.metadata or {}
-    if (
-        metadata.get("trace_kind") == "call_status"
-        and metadata.get("call_state") == "complete"
-        and metadata.get("call_role") == "narration"
-    ):
-        call_id = metadata.get("call_id")
-        return str(call_id) if call_id else None
-    return None
-
-
-def _artifact_attachments(event: StreamEvent) -> list[dict[str, Any]]:
-    """Generated-file attachments carried by a stream event.
-
-    The ``exec`` / ``code_execution`` tools surface files written to the turn
-    workspace ({filename, url, mime_type, size_bytes}) in two places: each
-    ``tool_result`` event carries them in ``metadata.tool_metadata.artifacts``
-    the moment the tool finishes (the source that survives cancelled turns),
-    and the loop's final SOURCES event aggregates them as ``type=="artifact"``
-    sources. Both are read — the caller dedupes by URL. Persisting them as
-    assistant-message attachments lets the chat UI render openable cards —
-    same Viewer path as user uploads — instead of relying on the model
-    pasting a raw ``/api/outputs`` URL.
-    """
-    metadata = event.metadata or {}
-    raw: list[Any] = []
-    if event.type == StreamEventType.SOURCES:
-        raw = [
-            entry
-            for entry in metadata.get("sources") or []
-            if isinstance(entry, dict) and entry.get("type") == "artifact"
-        ]
-    elif event.type == StreamEventType.TOOL_RESULT:
-        tool_meta = metadata.get("tool_metadata")
-        if isinstance(tool_meta, dict):
-            raw = [e for e in tool_meta.get("artifacts") or [] if isinstance(e, dict)]
-    attachments: list[dict[str, Any]] = []
-    for entry in raw:
-        url = str(entry.get("url") or "")
-        if not url:
-            continue
-        mime = str(entry.get("mime_type") or "")
-        attachments.append(
-            {
-                "type": "image" if mime.startswith("image/") else "document",
-                "filename": str(entry.get("filename") or "file"),
-                "mime_type": mime,
-                "url": url,
-                "size_bytes": entry.get("size_bytes"),
-                "generated": True,
-            }
-        )
-    return attachments
-
-
-def _event_usage_summary(event: StreamEvent) -> dict[str, Any] | None:
-    if event.type != StreamEventType.RESULT:
-        return None
-    metadata = event.metadata or {}
-    nested = metadata.get("metadata")
-    if isinstance(nested, dict) and isinstance(nested.get("cost_summary"), dict):
-        return nested["cost_summary"]
-    if isinstance(metadata.get("cost_summary"), dict):
-        return metadata["cost_summary"]
-    return None
-
-
-def _merge_usage_summary(
-    current: dict[str, Any] | None,
-    incoming: dict[str, Any] | None,
-) -> dict[str, Any] | None:
-    if not incoming:
-        return current
-    keys = ("prompt_tokens", "completion_tokens", "total_tokens", "total_calls", "total_cost_usd")
-    merged = dict(current or {})
-    for key in keys:
-        left = float(merged.get(key) or 0)
-        right = float(incoming.get(key) or 0)
-        value = left + right
-        merged[key] = round(value, 8) if key.endswith("_usd") else int(value)
-    return merged
-
-
-def _clip_text(value: str, limit: int = 4000) -> str:
-    text = str(value or "").strip()
-    if len(text) <= limit:
-        return text
-    return text[:limit].rstrip() + "\n...[truncated]"
-
-
-_TITLE_QUOTE_PAIRS: tuple[tuple[str, str], ...] = (
-    ('"', '"'),
-    ("'", "'"),
-    ("“", "”"),
-    ("‘", "’"),
-    ("「", "」"),
-    ("『", "』"),
-    ("`", "`"),
-)
-_TITLE_PREFIXES: tuple[str, ...] = (
-    "Title:",
-    "title:",
-    "TITLE:",
-    "Title-",
-    "标题：",
-    "标题:",
-    "对话标题：",
-    "对话标题:",
-)
-_TITLE_TRAILING_PUNCT = ".。!！?？,，;；、 \t"
 _INTERRUPTED_TURN_ERROR = "Turn interrupted by server restart. Please retry your message."
-
-
-def _sanitize_session_title(raw: str) -> str:
-    """Trim the noise LLMs love to add to short titles.
-
-    Strips model reasoning tags, surrounding quotes, leading "Title:" labels,
-    trailing punctuation, and Markdown bold/italic markers. Caps length at
-    80 characters so a chatty model can't blow past the sidebar layout.
-    """
-    text = clean_thinking_tags(raw or "").strip()
-    if not text:
-        return ""
-    text = text.splitlines()[0].strip()
-    # Iterate until the text stops shrinking — models often nest the
-    # noise (e.g. ``**Title:** "Hello"``) so a single pass leaves
-    # leftover wrappers.
-    for _ in range(8):
-        prev = text
-        text = text.lstrip("*_#- \t").rstrip("*_ \t")
-        for prefix in _TITLE_PREFIXES:
-            if text.startswith(prefix):
-                text = text[len(prefix) :].strip()
-                break
-        for opener, closer in _TITLE_QUOTE_PAIRS:
-            if len(text) >= 2 and text.startswith(opener) and text.endswith(closer):
-                text = text[len(opener) : len(text) - len(closer)].strip()
-                break
-        text = text.rstrip(_TITLE_TRAILING_PUNCT)
-        if text == prev:
-            break
-    return text[:80]
-
-
-def _extract_memory_references(payload: dict[str, Any]) -> list[MemoryReference]:
-    """Return the L3 slot names the client opted in for this turn.
-
-    Any non-empty list triggers ``read_l3_concat`` injection in v2 — the
-    individual names are kept for forward-compat with workbench UI hints
-    (e.g. "I want preferences in this turn") even though the read tool
-    returns the full concat.
-    """
-    refs = payload.get("memory_references", []) or []
-    if not isinstance(refs, list):
-        return []
-    allowed = {"recent", "profile", "scope", "preferences", "summary"}
-    out: list[MemoryReference] = []
-    for item in refs:
-        if item in allowed and item not in out:
-            out.append(item)
-    return out
-
-
-def _string_list(value: Any) -> list[str]:
-    if not isinstance(value, list):
-        return []
-    return [item for item in value if isinstance(item, str) and item]
-
-
-def _llm_selection_dict(value: Any) -> dict[str, str] | None:
-    from deeptutor.services.model_selection import LLMSelection
-
-    selection = LLMSelection.from_payload(value)
-    return selection.to_dict() if selection else None
-
-
-def _request_snapshot_metadata(
-    *,
-    payload: dict[str, Any],
-    content: str,
-    capability: str,
-    config: dict[str, Any],
-    attachments: list[dict[str, Any]],
-    notebook_references: list[Any],
-    history_references: list[Any],
-    question_notebook_references: list[Any],
-    book_references: list[Any],
-    persona: str,
-    memory_references: Sequence[str],
-    llm_selection: dict[str, str] | None,
-) -> dict[str, Any]:
-    """Persist the front-end context chips with the user message."""
-    snapshot: dict[str, Any] = {
-        "content": content,
-        "capability": capability,
-        "enabledTools": _string_list(payload.get("tools")),
-        "knowledgeBases": _string_list(payload.get("knowledge_bases")),
-        "language": str(payload.get("language", "en") or "en"),
-    }
-    if attachments:
-        snapshot["attachments"] = attachments
-    if config:
-        snapshot["config"] = dict(config)
-    if notebook_references:
-        snapshot["notebookReferences"] = notebook_references
-    if history_references:
-        snapshot["historyReferences"] = history_references
-    if question_notebook_references:
-        snapshot["questionNotebookReferences"] = question_notebook_references
-    if book_references:
-        snapshot["bookReferences"] = book_references
-    if persona:
-        snapshot["persona"] = persona
-    if memory_references:
-        snapshot["memoryReferences"] = memory_references
-    if llm_selection:
-        snapshot["llmSelection"] = llm_selection
-    return {"request_snapshot": snapshot}
 
 
 def _format_question_bank_entry(entry: dict[str, Any]) -> str:
@@ -375,243 +177,6 @@ async def _build_question_bank_context(
             continue
         blocks.append(_format_question_bank_entry(entry))
     return "\n\n---\n\n".join(blocks)
-
-
-def _normalize_filename_list(raw: dict[str, Any]) -> list[str]:
-    """Coalesce legacy single-filename and modern multi-filename inputs.
-
-    Returns the cleaned list (possibly empty). Empty / whitespace-only
-    entries are dropped, and the singular ``user_answer_image_filename``
-    is honoured as a fallback so older clients still surface their
-    filename in the system prompt.
-    """
-    candidates: list[Any] = []
-    plural = raw.get("user_answer_image_filenames")
-    if isinstance(plural, list):
-        candidates.extend(plural)
-    elif isinstance(plural, str):
-        candidates.append(plural)
-    legacy = raw.get("user_answer_image_filename")
-    if isinstance(legacy, str) and legacy.strip():
-        candidates.append(legacy)
-    cleaned: list[str] = []
-    for item in candidates:
-        if not isinstance(item, str):
-            continue
-        name = item.strip()
-        if name:
-            cleaned.append(name)
-    return cleaned
-
-
-def _extract_followup_question_context(
-    config: dict[str, Any] | None,
-) -> dict[str, Any] | None:
-    if not isinstance(config, dict):
-        return None
-    raw = config.pop("followup_question_context", None)
-    if not isinstance(raw, dict):
-        return None
-
-    question = str(raw.get("question", "") or "").strip()
-    question_id = str(raw.get("question_id", "") or "").strip()
-    if not question:
-        return None
-
-    options = raw.get("options")
-    normalized_options: dict[str, str] | None = None
-    if isinstance(options, dict):
-        normalized_options = {
-            str(key).strip().upper()[:1]: str(value or "").strip()
-            for key, value in options.items()
-            if str(value or "").strip()
-        }
-
-    return {
-        "parent_quiz_session_id": str(raw.get("parent_quiz_session_id", "") or "").strip(),
-        "question_id": question_id,
-        "question": question,
-        "question_type": str(raw.get("question_type", "") or "").strip(),
-        "options": normalized_options,
-        "correct_answer": str(raw.get("correct_answer", "") or "").strip(),
-        "explanation": str(raw.get("explanation", "") or "").strip(),
-        "difficulty": str(raw.get("difficulty", "") or "").strip(),
-        "concentration": str(raw.get("concentration", "") or "").strip(),
-        "knowledge_context": _clip_text(str(raw.get("knowledge_context", "") or "").strip()),
-        "user_answer": str(raw.get("user_answer", "") or "").strip(),
-        "is_correct": raw.get("is_correct"),
-        # Filenames of the learner's image answers, when any were attached.
-        # The bytes are sent as regular WS attachments on the first
-        # follow-up turn — we just record the filenames here so the system
-        # prompt can tell the LLM *what* those attached images actually
-        # are. Accept both the legacy single ``user_answer_image_filename``
-        # string and the new ``user_answer_image_filenames`` list.
-        "user_answer_image_filenames": _normalize_filename_list(raw),
-        # Most recent AI-judge output the learner saw, if they ran the
-        # judge. Forwarded so the follow-up tutor can build on the same
-        # assessment rather than starting fresh.
-        "ai_judgment": _clip_text(str(raw.get("ai_judgment", "") or "").strip()),
-    }
-
-
-def _extract_persist_user_message(config: dict[str, Any] | None) -> bool:
-    if not isinstance(config, dict):
-        return True
-    raw = config.pop("_persist_user_message", True)
-    if isinstance(raw, bool):
-        return raw
-    if isinstance(raw, str):
-        return raw.strip().lower() not in {"false", "0", "no"}
-    return bool(raw)
-
-
-def _extract_regenerate_flag(config: dict[str, Any] | None) -> bool:
-    if not isinstance(config, dict):
-        return False
-    raw = config.pop("_regenerate", False)
-    if isinstance(raw, bool):
-        return raw
-    if isinstance(raw, str):
-        return raw.strip().lower() in {"true", "1", "yes"}
-    return bool(raw)
-
-
-def _format_followup_question_context(context: dict[str, Any], language: str = "en") -> str:
-    options = context.get("options") or {}
-    option_lines = []
-    if isinstance(options, dict) and options:
-        for key, value in options.items():
-            if value:
-                option_lines.append(f"{key}. {value}")
-    correctness = context.get("is_correct")
-    correctness_text = (
-        "correct" if correctness is True else "incorrect" if correctness is False else "unknown"
-    )
-
-    if str(language or "en").lower().startswith("zh"):
-        lines = [
-            "你正在处理一道测验题的后续追问。",
-            "下面是本题上下文，请在后续回答中优先围绕这道题进行解释、纠错、延展和追问。",
-            "如果用户提出超出本题的内容，也可以正常回答，但要保持和本题的连续性。",
-            "",
-            "[Question Follow-up Context]",
-            f"Question ID: {context.get('question_id') or '(none)'}",
-            f"Parent quiz session: {context.get('parent_quiz_session_id') or '(none)'}",
-            f"Question type: {context.get('question_type') or '(none)'}",
-            f"Difficulty: {context.get('difficulty') or '(none)'}",
-            f"Concentration: {context.get('concentration') or '(none)'}",
-            "",
-            "Question:",
-            context.get("question") or "(none)",
-        ]
-        if option_lines:
-            lines.extend(["", "Options:", *option_lines])
-        lines.extend(
-            [
-                "",
-                f"User answer: {context.get('user_answer') or '(not provided)'}",
-                f"User result: {correctness_text}",
-                f"Reference answer: {context.get('correct_answer') or '(none)'}",
-                "",
-                "Explanation:",
-                context.get("explanation") or "(none)",
-            ]
-        )
-        image_filenames = context.get("user_answer_image_filenames") or []
-        if isinstance(image_filenames, list) and image_filenames:
-            filename_text = "、".join(image_filenames)
-            count_text = f"{len(image_filenames)} 张" if len(image_filenames) > 1 else "一张"
-            lines.extend(
-                [
-                    "",
-                    "学习者作答附图：",
-                    f"该作答共附了{count_text}图片（文件名：{filename_text}），"
-                    f"随首条追问消息一起发送，是用户提交的作答内容的一部分，不是无关上下文。"
-                    f"请结合图片中的文字/公式/草图进行解读，并将其视为对上面 “User answer” 文本的补充。",
-                ]
-            )
-        ai_judgment = context.get("ai_judgment")
-        if ai_judgment:
-            lines.extend(
-                [
-                    "",
-                    "AI 评判（之前已对学习者作答给出的评判，请基于此继续，不要重复完整重写）：",
-                    ai_judgment,
-                ]
-            )
-        if context.get("knowledge_context"):
-            lines.extend(
-                [
-                    "",
-                    "Knowledge context:",
-                    context["knowledge_context"],
-                ]
-            )
-        return "\n".join(lines).strip()
-
-    lines = [
-        "You are handling follow-up questions about a single quiz item.",
-        "Use the question context below as the primary grounding for future turns in this session.",
-        "If the user asks something broader, you may answer normally, but maintain continuity with this quiz item.",
-        "",
-        "[Question Follow-up Context]",
-        f"Question ID: {context.get('question_id') or '(none)'}",
-        f"Parent quiz session: {context.get('parent_quiz_session_id') or '(none)'}",
-        f"Question type: {context.get('question_type') or '(none)'}",
-        f"Difficulty: {context.get('difficulty') or '(none)'}",
-        f"Concentration: {context.get('concentration') or '(none)'}",
-        "",
-        "Question:",
-        context.get("question") or "(none)",
-    ]
-    if option_lines:
-        lines.extend(["", "Options:", *option_lines])
-    lines.extend(
-        [
-            "",
-            f"User answer: {context.get('user_answer') or '(not provided)'}",
-            f"User result: {correctness_text}",
-            f"Reference answer: {context.get('correct_answer') or '(none)'}",
-            "",
-            "Explanation:",
-            context.get("explanation") or "(none)",
-        ]
-    )
-    image_filenames = context.get("user_answer_image_filenames") or []
-    if isinstance(image_filenames, list) and image_filenames:
-        joined = ", ".join(image_filenames)
-        plural = "images were" if len(image_filenames) > 1 else "image was"
-        plural_noun = (
-            "Learner answer images" if len(image_filenames) > 1 else "Learner answer image"
-        )
-        lines.extend(
-            [
-                "",
-                f"{plural_noun}:",
-                f"{len(image_filenames)} {plural} attached to the first follow-up message "
-                f"(filenames: {joined}). They are part of the learner's answer — read their "
-                "text/formulas/sketches and treat them as a supplement to the typed `User answer` "
-                "above, not unrelated context.",
-            ]
-        )
-    ai_judgment = context.get("ai_judgment")
-    if ai_judgment:
-        lines.extend(
-            [
-                "",
-                "Prior AI judgment (already shown to the learner — build on it instead of restating it in full):",
-                ai_judgment,
-            ]
-        )
-    if context.get("knowledge_context"):
-        lines.extend(
-            [
-                "",
-                "Knowledge context:",
-                context["knowledge_context"],
-            ]
-        )
-    return "\n".join(lines).strip()
 
 
 @dataclass
@@ -1185,8 +750,6 @@ class TurnRuntimeManager:
         session_id = execution.session_id
         capability_name = execution.capability
         turn_id = execution.turn_id
-        attachments = []
-        attachment_records = []
         assistant_events: list[dict[str, Any]] = []
         assistant_content = ""
         turn_usage_summary: dict[str, Any] | None = None
@@ -1230,7 +793,7 @@ class TurnRuntimeManager:
         try:
             from deeptutor.agents.notebook import NotebookAnalysisAgent
             from deeptutor.book.context import build_book_context
-            from deeptutor.core.context import Attachment, UnifiedContext
+            from deeptutor.core.context import UnifiedContext
             from deeptutor.runtime.orchestrator import ChatOrchestrator
             from deeptutor.services.memory import get_memory_store
             from deeptutor.services.model_selection.runtime import (
@@ -1280,84 +843,15 @@ class TurnRuntimeManager:
             question_bank_context = ""
             book_context = book_context_result.text
 
-            import base64 as _b64
-            import uuid as _uuid
-
-            from deeptutor.services.storage import get_attachment_store
-
-            for item in payload.get("attachments", []):
-                record = {
-                    "type": item.get("type", "file"),
-                    "url": item.get("url", ""),
-                    "base64": item.get("base64", ""),
-                    "filename": item.get("filename", ""),
-                    "mime_type": item.get("mime_type", ""),
-                    "id": item.get("id", "") or _uuid.uuid4().hex[:12],
-                }
-                attachment_records.append(record)
-
-            # Persist original bytes to the attachment store before extraction
-            # so the frontend preview drawer can fetch the file later. The
-            # extractor will clear base64 on documents to keep DB rows lean,
-            # but the URL we record here outlives that pruning. Upload errors
-            # are non-fatal — extraction still runs from the in-memory base64.
-            attachment_store = get_attachment_store()
-            for record in attachment_records:
-                if record.get("url"):
-                    continue  # already hosted (e.g. legacy URL)
-                b64 = record.get("base64") or ""
-                if not b64:
-                    continue
-                try:
-                    raw_bytes = _b64.b64decode(b64, validate=False)
-                except Exception as exc:
-                    logger.warning(
-                        "skipping attachment upload for %r: invalid base64 (%s)",
-                        record.get("filename"),
-                        exc,
-                    )
-                    continue
-                try:
-                    record["url"] = await attachment_store.put(
-                        session_id=session_id,
-                        attachment_id=record["id"],
-                        filename=record.get("filename", "") or "file",
-                        data=raw_bytes,
-                        mime_type=record.get("mime_type", "") or "",
-                    )
-                except Exception as exc:
-                    logger.warning(
-                        "attachment store rejected %r: %s",
-                        record.get("filename"),
-                        exc,
-                    )
-
-            from deeptutor.utils.document_extractor import extract_documents_from_records
-
-            document_texts, attachment_records = extract_documents_from_records(attachment_records)
-            attachments = [
-                Attachment(
-                    type=r.get("type", "file"),
-                    url=r.get("url", ""),
-                    base64=r.get("base64", ""),
-                    filename=r.get("filename", ""),
-                    mime_type=r.get("mime_type", ""),
-                    id=r.get("id", ""),
-                    extracted_text=r.get("extracted_text", ""),
-                )
-                for r in attachment_records
-            ]
-            # DB persistence copy: drop base64 unconditionally now that the
-            # original bytes live in the attachment store. Image attachments
-            # used to keep base64 here (which bloated message rows); the URL
-            # is now the stable source for previews.
-            persisted_attachment_records = [
-                {
-                    **{k: v for k, v in r.items() if k != "base64"},
-                    "base64": "",
-                }
-                for r in attachment_records
-            ]
+            prepared_attachments = await prepare_attachments(
+                session_id=session_id,
+                raw_items=payload.get("attachments", []) or [],
+                logger=logger,
+            )
+            attachment_records = prepared_attachments.records
+            attachments = prepared_attachments.context
+            persisted_attachment_records = prepared_attachments.persisted
+            document_texts = prepared_attachments.document_texts
 
             if followup_question_context:
                 existing_messages = await self.store.get_messages_for_context(
