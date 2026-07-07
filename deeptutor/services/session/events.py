@@ -181,3 +181,55 @@ def _mirror_events_to_workspace_sync(
             )
     except Exception:
         logger.debug("Failed to mirror turn events to workspace", exc_info=True)
+
+
+async def flush_buffered_events(
+    *,
+    store: Any,
+    turn_id: str,
+    capability: str,
+    events: list[dict[str, Any]],
+) -> None:
+    append_batch = getattr(store, "append_turn_events", None)
+    if callable(append_batch):
+        try:
+            persisted_batch = await append_batch(turn_id, events)
+        except ValueError as exc:
+            if "Turn not found:" not in str(exc):
+                raise
+            logger.warning(
+                "Skip persisting %d buffered event(s) for missing turn %s",
+                len(events),
+                turn_id,
+            )
+            return
+        await mirror_events_to_workspace(
+            capability=capability,
+            turn_id=turn_id,
+            payloads=persisted_batch,
+        )
+        return
+
+    persisted_events: list[dict[str, Any]] = []
+    try:
+        for index, payload in enumerate(events):
+            try:
+                persisted = await store.append_turn_event(turn_id, payload)
+            except ValueError as exc:
+                if "Turn not found:" not in str(exc):
+                    raise
+                logger.warning(
+                    "Skip persisting %d buffered event(s) for missing turn %s (first: %s)",
+                    len(events) - index,
+                    turn_id,
+                    payload.get("type", ""),
+                )
+                break
+            persisted_events.append(persisted)
+    finally:
+        if persisted_events:
+            await mirror_events_to_workspace(
+                capability=capability,
+                turn_id=turn_id,
+                payloads=persisted_events,
+            )
