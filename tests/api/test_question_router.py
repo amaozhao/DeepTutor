@@ -68,6 +68,7 @@ def _load_question_router_module(monkeypatch: pytest.MonkeyPatch):
         "csrf_protection_enabled": True,
     }
     fake_config.load_integrations_settings = lambda: {"pocketbase_url": ""}
+    fake_config.load_shared_state_settings = lambda: {"provider": "file", "database_url": ""}
     fake_config.load_system_settings = lambda: {"cors_origin": "", "cors_origins": []}
     monkeypatch.setitem(sys.modules, "deeptutor.services.config", fake_config)
 
@@ -151,3 +152,36 @@ def test_mimic_websocket_accepts_config_and_returns_messages(
     assert messages[0]["stage"] == "init"
     assert messages[1]["stage"] == "processing"
     assert messages[2]["content"] == "stub mimic failure"
+
+
+def test_mimic_websocket_generation_is_rate_limited(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    question_router_module = _load_question_router_module(monkeypatch)
+    import deeptutor.api.routers.auth as auth_router
+    from deeptutor.api.security import reset_security_state
+
+    reset_security_state()
+    monkeypatch.setattr(auth_router, "AUTH_ENABLED", False)
+
+    async def _fake_mimic_exam_questions(*_args, **_kwargs):
+        return {"success": False, "error": "stub mimic failure"}
+
+    monkeypatch.setattr(
+        question_router_module, "mimic_exam_questions", _fake_mimic_exam_questions
+    )
+
+    with TestClient(_build_app(question_router_module)) as client:
+        for index in range(31):
+            with client.websocket_connect("/api/v1/question/mimic") as websocket:
+                websocket.send_json(
+                    {
+                        "mode": "parsed",
+                        "paper_path": str(tmp_path / f"paper-{index}"),
+                        "kb_name": "demo-kb",
+                    }
+                )
+                message = websocket.receive_json()
+
+    assert message["status"] == 429
+    assert "Too many requests" in message["content"]

@@ -7,8 +7,9 @@ import re
 import sys
 import traceback
 
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 
+from deeptutor.agents.question import AgentCoordinator
 from deeptutor.api.utils.task_id_manager import TaskIDManager
 from deeptutor.logging import (
     ProcessLogEvent,
@@ -17,8 +18,10 @@ from deeptutor.logging import (
     current_log_context,
 )
 from deeptutor.services.config import PROJECT_ROOT, load_config_with_main
+from deeptutor.services.llm.config import get_llm_config
 from deeptutor.services.path_service import get_path_service
-from deeptutor.services.settings.interface_settings import get_response_language
+from deeptutor.services.settings.interface_settings import get_ui_language
+from deeptutor.tools.question import mimic_exam_questions
 from deeptutor.utils.document_validator import DocumentValidator
 from deeptutor.utils.error_utils import format_exception_message
 
@@ -28,15 +31,6 @@ log_dir = config.get("paths", {}).get("user_log_dir") or config.get("logging", {
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
-ws_router = APIRouter()
-
-
-async def mimic_exam_questions(*args, **kwargs):
-    """Compatibility seam that keeps the legacy workflow import deferred."""
-
-    from deeptutor.tools.question import mimic_exam_questions as run
-
-    return await run(*args, **kwargs)
 
 
 def _mimic_output_dir():
@@ -46,7 +40,7 @@ def _mimic_output_dir():
     return get_path_service().get_question_dir() / "mimic_papers"
 
 
-@ws_router.websocket("/mimic")
+@router.websocket("/mimic")
 async def websocket_mimic_generate(websocket: WebSocket):
     """
     WebSocket endpoint for mimic exam paper question generation.
@@ -73,7 +67,8 @@ async def websocket_mimic_generate(websocket: WebSocket):
     }
     """
     from deeptutor.api.routers.auth import ws_auth_failed, ws_require_auth
-    from deeptutor.multi_user.context import reset_current_user
+    from deeptutor.api.security import require_ws_turn_rate_limit
+    from deeptutor.multi_user.context import get_current_user, reset_current_user
 
     user_token = await ws_require_auth(websocket)
     if user_token is ws_auth_failed:
@@ -90,6 +85,11 @@ async def websocket_mimic_generate(websocket: WebSocket):
         mode = data.get("mode", "parsed")  # "upload" or "parsed"
         kb_name = data.get("kb_name", "ai_textbook")
         max_questions = data.get("max_questions")
+        try:
+            require_ws_turn_rate_limit(websocket, "question-mimic", get_current_user())
+        except HTTPException as exc:
+            await websocket.send_json({"type": "error", "content": str(exc.detail), "status": 429})
+            return
 
         logger.info(f"Starting mimic generation (mode: {mode}, kb: {kb_name})")
 
@@ -356,12 +356,11 @@ async def websocket_mimic_generate(websocket: WebSocket):
                 pass
 
 
-@ws_router.websocket("/generate")
+@router.websocket("/generate")
 async def websocket_question_generate(websocket: WebSocket):
-    from deeptutor.agents.question import AgentCoordinator
     from deeptutor.api.routers.auth import ws_auth_failed, ws_require_auth
-    from deeptutor.multi_user.context import reset_current_user
-    from deeptutor.services.llm.config import get_llm_config
+    from deeptutor.api.security import require_ws_turn_rate_limit
+    from deeptutor.multi_user.context import get_current_user, reset_current_user
 
     user_token = await ws_require_auth(websocket)
     if user_token is ws_auth_failed:
@@ -384,6 +383,11 @@ async def websocket_question_generate(websocket: WebSocket):
                 await websocket.send_json({"type": "error", "content": "Requirement is required"})
             except (RuntimeError, WebSocketDisconnect):
                 pass
+            return
+        try:
+            require_ws_turn_rate_limit(websocket, "question-generate", get_current_user())
+        except HTTPException as exc:
+            await websocket.send_json({"type": "error", "content": str(exc.detail), "status": 429})
             return
 
         # Generate task ID
@@ -420,7 +424,7 @@ async def websocket_question_generate(websocket: WebSocket):
             base_url=base_url,
             api_version=api_version,
             kb_name=kb_name,
-            language=get_response_language(default=config.get("system", {}).get("language", "en")),
+            language=get_ui_language(default=config.get("system", {}).get("language", "en")),
             output_dir=str(output_base),
         )
 
