@@ -1,4 +1,4 @@
-import type { StreamEvent } from "@/lib/unified-ws";
+import type { StreamEvent } from "./unified-ws";
 
 type ContentMeta = {
   call_id?: string;

@@ -14,7 +14,7 @@
  * persisted positive id).
  */
 
-import type { MessageItem } from "@/context/UnifiedChatContext";
+import type { MessageItem } from "@/context/chat/state";
 
 const ROOT_KEY = "null";
 

@@ -76,11 +76,11 @@
 
 ### 4. 前端聊天主页面和上下文过大
 
-证据：`web/app/(workspace)/home/[[...sessionId]]/page.tsx` 原约 2193 行，当前约 2071 行；`web/context/UnifiedChatContext.tsx` 原约 1885 行，当前约 1754 行。已把首页 capability/tool catalog 拆到 `web/lib/capabilities.ts`，把持久化 session hydration helper 拆到 `web/lib/chat/hydration.ts`，对应测试归位到 `web/tests/lib/capabilities.test.ts` 和 `web/tests/lib/chat/hydration.test.ts`。
+证据：`web/app/(workspace)/home/[[...sessionId]]/page.tsx` 原约 2193 行，当前约 2071 行；`web/context/UnifiedChatContext.tsx` 原约 1885 行，当前约 1104 行。已把首页 capability/tool catalog 拆到 `web/lib/capabilities.ts`，把持久化 session hydration helper 拆到 `web/lib/chat/hydration.ts`，把聊天 state/reducer 拆到 `web/context/chat/state.ts`；对应测试归位到 `web/tests/lib/capabilities.test.ts`、`web/tests/lib/chat/hydration.test.ts` 和 `web/tests/context/chat/state.test.ts`。
 
 问题：页面、状态管理、网络请求、流式事件和 UI 控制耦合，导致聊天页任何小改都可能影响登录后主流程。
 
-治理动作：已先拆出纯数据 catalog 和 hydration helper，避免继续扩大聊天页和上下文。下一轮优先拆状态 reducer、transport 层和纯展示组件；补足流式消息、重连、取消、错误提示的回归测试。
+治理动作：已先拆出纯数据 catalog、hydration helper 和 state/reducer，避免继续扩大聊天页和上下文。下一轮优先拆 transport 层和纯展示组件；补足重连、错误提示等仍未独立覆盖的回归测试。
 
 ### 5. LLM 配置和进程环境变量写入分散
 
