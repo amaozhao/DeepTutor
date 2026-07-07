@@ -1,10 +1,4 @@
-"""Wiring tests for safe ``.zip`` upload handling in the knowledge router.
-
-The deep security guards live in ``tests/utils/test_archive_extractor.py``;
-these check that ``_save_uploaded_files`` routes ``.zip`` uploads through the
-safe extractor, registers only supported members, and never persists the
-archive itself.
-"""
+"""Safe upload handling for knowledge-base raw files."""
 
 from __future__ import annotations
 
@@ -17,7 +11,7 @@ import pytest
 pytest.importorskip("fastapi")
 from fastapi import HTTPException, UploadFile
 
-from deeptutor.api.routers.knowledge import _save_uploaded_files
+from deeptutor.knowledge.uploads import save_uploaded_files
 
 ALLOWED = {".txt", ".md", ".pdf", ".zip"}
 
@@ -42,18 +36,17 @@ def test_zip_upload_extracts_only_supported_members(tmp_path: Path) -> None:
         [
             ("notes.txt", b"hello"),
             ("paper.md", b"# title"),
-            ("malware.exe", b"x"),  # disallowed -> skipped
-            ("inner.zip", b"PK\x03\x04"),  # nested archive -> skipped
+            ("malware.exe", b"x"),
+            ("inner.zip", b"PK\x03\x04"),
         ],
     )
     raw = tmp_path / "raw"
     raw.mkdir()
 
-    names, paths = _save_uploaded_files([upload], raw, allowed_extensions=ALLOWED)
+    names, paths = save_uploaded_files([upload], raw, allowed_extensions=ALLOWED)
 
     assert sorted(names) == ["notes.txt", "paper.md"]
     assert (raw / "notes.txt").read_bytes() == b"hello"
-    # The archive itself is never persisted or registered.
     assert not (raw / "bundle.zip").exists()
     assert all(not p.endswith(".zip") for p in paths)
 
@@ -68,11 +61,11 @@ def test_zip_upload_with_zip_slip_member_stays_in_target(tmp_path: Path) -> None
     raw = tmp_path / "raw"
     raw.mkdir()
 
-    names, _ = _save_uploaded_files([upload], raw, allowed_extensions=ALLOWED)
+    names, _ = save_uploaded_files([upload], raw, allowed_extensions=ALLOWED)
 
     assert sorted(names) == ["escape.txt", "safe.txt"]
     assert (raw / "escape.txt").exists()
-    assert not (tmp_path / "escape.txt").exists()  # did not escape
+    assert not (tmp_path / "escape.txt").exists()
 
 
 def test_invalid_zip_is_rejected(tmp_path: Path) -> None:
@@ -81,7 +74,7 @@ def test_invalid_zip_is_rejected(tmp_path: Path) -> None:
     raw.mkdir()
 
     with pytest.raises(HTTPException) as exc_info:
-        _save_uploaded_files([upload], raw, allowed_extensions=ALLOWED)
+        save_uploaded_files([upload], raw, allowed_extensions=ALLOWED)
     assert exc_info.value.status_code == 400
 
 
@@ -91,5 +84,5 @@ def test_zip_with_no_supported_members_is_rejected(tmp_path: Path) -> None:
     raw.mkdir()
 
     with pytest.raises(HTTPException) as exc_info:
-        _save_uploaded_files([upload], raw, allowed_extensions=ALLOWED)
+        save_uploaded_files([upload], raw, allowed_extensions=ALLOWED)
     assert exc_info.value.status_code == 400
