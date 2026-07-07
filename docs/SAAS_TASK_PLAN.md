@@ -4,13 +4,13 @@
 
 目标：把当前“受控私有多用户部署”推进到“可开放注册、可运营”的 SaaS 基础。注册方案限定为邮箱 + 密码；不做手机号/SMS 验证码注册。本轮不实现账单/支付。
 
-当前状态（2026-07-07）：Milestone 0-4 的最小闭环已完成，其中 TTS/STT/search/embedding 已按调用次数纳入 usage/quota；Milestone 5 已完成管理员用户操作、停用原因、全局 `auth.max_users` 账号上限、grant、skill 安装、模型目录、MCP 配置、用户导出、用户清单 CSV 导出、邮箱密码批量导入普通用户、用户自助导出、账号自助注销、覆盖 workspace/grant/avatar 的删除数据策略、审计查询、注册审核开关、注册协议版本同意记录、保留期配置和管理员手动保留期清理入口的文件型 beta 闭环；Milestone 6 已修复 GHCR compose 的多用户持久化挂载，补充备份/恢复 runbook，并接入 PostgreSQL shared_state 覆盖 auth secret、用户记录/token_version、注册邀请码、rate limit、grant quota 和 usage ledger。PocketBase 明确标为非 SaaS 多用户底座。仍不建议直接公开商用 SaaS；后续重点是对象存储、审计查询存储、运营监控和完整合规治理。
+当前状态（2026-07-07）：Milestone 0-4 的最小闭环已完成，其中 TTS/STT/search/embedding 已按调用次数纳入 usage/quota；Milestone 5 是 MVP / beta 数据治理底线，已完成管理员用户操作、停用原因、全局 `auth.max_users` 账号上限、grant、skill 安装、模型目录、MCP 配置、用户导出、用户清单 CSV 导出、邮箱密码批量导入普通用户、用户自助导出、账号自助注销、覆盖 workspace/grant/avatar 的删除数据策略、审计查询、注册审核开关、注册协议版本同意记录、保留期配置和管理员手动保留期清理入口的文件型 beta 闭环；Milestone 6 已修复 GHCR compose 的多用户持久化挂载，补充备份/恢复 runbook，并接入 PostgreSQL shared_state 覆盖 auth secret、用户记录/token_version、注册邀请码、rate limit、grant quota 和 usage ledger。PocketBase 明确标为非 SaaS 多用户底座。仍不建议直接公开商用 SaaS；后续重点是对象存储、生产级审计存储、运营监控和正式 SaaS 合规增强。
 
 ## 原则
 
 - 先做可控 beta，再做公开 SaaS。
 - 先堵认证、额度、数据隔离这些会导致事故的洞，再做增长功能。
-- 保持默认 JSON/SQLite 路径可用于私有部署；公开 SaaS 应使用 PostgreSQL shared_state，并继续补对象存储、审计存储和运营治理。
+- 保持默认 JSON/SQLite 路径可用于私有部署；公开 SaaS 应使用 PostgreSQL shared_state，并继续补对象存储、生产级审计存储和运营治理。
 - PocketBase 要么完成多用户支持矩阵，要么在 SaaS 路径中明确禁用。
 
 ## Milestone 0：基线确认
@@ -164,11 +164,11 @@
 - 用户超额后无法继续消耗模型成本。
 - 管理员能看到用户维度的用量和成本。
 
-## Milestone 5：审计和数据治理
+## Milestone 5：MVP 数据治理与审计底线
 
-状态：已完成文件型 beta 闭环。管理员用户 CRUD、用户停用原因、全局账号上限、grant 变更、skill 安装、模型目录变更、MCP 配置变更、用户导出、用户清单 CSV 导出和邮箱密码批量导入普通用户已写入审计或纳入创建约束；管理员可查询审计 JSONL；用户数据可由管理员或用户自己导出 zip；普通用户可在个人资料页用当前密码注销账号；删除用户支持 `keep` / `archive` / `delete` 数据策略，覆盖 workspace、grant 和本地头像文件；注册同意会记录当前协议版本；数据治理设置包含 audit/usage/deleted-user 保留天数和管理员手动清理入口。仍缺不可篡改审计存储、审批流、法务文本快照和完整合规流程。
+状态：已完成受控 beta 所需的文件型 MVP 闭环。这一阶段的目标是避免 MVP 裸奔：关键管理员操作能留下 best-effort JSONL 记录，管理员和用户能导出数据，删除用户时能选择保留、归档或删除本地 workspace/grant/avatar，并能配置基础保留期和手动清理。它不是正式 SaaS 合规治理，也不应把审批流、法务文本快照、不可篡改审计、区域化存储或完整合规流程作为 MVP 上线前置条件。
 
-目标：关键操作可追踪，用户数据可保留、导出、删除。
+目标：MVP 阶段具备最低数据治理底线：关键操作可追踪，用户数据可保留、导出、删除；同时明确这些能力只是 beta 过渡层。
 
 任务：
 
@@ -178,9 +178,15 @@
 4. 已完成：增加管理员用户数据导出 zip。
 5. 已完成 beta：增加普通用户自助导出 zip 和用当前密码确认的账号自助注销；管理员账号仍需由另一个管理员处理。
 6. 已完成 beta：增加 audit、usage、deleted user 的保留天数配置和管理员手动清理入口；0 表示永久保留，当前不包含后台定时任务。
-7. 已完成 beta：审计 JSONL 可通过管理员 API 查询；生产级仍需不可篡改/可检索审计存储。
+7. 已完成 beta：审计 JSONL 可通过管理员 API 查询；生产级仍需不可篡改、可检索、可长期留存的审计存储。
 8. 已完成 beta：管理员可导出用户清单 CSV；可导入 `email,password` CSV 批量创建普通用户，CSV 内手机号或非邮箱账号会被拒绝且不会部分创建。
 9. 已完成 beta：全局 `auth.max_users` 可限制账号总数；正式 SaaS 仍需组织/团队/席位模型。
+
+明确不纳入本 Milestone：
+
+- 审批流：例如导出用户数据、硬删除用户、提高高成本模型额度、授予管理员等高风险操作，需要申请、复核、审批、执行分离。MVP 阶段只做直接执行 + 审计记录。
+- 法务文本快照：不仅记录 `terms_version` / `privacy_version`，还要保存用户当时看到的完整条款文本、hash、语言、发布时间、同意时间、IP/User-Agent 等证明材料。MVP 阶段只记录基础同意字段和版本号。
+- 完整合规流程：包括区域化存储、数据主体请求 SLA、注销冷静期、恢复流程、后台定时保留期清理、不可篡改审计、管理员访问敏感数据审批、数据泄露响应等。它属于正式 SaaS 合规增强，不属于可控 beta 的最小功能。
 
 主要代码区域：
 
@@ -202,11 +208,11 @@
 - 普通用户可自助导出自己的数据，并可用当前密码注销自己的账号。
 - 管理员可查询审计事件，并可配置保留期策略、手动触发过期数据清理。
 
-## Milestone 6：部署和外部存储
+## Milestone 6：多副本共享状态底座
 
 状态：底座完成。`docker-compose.ghcr.yml` 已改为完整 `./data:/app/data` 挂载，已补充 `docs/SAAS_DEPLOYMENT_RUNBOOK.md`。默认文件模式仍是 `single_replica_beta`；配置 `shared_state.provider=postgres` / `DEEPTUTOR_SHARED_STATE_PROVIDER=postgres` 和 `DEEPTUTOR_DATABASE_URL` 后，auth secret、用户记录/token_version、注册邀请码、rate limit、grant quota 和 usage ledger 会进入 PostgreSQL，系统状态会把 auth/token/rate/quota 标为 `postgres` 并允许多 worker 通过 `/health`。PocketBase 保留为单用户集成，启用时会在生产告警和部署状态里标记为不支持多用户/SaaS。附件、知识库和导出文件仍依赖共享 `data/` volume 或后续对象存储。
 
-目标：支持正式 SaaS 的多 worker / 多副本部署。
+目标：让认证、撤销、限流和 quota 这些共享状态具备多 worker / 多副本基础；正式 SaaS 仍需要对象存储、生产级审计存储和运维治理。
 
 任务：
 

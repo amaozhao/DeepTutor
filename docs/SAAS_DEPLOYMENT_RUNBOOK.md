@@ -2,7 +2,7 @@
 
 日期：2026-06-30
 
-本文覆盖当前代码可支持的受控 beta / 私有多用户部署，以及 PostgreSQL shared_state 支撑的多副本基础。正式公开 SaaS 仍需要完整合规治理、运营监控、审计存储和对象存储；当前文件型限流、用户文件写锁和带文件锁的 usage ledger 只适合单副本 beta。账单/支付本轮不纳入。
+本文覆盖当前代码可支持的受控 beta / 私有多用户部署，以及 PostgreSQL shared_state 支撑的多副本基础。当前已有 MVP 数据治理底线：基础审计 JSONL、用户数据导出、删除数据策略和手动保留期清理。正式公开 SaaS 仍需要对象存储、生产级审计存储、运营监控，以及审批流、法务文本快照、区域化存储等合规增强；当前文件型限流、用户文件写锁和带文件锁的 usage ledger 只适合单副本 beta。账单/支付本轮不纳入。
 
 ## 当前推荐拓扑
 
@@ -64,7 +64,7 @@ docker compose up -d
 
 - 配置 `DEEPTUTOR_SHARED_STATE_PROVIDER=postgres` 和 `DEEPTUTOR_DATABASE_URL=...`，让 auth secret、用户记录/token_version、注册邀请码、rate limit、grant quota 和 usage ledger 进入 PostgreSQL。
 - 对象存储或共享文件系统，承载 attachments、knowledge bases、exports。
-- 可查询审计存储和备份恢复演练。
+- 生产级可查询审计存储和备份恢复演练；当前 JSONL 审计只作为受控 beta 的追踪底线。
 
 也可以通过 `data/user/settings/shared_state.json` 持久化同样配置。配置为 `postgres` 后，`/health` 会初始化并探测共享状态库；连接失败会返回 503。保持 `file` 时只适合单副本 beta。
 
