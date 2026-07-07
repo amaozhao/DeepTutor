@@ -9,55 +9,11 @@ for tests that need to call user-scoped code without going through HTTP.
 from __future__ import annotations
 
 from contextlib import contextmanager
-from pathlib import Path
 
 import pytest
 
 from deeptutor.multi_user.context import reset_current_user, set_current_user
 from deeptutor.multi_user.models import CurrentUser, UserScope
-
-
-@pytest.fixture
-def mu_isolated_root(tmp_path, monkeypatch) -> Path:
-    """Redirect every ``multi_user`` global path under ``tmp_path``.
-
-    Also clears the ``_path_services`` cache so ``get_path_service()`` can be
-    re-resolved per test without leaking instances created in earlier tests.
-    """
-    from deeptutor.multi_user import grants, identity, paths
-
-    project_root = tmp_path
-    admin_root = (project_root / "data").resolve()
-    users_root = admin_root / "users"
-    system_root = admin_root / "system"
-
-    monkeypatch.setattr(paths, "PROJECT_ROOT", project_root)
-    monkeypatch.setattr(paths, "USERS_ROOT", users_root)
-    monkeypatch.setattr(paths, "SYSTEM_ROOT", system_root)
-    monkeypatch.setattr(paths, "ADMIN_WORKSPACE_ROOT", admin_root)
-    monkeypatch.setattr(paths, "LEGACY_MULTI_USER_ROOT", project_root / "multi-user")
-    monkeypatch.setattr(paths, "_path_services", {})
-
-    monkeypatch.setattr(identity, "PROJECT_ROOT", project_root)
-    monkeypatch.setattr(identity, "SYSTEM_ROOT", system_root)
-    monkeypatch.setattr(identity, "AUTH_DIR", system_root / "auth")
-    monkeypatch.setattr(identity, "USERS_FILE", system_root / "auth" / "users.json")
-    monkeypatch.setattr(identity, "SECRET_FILE", system_root / "auth" / "auth_secret")
-    monkeypatch.setattr(
-        identity,
-        "LEGACY_USERS_FILE",
-        project_root / "data" / "user" / "auth_users.json",
-    )
-    monkeypatch.setattr(
-        identity,
-        "LEGACY_SECRET_FILE",
-        project_root / "data" / "user" / "auth_secret",
-    )
-
-    monkeypatch.setattr(grants, "GRANTS_DIR", system_root / "grants")
-
-    admin_root.mkdir(parents=True, exist_ok=True)
-    return tmp_path
 
 
 @pytest.fixture

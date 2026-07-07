@@ -27,7 +27,7 @@ from fastapi import (
     status,
 )
 from fastapi.responses import FileResponse
-from pydantic import BaseModel, ValidationError, field_validator
+from pydantic import BaseModel, field_validator
 
 from deeptutor.services.config import load_auth_settings
 
@@ -38,17 +38,21 @@ from deeptutor.services.config import load_auth_settings
 _SECURE = bool(load_auth_settings()["cookie_secure"])
 _SAMESITE = "none" if _SECURE else "lax"
 
+from deeptutor.api.routers.users import (
+    CSV_IMPORT_MAX_BYTES as _CSV_IMPORT_MAX_BYTES,
+)
+from deeptutor.api.routers.users import (
+    UserImportResult,
+    UserInfo,
+)
+from deeptutor.api.routers.users import (
+    parse_user_import_csv as _parse_user_import_csv,
+)
 from deeptutor.api.security import client_ip, require_rate_limit, websocket_ip
 from deeptutor.multi_user.audit import log_admin_action
 from deeptutor.multi_user.context import set_current_user, user_from_token_payload
 from deeptutor.multi_user.data_governance import apply_user_delete_policy, export_user_data
-from deeptutor.multi_user.invites import (
-    consume_invite,
-    create_invite,
-    delete_invite,
-    list_invites,
-    unconsume_invite,
-)
+from deeptutor.multi_user.invites import consume_invite, unconsume_invite
 from deeptutor.multi_user.paths import local_admin_user
 from deeptutor.services.auth import (
     AUTH_ENABLED,
@@ -79,7 +83,6 @@ router = APIRouter()
 
 _COOKIE_NAME = "dt_token"
 _COOKIE_MAX_AGE = TOKEN_EXPIRE_HOURS * 3600
-_CSV_IMPORT_MAX_BYTES = 1_000_000
 _REGISTER_CHALLENGE_TTL_SECONDS = 10 * 60
 _REGISTER_CHALLENGE_DIFFICULTY = 3
 
@@ -139,29 +142,6 @@ class RegisterRequest(BaseModel):
         if len(v) < 8:
             raise ValueError("Password must be at least 8 characters")
         return v
-
-
-class InviteCreateRequest(BaseModel):
-    """Payload for admin-created one-use registration invites."""
-
-    email: str = ""
-
-    @field_validator("email")
-    @classmethod
-    def email_valid(cls, v: str) -> str:
-        v = v.strip().lower()
-        if v and not re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", v):
-            raise ValueError("Enter a valid email address")
-        return v
-
-
-class InviteInfo(BaseModel):
-    code: str
-    email: str = ""
-    created_by: str = ""
-    created_at: str = ""
-    used_by: str = ""
-    used_at: str = ""
 
 
 class RegisterChallenge(BaseModel):
@@ -231,24 +211,6 @@ class AuthStatusResponse(BaseModel):
     role: str | None = None
     is_admin: bool = False
     avatar: str = ""
-
-
-class UserInfo(BaseModel):
-    """Single user record returned by the GET /users and /profile endpoints."""
-
-    id: str = ""
-    username: str
-    role: str
-    created_at: str
-    disabled: bool = False
-    disabled_reason: str = ""
-    avatar: str = ""
-
-
-class UserImportResult(BaseModel):
-    ok: bool = True
-    created: int
-    usernames: list[str]
 
 
 # Markers settable through PUT /profile. Image markers ("img:<version>") are
@@ -326,9 +288,11 @@ def _challenge_signature(payload: str) -> str:
 
 
 def _encode_challenge(payload: dict[str, object]) -> str:
-    body = base64.urlsafe_b64encode(
-        json.dumps(payload, separators=(",", ":")).encode("utf-8")
-    ).decode("ascii").rstrip("=")
+    body = (
+        base64.urlsafe_b64encode(json.dumps(payload, separators=(",", ":")).encode("utf-8"))
+        .decode("ascii")
+        .rstrip("=")
+    )
     return f"{body}.{_challenge_signature(body)}"
 
 
@@ -403,73 +367,6 @@ def _require_registration_challenge(email: str, captcha_token: str | None) -> No
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Registration challenge proof is invalid.",
         )
-
-
-def _csv_bool(value: str) -> bool:
-    return value.strip().lower() in {"1", "true", "yes", "y", "on"}
-
-
-def _parse_user_import_csv(data: bytes) -> list[dict[str, str | bool]]:
-    try:
-        text = data.decode("utf-8-sig")
-    except UnicodeDecodeError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="CSV must be UTF-8 encoded.",
-        ) from exc
-
-    reader = csv.DictReader(io.StringIO(text))
-    headers = {str(name or "").strip().lower() for name in (reader.fieldnames or [])}
-    if not headers:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="CSV is empty.")
-    if "password" not in headers or "email" not in headers:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="CSV must include email,password columns.",
-        )
-
-    rows: list[dict[str, str | bool]] = []
-    seen: set[str] = set()
-    for row_index, raw in enumerate(reader, start=2):
-        row = {
-            str(key or "").strip().lower(): str(value or "").strip() for key, value in raw.items()
-        }
-        if not any(row.values()):
-            continue
-        email = row.get("email", "").lower()
-        password = row.get("password") or ""
-        try:
-            RegisterRequest(username=email, password=password)
-        except ValidationError as exc:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-                detail=f"Row {row_index}: {exc.errors()[0]['msg']}",
-            ) from exc
-        if email in seen:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail=f"Row {row_index}: duplicate email in CSV.",
-            )
-        seen.add(email)
-        disabled = _csv_bool(row.get("disabled", ""))
-        reason = DisabledRequest(
-            disabled=disabled,
-            reason=row.get("disabled_reason", ""),
-        ).reason
-        rows.append(
-            {
-                "email": email,
-                "password": password,
-                "disabled": disabled,
-                "disabled_reason": reason if disabled else "",
-            }
-        )
-
-    if not rows:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="CSV contains no users."
-        )
-    return rows
 
 
 def _public_registration_enabled() -> bool:
@@ -1363,39 +1260,6 @@ async def import_users_csv(
     return UserImportResult(created=len(usernames), usernames=usernames)
 
 
-@router.get("/invites", response_model=list[InviteInfo])
-async def get_invites(_: TokenPayload = Depends(require_admin)) -> list[InviteInfo]:
-    """List registration invites. Requires admin role."""
-    return [InviteInfo(**item) for item in list_invites()]
-
-
-@router.post("/invites", response_model=InviteInfo, status_code=status.HTTP_201_CREATED)
-async def admin_create_invite(
-    body: InviteCreateRequest,
-    current: TokenPayload = Depends(require_admin),
-) -> InviteInfo:
-    """Admin-only: create a one-use email/password registration invite."""
-    _enforce_user_seats()
-    invite = create_invite(email=body.email, created_by=current.username)
-    log_admin_action(
-        "invite_create",
-        summary={"email": body.email or "", "used": False},
-    )
-    return InviteInfo(**invite)
-
-
-@router.delete("/invites/{code}", status_code=status.HTTP_200_OK)
-async def admin_delete_invite(
-    code: str,
-    _: TokenPayload = Depends(require_admin),
-) -> dict:
-    """Admin-only: revoke an unused or used invite code."""
-    if not delete_invite(code):
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Invite not found")
-    log_admin_action("invite_delete")
-    return {"ok": True}
-
-
 @router.post("/users", status_code=status.HTTP_201_CREATED)
 async def admin_create_user(
     body: RegisterRequest,
@@ -1626,3 +1490,8 @@ async def update_user_role(
         summary={"username": username, "role": body.role},
     )
     return {"ok": True, "username": username, "role": body.role}
+
+
+from deeptutor.api.routers import invites as invites_router  # noqa: E402
+
+router.include_router(invites_router.router)
