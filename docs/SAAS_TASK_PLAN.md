@@ -4,7 +4,7 @@
 
 目标：把当前“受控私有多用户部署”推进到“可开放注册、可运营”的 SaaS 基础。注册方案限定为邮箱 + 密码；不做手机号/SMS 验证码注册。本轮不实现账单/支付。
 
-当前状态（2026-07-07）：Milestone 0-4 的最小闭环已完成，其中 TTS/STT/search/embedding 已按调用次数纳入 usage/quota；Milestone 5 是 MVP / beta 数据治理底线，已完成管理员用户操作、停用原因、全局 `auth.max_users` 账号上限、grant、skill 安装、模型目录、MCP 配置、用户导出、用户清单 CSV 导出、邮箱密码批量导入普通用户、用户自助导出、账号自助注销、覆盖 workspace/grant/avatar 的删除数据策略、审计查询、注册审核开关、注册协议版本同意记录、保留期配置和管理员手动保留期清理入口的文件型 beta 闭环；Milestone 6 已修复 GHCR compose 的多用户持久化挂载，补充备份/恢复 runbook，并接入 PostgreSQL shared_state 覆盖 auth secret、用户记录/token_version、注册邀请码、rate limit、grant quota 和 usage ledger。PocketBase 明确标为非 SaaS 多用户底座。仍不建议直接公开商用 SaaS；后续重点是对象存储、生产级审计存储、运营监控和正式 SaaS 合规增强。
+当前状态（2026-07-07）：Milestone 0-4 的最小闭环已完成，其中 TTS/STT/search/embedding 已按调用次数纳入 usage/quota；Milestone 5 是 MVP / beta 数据治理底线，已完成管理员用户操作、停用原因、全局 `auth.max_users` 账号上限、grant 变更、管理员资源池 hub skill 安装、模型目录保存/应用、MCP 配置、邀请码创建/删除、管理员和用户数据导出、用户清单 CSV 导出、邮箱密码批量导入普通用户、普通账号自助注销、覆盖 workspace/grant/avatar 的删除数据策略、审计查询、保留期配置和管理员手动保留期清理入口的文件型 beta 闭环；Milestone 6 已修复 GHCR compose 的多用户持久化挂载，补充备份/恢复 runbook，并接入 PostgreSQL shared_state 覆盖 auth secret、用户记录/token_version、注册邀请码、rate limit、grant quota 和 usage ledger。PocketBase 明确标为非 SaaS 多用户底座。仍不建议直接公开商用 SaaS；后续重点是对象存储、生产级审计存储、运营监控和正式 SaaS 合规增强。
 
 ## 原则
 
@@ -173,13 +173,13 @@
 任务：
 
 1. 已完成：用户创建、删除、停用、停用原因、启用、角色变更、重置密码写入审计。
-2. 已完成 beta：grant 变更、skill 安装、模型配置变更、MCP 配置变更写入审计。
+2. 已完成 beta：grant 变更、管理员资源池 hub skill 安装、模型目录保存/应用、MCP 配置变更、邀请码创建/删除、用户数据导出、数据治理设置/手动清理写入审计；普通用户个人 skill CRUD/import 不属于管理员资源池审计范围。
 3. 已完成：用户删除增加数据策略，默认 `keep`，可显式 `archive` 或 `delete` 用户 workspace/grant/avatar。
 4. 已完成：增加管理员用户数据导出 zip。
 5. 已完成 beta：增加普通用户自助导出 zip 和用当前密码确认的账号自助注销；管理员账号仍需由另一个管理员处理。
 6. 已完成 beta：增加 audit、usage、deleted user 的保留天数配置和管理员手动清理入口；0 表示永久保留，当前不包含后台定时任务。
 7. 已完成 beta：审计 JSONL 可通过管理员 API 查询；生产级仍需不可篡改、可检索、可长期留存的审计存储。
-8. 已完成 beta：管理员可导出用户清单 CSV；可导入 `email,password` CSV 批量创建普通用户，CSV 内手机号或非邮箱账号会被拒绝且不会部分创建。
+8. 已完成 beta：管理员可导出用户清单 CSV；可导入 `email,password` CSV 批量创建普通用户。CSV 内手机号或非邮箱账号会在解析阶段被拒绝，且不会创建前面的有效行；重复邮箱、已有账号和 `auth.max_users` 超限也会在创建前拦截。文件模式不是数据库事务，不承诺任意写入异常都自动回滚。
 9. 已完成 beta：全局 `auth.max_users` 可限制账号总数；正式 SaaS 仍需组织/团队/席位模型。
 
 明确不纳入本 Milestone：
@@ -202,7 +202,7 @@
 
 - 管理员用户操作都有审计记录。
 - 管理员可导出用户清单 CSV，并可用邮箱密码 CSV 批量导入普通用户。
-- 全局账号上限会在创建前生效，CSV 导入不会部分创建。
+- 全局账号上限会在创建前生效；CSV 在解析、重复、已有账号和账号上限等前置校验失败时不会部分创建。
 - 删除用户默认保留数据，并可显式归档或硬删除 workspace/grant/avatar。
 - 用户数据可按 user_id 导出。
 - 普通用户可自助导出自己的数据，并可用当前密码注销自己的账号。
@@ -210,7 +210,7 @@
 
 ## Milestone 6：多副本共享状态底座
 
-状态：底座完成。`docker-compose.ghcr.yml` 已改为完整 `./data:/app/data` 挂载，已补充 `docs/SAAS_DEPLOYMENT_RUNBOOK.md`。默认文件模式仍是 `single_replica_beta`；配置 `shared_state.provider=postgres` / `DEEPTUTOR_SHARED_STATE_PROVIDER=postgres` 和 `DEEPTUTOR_DATABASE_URL` 后，auth secret、用户记录/token_version、注册邀请码、rate limit、grant quota 和 usage ledger 会进入 PostgreSQL，系统状态会把 auth/token/rate/quota 标为 `postgres` 并允许多 worker 通过 `/health`。PocketBase 保留为单用户集成，启用时会在生产告警和部署状态里标记为不支持多用户/SaaS。附件、知识库和导出文件仍依赖共享 `data/` volume 或后续对象存储。
+状态：底座完成。`docker-compose.ghcr.yml` 已改为完整 `./data:/app/data` 挂载，已补充 `docs/SAAS_DEPLOYMENT_RUNBOOK.md`。默认文件模式仍是 `single_replica_beta`；配置 `shared_state.provider=postgres` / `DEEPTUTOR_SHARED_STATE_PROVIDER=postgres` 和 `DEEPTUTOR_DATABASE_URL` 后，auth secret、用户记录/token_version、注册邀请码、rate limit、grant quota 和 usage ledger 会进入 PostgreSQL，系统状态会把 auth/token/rate/quota/invites 标为 `postgres` 并允许多 worker 通过 `/health`。PocketBase 保留为单用户集成，启用时会在生产告警和部署状态里标记为不支持多用户/SaaS。附件、知识库和导出文件仍依赖共享 `data/` volume 或后续对象存储。
 
 目标：让认证、撤销、限流和 quota 这些共享状态具备多 worker / 多副本基础；正式 SaaS 仍需要对象存储、生产级审计存储和运维治理。
 
@@ -226,7 +226,7 @@
 验收：
 
 - 多副本部署不会出现首个 admin 竞态。
-- token 撤销、限流、quota 在多副本间一致。
+- token 撤销、注册邀请码、限流、quota 在多副本间一致。
 - compose 模板不会丢失多用户数据。
 
 ## 暂不纳入：商业化/账单/支付
