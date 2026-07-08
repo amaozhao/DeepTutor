@@ -265,8 +265,7 @@ def validate_upload_batch(
             )
         except Exception as exc:
             error_message = (
-                f"Validation failed for file '{original_filename}': "
-                f"{format_exception_message(exc)}"
+                f"Validation failed for file '{original_filename}': {format_exception_message(exc)}"
             )
             raise HTTPException(status_code=400, detail=error_message) from exc
 

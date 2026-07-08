@@ -1,5 +1,7 @@
 from contextlib import contextmanager
+import logging
 from pathlib import Path
+import sys
 
 from deeptutor.multi_user import identity, paths
 from deeptutor.multi_user.context import reset_current_user, set_current_user
@@ -35,6 +37,26 @@ def test_identity_writes_under_local_auth_store_write_lock(mu_isolated_root):
     assert (mu_isolated_root / "data" / "system" / "auth" / "users.lock").exists()
 
 
+def test_identity_logs_when_auth_store_file_lock_is_unavailable(
+    mu_isolated_root, caplog, monkeypatch
+):
+    class _BrokenFcntl:
+        LOCK_EX = 1
+        LOCK_UN = 2
+
+        @staticmethod
+        def flock(*_args):
+            raise OSError("no flock")
+
+    monkeypatch.setitem(sys.modules, "fcntl", _BrokenFcntl)
+    caplog.set_level(logging.WARNING, logger="deeptutor.multi_user.identity")
+
+    identity.save_user("alice", "h1", role="user")
+
+    assert identity.load_users()["alice"]["role"] == "admin"
+    assert "Auth store write lock unavailable" in caplog.text
+
+
 def test_create_user_does_not_overwrite_existing_email(mu_isolated_root):
     created = identity.create_user("alice@example.com", "h1", role="user")
     duplicate = identity.create_user("alice@example.com", "h2", role="user")
@@ -62,6 +84,23 @@ def test_auth_secret_creation_uses_auth_store_write_lock(mu_isolated_root):
     assert (auth_root / "auth_secret").read_text(encoding="utf-8") == secret
     assert (auth_root / "users.lock").exists()
     assert not (auth_root / "auth_secret.tmp").exists()
+
+
+def test_auth_secret_creation_logs_chmod_failure(mu_isolated_root, caplog, monkeypatch):
+    original_chmod = Path.chmod
+
+    def fail_auth_secret_chmod(path: Path, mode: int):
+        if path.name == "auth_secret":
+            raise OSError("chmod denied")
+        return original_chmod(path, mode)
+
+    monkeypatch.setattr(Path, "chmod", fail_auth_secret_chmod)
+    caplog.set_level(logging.WARNING, logger="deeptutor.multi_user.identity")
+
+    secret = identity.load_or_create_auth_secret()
+
+    assert len(secret) == 64
+    assert "Failed to restrict auth secret permissions" in caplog.text
 
 
 def test_existing_auth_secret_read_does_not_take_write_lock(mu_isolated_root):

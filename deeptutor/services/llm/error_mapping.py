@@ -4,19 +4,18 @@ Error Mapping - Map provider-specific errors to unified exceptions.
 
 from __future__ import annotations
 
-import asyncio
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime, timezone
-from email.utils import parsedate_to_datetime
 import logging
-import math
+import socket
 
 # Import unified exceptions from exceptions.py
 from .exceptions import (
     LLMAPIError,
     LLMAuthenticationError,
     LLMError,
+    LLMModelNotFoundError,
+    LLMNetworkError,
     LLMRateLimitError,
     LLMTimeoutError,
     ProviderContextWindowError,
@@ -56,108 +55,59 @@ def _class_named(*names: str) -> ErrorClassifier:
     return _classifier
 
 
-def retry_after_seconds(
-    exc: Exception,
-    *,
-    now: datetime | None = None,
-) -> float | None:
-    """Extract a numeric or HTTP-date Retry-After value from an exception."""
-    value = getattr(exc, "retry_after", None)
-    if value is None:
-        response = getattr(exc, "response", None)
-        headers = getattr(response, "headers", None)
-        get_header = getattr(headers, "get", None)
-        if callable(get_header):
-            value = get_header("Retry-After")
-            if value is None:
-                value = get_header("retry-after")
-
-    if isinstance(value, bool) or value is None:
-        return None
-    if isinstance(value, (int, float)):
-        seconds = float(value)
-    elif isinstance(value, str):
-        normalized = value.strip()
-        if not normalized:
-            return None
-        try:
-            seconds = float(normalized)
-        except ValueError:
-            try:
-                retry_at = parsedate_to_datetime(normalized)
-            except (TypeError, ValueError, OverflowError):
-                return None
-            if retry_at.tzinfo is None:
-                retry_at = retry_at.replace(tzinfo=timezone.utc)
-            current_time = now or datetime.now(timezone.utc)
-            if current_time.tzinfo is None:
-                current_time = current_time.replace(tzinfo=timezone.utc)
-            return max(0.0, (retry_at - current_time).total_seconds())
-    else:
-        return None
-
-    if not math.isfinite(seconds) or seconds < 0:
-        return None
-    return seconds
-
-
-def _rate_limit_error(exc: Exception, provider: str | None) -> LLMRateLimitError:
-    """Map rate-limit errors without discarding their server retry hint."""
-    return LLMRateLimitError(
-        str(exc),
-        retry_after=retry_after_seconds(exc),
-        provider=provider,
-    )
-
-
 _GLOBAL_RULES: list[MappingRule] = [
-    MappingRule(
-        classifier=_instance_of(asyncio.TimeoutError, TimeoutError),
-        factory=lambda exc, provider: LLMTimeoutError(
-            str(exc) or "Request timed out", provider=provider
-        ),
-    ),
     MappingRule(
         classifier=_class_named("AuthenticationError", "AuthenticationStatusError"),
         factory=lambda exc, provider: LLMAuthenticationError(str(exc), provider=provider),
     ),
     MappingRule(
         classifier=_class_named("RateLimitError"),
-        factory=_rate_limit_error,
+        factory=lambda exc, provider: LLMRateLimitError(str(exc), provider=provider),
+    ),
+    MappingRule(
+        classifier=_class_named("APITimeoutError", "TimeoutException"),
+        factory=lambda exc, provider: LLMTimeoutError(str(exc), provider=provider),
+    ),
+    MappingRule(
+        classifier=_class_named("APIConnectionError", "NetworkError"),
+        factory=lambda exc, provider: LLMNetworkError(str(exc), provider=provider),
+    ),
+    MappingRule(
+        classifier=_instance_of(TimeoutError),
+        factory=lambda exc, provider: LLMTimeoutError(str(exc), provider=provider),
+    ),
+    MappingRule(
+        classifier=_instance_of(ConnectionError, socket.gaierror),
+        factory=lambda exc, provider: LLMNetworkError(str(exc), provider=provider),
     ),
     MappingRule(
         classifier=_message_contains("rate limit", "429", "quota"),
-        factory=_rate_limit_error,
+        factory=lambda exc, provider: LLMRateLimitError(str(exc), provider=provider),
     ),
     MappingRule(
-        classifier=_message_contains("context length", "maximum context"),
+        classifier=_message_contains(
+            "context length",
+            "context window",
+            "maximum context",
+            "maximum context length",
+            "token limit",
+        ),
         factory=lambda exc, provider: ProviderContextWindowError(str(exc), provider=provider),
     ),
 ]
 
-
 def map_error(exc: Exception, provider: str | None = None) -> LLMError:
-    """Map provider-specific errors to unified internal exceptions.
-
-    An exception that is already an ``LLMError`` is returned *itself*, not a
-    replacement: re-running the rules would re-classify a precise error into a
-    vaguer one (an ``LLMTimeoutError`` fell out as a bare ``LLMAPIError``), and
-    callers such as the LightRAG adapter re-raise the terminal error and
-    compare identity. Filling in ``provider`` when the raiser did not know it is
-    therefore an in-place write on the caller's exception — deliberate, and the
-    only field this function mutates.
-    """
-    if isinstance(exc, LLMError):
-        if exc.provider is None:
-            exc.provider = provider
-        return exc
-
+    """Map provider-specific errors to unified internal exceptions."""
     # Heuristic check for status codes before rules
     status_code = getattr(exc, "status_code", None)
     if status_code == 401:
         return LLMAuthenticationError(str(exc), provider=provider)
     if status_code == 429:
-        return _rate_limit_error(exc, provider)
+        return LLMRateLimitError(str(exc), provider=provider)
+    if status_code == 404:
+        return LLMModelNotFoundError(str(exc), provider=provider)
+    if status_code in {408, 504}:
+        return LLMTimeoutError(str(exc), provider=provider)
 
     for rule in _GLOBAL_RULES:
         if rule.classifier(exc):

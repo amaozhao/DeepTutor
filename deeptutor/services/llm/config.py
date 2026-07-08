@@ -10,24 +10,10 @@ from __future__ import annotations
 
 from contextvars import ContextVar, Token
 from dataclasses import dataclass, replace
-import logging
-import os
-from pathlib import Path
 import re
 from typing import TYPE_CHECKING, TypedDict
 
 from deeptutor.services.config import resolve_llm_runtime_config
-from deeptutor.services.keypool import primary_api_key
-from deeptutor.services.provider_registry import (
-    api_format_for_provider,
-    api_format_from_legacy,
-    canonical_provider_name,
-    effective_backend,
-    find_by_name,
-    normalize_api_format,
-    wire_api_for_provider,
-    wire_api_from_api_format,
-)
 
 from .exceptions import LLMConfigError
 
@@ -39,7 +25,7 @@ class LLMConfigUpdate(TypedDict, total=False):
     """Fields allowed when cloning an LLMConfig instance."""
 
     model: str
-    api_key: str | list[str]
+    api_key: str
     base_url: str | None
     effective_url: str | None
     binding: str
@@ -47,8 +33,6 @@ class LLMConfigUpdate(TypedDict, total=False):
     provider_mode: str
     api_version: str | None
     extra_headers: dict[str, str]
-    wire_api: str
-    api_format: str
     reasoning_effort: str | None
     context_window: int | None
     max_tokens: int
@@ -58,61 +42,12 @@ class LLMConfigUpdate(TypedDict, total=False):
     traffic_controller: "TrafficController" | None
 
 
-logger = logging.getLogger(__name__)
-
-PROJECT_ROOT = Path(__file__).resolve().parents[3]
-
-
-def _is_openai_compatible(binding: str | None, api_format: str = "auto") -> bool:
-    canonical = canonical_provider_name(binding) or (binding or "").strip().lower()
-    spec = find_by_name(canonical)
-    if not spec or spec.is_oauth:
-        return False
-    return effective_backend(spec, api_format) in {"openai_compat", "azure_openai"}
-
-
-def _set_openai_env_vars(
-    api_key: str | list[str] | None, base_url: str | None, *, source: str
-) -> None:
-    primary_key = primary_api_key(api_key)
-    if primary_key:
-        os.environ["OPENAI_API_KEY"] = primary_key
-        logger.debug("Set OPENAI_API_KEY env var (%s)", source)
-
-    if base_url:
-        from .utils import sanitize_url
-
-        clean_url = sanitize_url(base_url)
-        os.environ["OPENAI_BASE_URL"] = clean_url
-        logger.debug("Set OPENAI_BASE_URL env var to %s (%s)", clean_url, source)
-
-
-def _setup_openai_env_vars_early() -> None:
-    """
-    Set OPENAI_* environment variables early for OpenAI-compatible SDKs.
-
-    Some SDK helpers read credentials/endpoints from process environment.
-    This is called at module import time so downstream calls have consistent
-    environment regardless of entrypoint.
-    """
-    try:
-        resolved = resolve_llm_runtime_config()
-    except Exception:
-        return
-    if _is_openai_compatible(resolved.binding, resolved.api_format):
-        _set_openai_env_vars(resolved.api_key, resolved.effective_url, source="early init")
-
-
-# Execute early setup at module import time
-_setup_openai_env_vars_early()
-
-
 @dataclass
 class LLMConfig:
     """LLM configuration dataclass."""
 
     model: str
-    api_key: str | list[str]
+    api_key: str
     base_url: str | None = None
     effective_url: str | None = None
     binding: str = "openai"
@@ -120,8 +55,6 @@ class LLMConfig:
     provider_mode: str = "standard"
     api_version: str | None = None
     extra_headers: dict[str, str] | None = None
-    wire_api: str = "auto"
-    api_format: str = "auto"
     reasoning_effort: str | None = None
     context_window: int | None = None
     max_tokens: int = 4096
@@ -133,28 +66,14 @@ class LLMConfig:
     def __post_init__(self) -> None:
         if self.effective_url is None:
             self.effective_url = self.base_url
-        spec = find_by_name(self.provider_name) or find_by_name(self.binding)
-        # ``api_format`` is the user-facing protocol choice; ``wire_api`` is the
-        # OpenAI endpoint it implies. Callers that still speak only ``wire_api``
-        # get the format derived from it, so both fields always agree.
-        if normalize_api_format(self.api_format) == "auto":
-            self.api_format = api_format_from_legacy(spec, self.wire_api)
-            self.wire_api = wire_api_for_provider(self.wire_api, spec)
-        else:
-            self.api_format = api_format_for_provider(self.api_format, spec)
-            self.wire_api = wire_api_for_provider(wire_api_from_api_format(self.api_format), spec)
 
     def model_copy(self, update: LLMConfigUpdate | None = None) -> "LLMConfig":
         """Return a copy of the config with optional updates."""
         return replace(self, **(update or {}))
 
     def get_api_key(self) -> str:
-        """Return the API key string for provider consumers.
-
-        The empty string, not ``None``, because callers here test it for
-        truthiness and pass it straight into a provider argument.
-        """
-        return primary_api_key(self.api_key) or ""
+        """Return the API key string for provider consumers."""
+        return self.api_key
 
 
 _LLM_CONFIG_CACHE: LLMConfig | None = None
@@ -175,19 +94,8 @@ def reset_scoped_llm_config(token: Token[LLMConfig | None]) -> None:
 
 
 def initialize_environment() -> None:
-    """
-    Explicitly initialize environment variables for compatibility.
-
-    This should be called during application startup to keep OPENAI_* env vars
-    aligned with current config values.
-    """
-    resolved = resolve_llm_runtime_config()
-    if _is_openai_compatible(resolved.binding, resolved.api_format):
-        _set_openai_env_vars(
-            resolved.api_key,
-            resolved.effective_url,
-            source="initialize_environment",
-        )
+    """Deprecated compatibility hook; LLM credentials now flow as explicit args."""
+    return None
 
 
 def _get_llm_config_from_resolver() -> LLMConfig:
@@ -201,16 +109,6 @@ def _get_llm_config_from_resolver() -> LLMConfig:
         raise LLMConfigError(
             "No effective LLM endpoint resolved. Please configure base_url or provider defaults."
         )
-    is_placeholder_key = resolved.api_key in {"", "no-key", "sk-no-key-required"}
-    if (
-        resolved.provider_name == "openai"
-        and resolved.provider_mode == "standard"
-        and is_placeholder_key
-    ):
-        raise LLMConfigError(
-            "OpenAI API key is not configured. Set it in Settings > Catalog, "
-            "or select a local provider such as Ollama."
-        )
     return LLMConfig(
         model=resolved.model,
         api_key=resolved.api_key,
@@ -221,8 +119,6 @@ def _get_llm_config_from_resolver() -> LLMConfig:
         provider_mode=resolved.provider_mode,
         api_version=resolved.api_version,
         extra_headers=resolved.extra_headers,
-        wire_api=resolved.wire_api,
-        api_format=resolved.api_format,
         reasoning_effort=resolved.reasoning_effort,
         context_window=resolved.context_window,
     )

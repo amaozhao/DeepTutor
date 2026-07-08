@@ -1,19 +1,13 @@
-"""DISABLE_SSL_VERIFY coverage for the OpenAI Codex Responses provider.
-
-The flag controls the initial request. A certificate verification failure must
-never trigger an automatic retry with verification disabled.
-"""
+"""DISABLE_SSL_VERIFY coverage for the OpenAI Codex Responses provider."""
 
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
 from typing import Any
 
-import httpx
 import pytest
 
 from deeptutor.services.llm import openai_http_client
-from deeptutor.services.llm.exceptions import LLMProviderTransportError
 from deeptutor.services.llm.provider_core import openai_codex_provider
 
 
@@ -40,14 +34,6 @@ def _stub_token_loader(monkeypatch: pytest.MonkeyPatch) -> None:
 
         async def recover_after_unauthorized(self, generation: int) -> None:
             del generation
-
-        def validate_runtime_profile(
-            self,
-            token: _Token,
-            model_slug: str,
-            reasoning_effort: str | None,
-        ) -> None:
-            del token, model_slug, reasoning_effort
 
     monkeypatch.setattr(
         openai_codex_provider,
@@ -98,21 +84,23 @@ async def test_codex_first_attempt_verify_false_when_flag_set(
 
 
 @pytest.mark.asyncio
-async def test_codex_certificate_failure_never_retries_without_verification(
+async def test_codex_cert_failure_does_not_disable_ssl_without_flag(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """SSL verification is disabled only through DISABLE_SSL_VERIFY."""
     _stub_token_loader(monkeypatch)
     captured: list[dict[str, Any]] = []
 
     async def fake_request(*args: Any, **kwargs: Any) -> tuple[str, list[Any], str]:
         captured.append(kwargs)
-        raise httpx.ConnectError("[SSL: CERTIFICATE_VERIFY_FAILED] cert chain")
+        raise RuntimeError("[SSL: CERTIFICATE_VERIFY_FAILED] cert chain")
 
     monkeypatch.setattr(openai_codex_provider, "_request_codex", fake_request)
 
     provider = openai_codex_provider.OpenAICodexProvider()
-    with pytest.raises(LLMProviderTransportError):
-        await provider.chat(messages=[{"role": "user", "content": "hi"}])
+    result = await provider.chat(messages=[{"role": "user", "content": "hi"}])
 
+    assert result.finish_reason == "error"
+    assert "CERTIFICATE_VERIFY_FAILED" not in (result.content or "")
     assert len(captured) == 1
     assert captured[0]["verify"] is True

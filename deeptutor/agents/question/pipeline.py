@@ -20,14 +20,13 @@ Phase shape:
 
 The orchestrator owns control flow (per-question iteration, repair pass,
 incremental emission) and prompt assembly; everything else is delegated
-to :mod:`deeptutor.runtime.agentic` and the shared tool-composition policy.
+to :mod:`deeptutor.core.agentic` and the shared tool-composition policy.
 """
 
 from __future__ import annotations
 
 from collections.abc import Awaitable
 from dataclasses import dataclass, field
-from enum import StrEnum
 import json
 import logging
 import re
@@ -40,16 +39,22 @@ from deeptutor.agents._shared.tool_composition import (
     default_optional_tools,
     user_has_memory,
     user_has_notebooks,
-    user_has_question_bank,
 )
-from deeptutor.core.context import Attachment, UnifiedContext
-from deeptutor.core.trace import (
-    build_trace_metadata,
-    derive_trace_metadata,
-    merge_trace_metadata,
-    new_call_id,
+from deeptutor.agents.question.planning import (
+    _CHOICE_KEYS,
+    _CONCEPT_ANSWERS,
+    _FILL_IN_BLANK_TOKEN,
+    QuestionType,
+    QuizHistoryEntry,
+    QuizPlan,
+    QuizTemplate,
+    _format_allowed_types,
+    _format_per_type_counts,
+    _normalize_per_type_counts,
+    _normalize_type_list,
+    parse_quiz_plan,
 )
-from deeptutor.runtime.agentic import (
+from deeptutor.core.agentic import (
     DispatchOutcome,
     LabeledStepResult,
     LabelProtocol,
@@ -62,18 +67,24 @@ from deeptutor.runtime.agentic import (
     run_agentic_loop,
     run_labeled_step,
 )
-from deeptutor.runtime.agentic.labels import find_inline_labels
-from deeptutor.runtime.agentic.tool_dispatch import MAX_PARALLEL_TOOL_CALLS
-from deeptutor.runtime.agentic.usage import record_streamed_usage
+from deeptutor.core.agentic.labels import find_inline_labels
+from deeptutor.core.agentic.tool_dispatch import MAX_PARALLEL_TOOL_CALLS
+from deeptutor.core.agentic.usage import record_streamed_usage
+from deeptutor.core.context import Attachment, UnifiedContext
+from deeptutor.core.stream_bus import StreamBus
+from deeptutor.core.trace import (
+    build_trace_metadata,
+    derive_trace_metadata,
+    merge_trace_metadata,
+    new_call_id,
+)
 from deeptutor.runtime.registry.tool_registry import get_tool_registry
-from deeptutor.runtime.stream_bus import StreamBus
 from deeptutor.services.config import parse_language
 from deeptutor.services.llm import get_llm_config, prepare_multimodal_messages
 from deeptutor.services.path_service import get_path_service
 from deeptutor.services.prompt import get_prompt_manager
 from deeptutor.services.prompt.language import append_language_directive
 from deeptutor.services.sandbox import exec_capability_available
-from deeptutor.utils.json_parser import parse_json_response
 
 logger = logging.getLogger(__name__)
 
@@ -140,196 +151,6 @@ FINALIZATION_REPAIR_ATTEMPTS = 2
 # distilled version. Cost: one extra main-model LLM call per tool result.
 DEFAULT_TOOL_SUMMARIZER_MAX_TOKENS = 800
 TOOL_SUMMARIZER_TEMPERATURE = 0.2
-
-
-class QuestionType(StrEnum):
-    """Canonical question-type taxonomy. Source of truth for the planner,
-    quiz-step prompt schema, and the normalizer / validator below."""
-
-    CHOICE = "choice"
-    CONCEPT = "concept"
-    FILL_IN_BLANK = "fill_in_blank"
-    SHORT_ANSWER = "short_answer"
-    WRITTEN = "written"
-    CODING = "coding"
-
-
-_VALID_QUESTION_TYPES: frozenset[str] = frozenset(qt.value for qt in QuestionType)
-_TYPES_WITH_OPTIONS: frozenset[str] = frozenset({QuestionType.CHOICE.value})
-_VALID_DIFFICULTIES = ("easy", "medium", "hard")
-_CHOICE_KEYS = ("A", "B", "C", "D")
-_FILL_IN_BLANK_TOKEN = "____"
-_CONCEPT_ANSWERS: frozenset[str] = frozenset({"true", "false"})
-
-
-# ---------------------------------------------------------------------------
-# Question-type whitelist helpers (used by ``run`` / ``_explore`` / ``_plan``).
-#
-# The pipeline accepts an optional ``question_types`` allow-list and an
-# optional ``per_type_counts`` distribution so callers can constrain the
-# planner to a subset of the canonical taxonomy (or fix the per-type
-# breakdown). Both inputs are tolerant: anything outside the canonical set
-# is silently dropped; non-positive counts are removed.
-# ---------------------------------------------------------------------------
-
-
-def _normalize_type_list(types: list[str] | None) -> list[str]:
-    """Filter / dedup a caller-supplied ``question_types`` list.
-
-    Returns an ordered list of canonical type names. Unknown entries are
-    dropped silently; ``None`` and ``[]`` both yield ``[]`` which downstream
-    treats as "any canonical type is fair game".
-    """
-    if not types:
-        return []
-    seen: set[str] = set()
-    out: list[str] = []
-    for raw in types:
-        if not isinstance(raw, str):
-            continue
-        normalized = raw.strip().lower()
-        if normalized in _VALID_QUESTION_TYPES and normalized not in seen:
-            seen.add(normalized)
-            out.append(normalized)
-    return out
-
-
-def _normalize_per_type_counts(counts: dict[str, int] | None, allowed: list[str]) -> dict[str, int]:
-    """Validate and clamp a per-type count map.
-
-    Keys outside the canonical taxonomy — or outside ``allowed`` when
-    non-empty — are dropped. Non-positive values are dropped. Returns an
-    empty dict when there's nothing usable, in which case the planner is
-    free to distribute the requested total however it sees fit.
-    """
-    if not counts:
-        return {}
-    allowed_set = frozenset(allowed) if allowed else _VALID_QUESTION_TYPES
-    cleaned: dict[str, int] = {}
-    for key, value in counts.items():
-        if not isinstance(key, str):
-            continue
-        normalized = key.strip().lower()
-        if normalized not in allowed_set:
-            continue
-        try:
-            count = int(value)
-        except (TypeError, ValueError):
-            continue
-        if count > 0:
-            cleaned[normalized] = count
-    return cleaned
-
-
-def _format_allowed_types(types: list[str]) -> str:
-    """Render ``allowed_types`` for prompt injection. ``[]`` collapses to
-    ``"auto"`` so the model knows it can pick freely."""
-    return ", ".join(types) if types else "auto"
-
-
-def _format_per_type_counts(counts: dict[str, int]) -> str:
-    """Render ``per_type_counts`` for prompt injection. ``{}`` collapses to
-    ``"auto"`` so the model knows the breakdown is its call."""
-    if not counts:
-        return "auto"
-    return ", ".join(f"{key}={value}" for key, value in counts.items())
-
-
-def _normalize_type_list(raw: list[str] | None) -> list[str]:
-    """Coerce a user-supplied type list into the canonical taxonomy.
-
-    Unknown values are dropped; duplicates collapse; order preserved
-    relative to first appearance. Empty list means "any type".
-    """
-    if not raw:
-        return []
-    seen: set[str] = set()
-    out: list[str] = []
-    for item in raw:
-        value = str(item or "").strip().lower()
-        if value in _VALID_QUESTION_TYPES and value not in seen:
-            seen.add(value)
-            out.append(value)
-    return out
-
-
-def _normalize_per_type_counts(
-    raw: dict[str, int] | None,
-    allowed_types: list[str],
-) -> dict[str, int]:
-    """Coerce per-type quantity targets into the canonical taxonomy.
-
-    Drops counts for types not in ``allowed_types`` (when non-empty) or
-    not in the canonical taxonomy (when allowed_types is empty). Negative
-    or non-integer values become 0. Empty dict means "let the planner
-    distribute".
-    """
-    if not raw:
-        return {}
-    accepted: frozenset[str] = frozenset(allowed_types) if allowed_types else _VALID_QUESTION_TYPES
-    out: dict[str, int] = {}
-    for key, value in raw.items():
-        canonical = str(key or "").strip().lower()
-        if canonical not in accepted:
-            continue
-        try:
-            count = int(value)
-        except (TypeError, ValueError):
-            continue
-        if count > 0:
-            out[canonical] = count
-    return out
-
-
-def _format_allowed_types(allowed_types: list[str]) -> str:
-    """Prompt-side rendering of the allowed-types directive."""
-    if not allowed_types:
-        return "any (planner picks per question)"
-    return ", ".join(f"``{t}``" for t in allowed_types)
-
-
-def _format_per_type_counts(per_type_counts: dict[str, int]) -> str:
-    """Prompt-side rendering of the per-type quantity directive."""
-    if not per_type_counts:
-        return "no per-type targets (planner distributes freely)"
-    return ", ".join(f"{t}={n}" for t, n in per_type_counts.items())
-
-
-# ---------------------------------------------------------------------------
-# Data shapes
-# ---------------------------------------------------------------------------
-
-
-@dataclass(frozen=True)
-class QuizTemplate:
-    question_id: str
-    topic: str
-    question_type: str
-    difficulty: str
-    # ``source`` distinguishes templates the planner invents from templates
-    # lifted out of an exam paper. ``mimic`` templates carry the original
-    # text so the quiz step can shadow / paraphrase rather than invent.
-    source: str = "custom"
-    reference_question: str | None = None
-    reference_answer: str | None = None
-
-
-@dataclass(frozen=True)
-class QuizPlan:
-    analysis: str
-    templates: list[QuizTemplate] = field(default_factory=list)
-
-
-@dataclass(frozen=True)
-class QuizHistoryEntry:
-    """One prior quiz item the learner attempted in this session."""
-
-    question: str
-    question_type: str
-    correct_answer: str
-    user_answer: str
-    is_correct: bool | None
-    turn_id: str = ""
 
 
 @dataclass
@@ -413,8 +234,6 @@ class QuestionPipeline:
             api_version=getattr(self.llm_config, "api_version", None),
             extra_headers=getattr(self.llm_config, "extra_headers", None) or None,
             reasoning_effort=self.reasoning_effort,
-            wire_api=getattr(self.llm_config, "wire_api", None) or "auto",
-            api_format=getattr(self.llm_config, "api_format", None) or "auto",
         )
 
         self.registry = get_tool_registry()
@@ -475,7 +294,6 @@ class QuestionPipeline:
         client = build_openai_client(self.client_config)
 
         try:
-            await self._prepare_pageindex_tools()
             return await self._run_inner(
                 context=context,
                 user_message=user_message,
@@ -761,62 +579,13 @@ class QuestionPipeline:
         allowed_types: list[str],
         target_difficulty: str,
     ) -> QuizPlan:
-        data = parse_json_response(raw, logger_instance=logger, fallback={})
-        if not isinstance(data, dict) or not data:
-            return QuizPlan(analysis="", templates=[])
-        analysis = str(data.get("analysis", "") or "")
-
-        raw_items: list[Any]
-        if isinstance(data.get("templates"), list):
-            raw_items = list(data["templates"])
-        elif isinstance(data.get("ideas"), list):
-            raw_items = list(data["ideas"])
-        else:
-            raw_items = []
-
-        # If the caller restricted types, the plan must only use that set.
-        # Otherwise fall back to the full canonical taxonomy.
-        allowed_set: frozenset[str] = (
-            frozenset(allowed_types) if allowed_types else _VALID_QUESTION_TYPES
+        return parse_quiz_plan(
+            raw,
+            requested=requested,
+            allowed_types=allowed_types,
+            target_difficulty=target_difficulty,
+            logger_instance=logger,
         )
-        # The chosen fallback when the planner emits an out-of-set type:
-        # prefer SHORT_ANSWER (concept-style Q&A) when allowed, else first
-        # allowed type, else WRITTEN as a global default.
-        if QuestionType.SHORT_ANSWER.value in allowed_set:
-            fallback_type = QuestionType.SHORT_ANSWER.value
-        elif allowed_set:
-            fallback_type = next(iter(allowed_set))
-        else:
-            fallback_type = QuestionType.WRITTEN.value
-
-        templates: list[QuizTemplate] = []
-        seen_topics: set[str] = set()
-        for idx, item in enumerate(raw_items, 1):
-            if not isinstance(item, dict):
-                continue
-            topic = str(item.get("topic") or item.get("concentration") or "").strip()
-            if not topic or topic.lower() in seen_topics:
-                continue
-            seen_topics.add(topic.lower())
-
-            qtype_raw = str(item.get("question_type", "")).strip().lower()
-            qtype = qtype_raw if qtype_raw in allowed_set else fallback_type
-
-            diff_raw = str(item.get("difficulty", "")).strip().lower()
-            diff = target_difficulty or diff_raw
-            diff = diff if diff in _VALID_DIFFICULTIES else "medium"
-
-            templates.append(
-                QuizTemplate(
-                    question_id=f"q_{len(templates) + 1}",
-                    topic=topic,
-                    question_type=qtype,
-                    difficulty=diff,
-                )
-            )
-            if len(templates) >= requested:
-                break
-        return QuizPlan(analysis=analysis, templates=templates)
 
     # ------------------------------------------------------------------
     # Phase 3: Quiz (one question)
@@ -1481,40 +1250,22 @@ class QuestionPipeline:
     # ------------------------------------------------------------------
     # Tool integration (mirrors chat's policy)
     # ------------------------------------------------------------------
-    async def _prepare_pageindex_tools(self) -> None:
-        from deeptutor.services.rag.pipelines.pageindex.tools import (
-            build_pageindex_tool_context,
-        )
-
-        self._pageindex_tool_context = await build_pageindex_tool_context(
-            self.kb_name,
-            base_registry=self.registry,
-        )
-        if self._pageindex_tool_context is not None:
-            self.registry = self._pageindex_tool_context.registry
-
-    def _pageindex_tool_names(self) -> list[str]:
-        tool_context = getattr(self, "_pageindex_tool_context", None)
-        return [tool.name for tool in tool_context.tools] if tool_context is not None else []
-
     def _mount_flags(self, context: UnifiedContext) -> ToolMountFlags:
         return ToolMountFlags(
-            has_kb=bool(self.kb_name and not getattr(self, "_pageindex_tool_context", None)),
+            has_kb=bool(self.kb_name),
             has_sources=bool(self._source_index(context)),
             has_memory=user_has_memory(),
             has_notebooks=user_has_notebooks(),
-            has_question_bank=user_has_question_bank(),
             has_code=exec_capability_available(),
         )
 
     def _resolved_tools(self, context: UnifiedContext) -> list[str]:
-        names = compose_enabled_tools(
+        return compose_enabled_tools(
             registry=self.registry,
             requested_tools=self.enabled_tools,
             optional_whitelist=self._optional_tools,
             mount_flags=self._mount_flags(context),
         )
-        return list(dict.fromkeys([*names, *self._pageindex_tool_names()]))
 
     def _use_native_tools(self, context: UnifiedContext) -> bool:
         """Native tool calling is only worth enabling when (a) the binding /
@@ -1631,28 +1382,6 @@ class QuestionPipeline:
     def _kb_system_note(self) -> str:
         if not self.kb_name:
             return ""
-        tool_context = getattr(self, "_pageindex_tool_context", None)
-        if tool_context is not None:
-            docs = (
-                "; ".join(
-                    f"{name} (doc_id: {doc_id})"
-                    for name, doc_id in sorted(tool_context.documents.items())
-                )
-                or "(no indexed documents)"
-            )
-            tools = ", ".join(self._pageindex_tool_names())
-            instructions = tool_context.instructions.strip()
-            if self.language == "zh":
-                return (
-                    f"已挂载 PageIndex 知识库 {self.kb_name!r}。使用这些工具在当前推理循环中"
-                    f"阅读文档，不要调用 rag：{tools}。文档：{docs}。"
-                    + (f"\nPageIndex SDK 阅读说明：\n{instructions}" if instructions else "")
-                )
-            return (
-                f"Attached PageIndex knowledge base: {self.kb_name!r}. Read it inside this "
-                f"reasoning loop with these tools; do not call rag: {tools}. Documents: {docs}."
-                + (f"\nPageIndex SDK reading instructions:\n{instructions}" if instructions else "")
-            )
         if self.language == "zh":
             return f"用户已挂载知识库：{self.kb_name}。调用 rag 时，kb_name 必须填这个名称。"
         return (
@@ -1963,7 +1692,7 @@ class _BaseLoopHost:
                 requested=len(tool_calls),
                 limit=MAX_PARALLEL_TOOL_CALLS,
             )
-        outcome = await dispatch_tool_calls(
+        return await dispatch_tool_calls(
             tool_calls=tool_calls,
             context=self._context,
             stream=self._stream,
@@ -1989,12 +1718,6 @@ class _BaseLoopHost:
             ),
             trace_id_prefix=self._trace_id_prefix,
         )
-        pageindex_sources = [
-            source for source in outcome.sources if source.get("type") == "pageindex"
-        ]
-        if pageindex_sources:
-            await self._stream.sources(pageindex_sources, source=SOURCE, stage=self._stage)
-        return outcome
 
     async def resolve_pause(self, dispatch: DispatchOutcome) -> bool:
         # ``ask_user`` would pause the turn — quiz pipeline v1 doesn't wire up

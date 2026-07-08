@@ -1,5 +1,5 @@
-import type { MathAnimatorResult } from "@/lib/math-animator-types";
-import { extractMathAnimatorResult } from "@/lib/math-animator-types";
+import type { MathAnimatorResult } from "./math-animator-types";
+import { extractMathAnimatorResult } from "./math-animator-types";
 
 export type VisualizeTextRenderType = "svg" | "chartjs" | "mermaid" | "html";
 export type VisualizeManimRenderType = "manim_video" | "manim_image";

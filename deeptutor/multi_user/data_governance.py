@@ -4,12 +4,15 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 import json
+import logging
 from pathlib import Path
 import shutil
 from typing import Any, Literal
 import zipfile
 
 from . import paths
+
+logger = logging.getLogger(__name__)
 
 DeleteDataAction = Literal["keep", "archive", "delete"]
 
@@ -50,7 +53,8 @@ def load_data_governance_settings() -> dict[str, int]:
     path = _settings_file()
     try:
         loaded = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
-    except Exception:
+    except Exception as exc:
+        logger.warning("Failed to load data governance settings from %s: %s", path, exc)
         loaded = {}
     settings = normalize_data_governance_settings(loaded if isinstance(loaded, dict) else {})
     if settings != loaded:
@@ -75,7 +79,8 @@ def _read_jsonl(path: Path) -> list[dict[str, Any]]:
     for line in path.read_text(encoding="utf-8").splitlines():
         try:
             item = json.loads(line)
-        except json.JSONDecodeError:
+        except json.JSONDecodeError as exc:
+            logger.warning("Skipping malformed JSONL row in %s: %s", path, exc)
             continue
         if isinstance(item, dict):
             out.append(item)
@@ -108,7 +113,8 @@ def _prune_jsonl(path: Path, retention_days: int) -> dict[str, int]:
     for line in path.read_text(encoding="utf-8").splitlines():
         try:
             item = json.loads(line)
-        except json.JSONDecodeError:
+        except json.JSONDecodeError as exc:
+            logger.warning("Keeping malformed JSONL row in %s during prune: %s", path, exc)
             kept.append(line)
             continue
         event_time = _parse_time(item.get("time")) if isinstance(item, dict) else None
@@ -134,7 +140,10 @@ def _prune_deleted_user_archives(root: Path, retention_days: int) -> dict[str, i
         manifest = archive / "manifest.json"
         try:
             data = json.loads(manifest.read_text(encoding="utf-8"))
-        except Exception:
+        except Exception as exc:
+            logger.warning(
+                "Skipping deleted-user archive with unreadable manifest %s: %s", manifest, exc
+            )
             continue
         archived_at = _parse_time(data.get("archived_at") if isinstance(data, dict) else None)
         if archived_at is not None and archived_at < cutoff:

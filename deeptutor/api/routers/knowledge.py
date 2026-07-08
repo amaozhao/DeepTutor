@@ -100,9 +100,7 @@ knowledge_linked_router.set_dependencies(
     writable_kb=lambda kb_name: _writable_kb(kb_name),
     load_kb_entry=lambda manager, kb_name: _load_kb_entry_or_404(manager, kb_name),
     assert_not_connected=lambda kb_name, kb_entry: _assert_not_connected_kb(kb_name, kb_entry),
-    assert_writable_or_409=lambda kb_name, kb_entry: _assert_kb_writable_or_409(
-        kb_name, kb_entry
-    ),
+    assert_writable_or_409=lambda kb_name, kb_entry: _assert_kb_writable_or_409(kb_name, kb_entry),
     build_task_id=lambda task_type, task_key_prefix: _build_unique_task_id(
         task_type, task_key_prefix
     ),

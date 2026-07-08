@@ -52,6 +52,95 @@ def test_sqlite_store_migrates_legacy_chat_history_db(tmp_path: Path) -> None:
         service._user_data_dir = original_user_dir
 
 
+def test_sqlite_store_initializes_legacy_schema_columns(tmp_path: Path) -> None:
+    db_path = tmp_path / "legacy.db"
+    with closing(sqlite3.connect(db_path)) as conn:
+        now = 1.0
+        conn.executescript(
+            """
+            CREATE TABLE sessions (
+                id TEXT PRIMARY KEY,
+                title TEXT NOT NULL DEFAULT 'New conversation',
+                created_at REAL NOT NULL,
+                updated_at REAL NOT NULL,
+                compressed_summary TEXT DEFAULT '',
+                summary_up_to_msg_id INTEGER DEFAULT 0
+            );
+            CREATE TABLE messages (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+                role TEXT NOT NULL,
+                content TEXT NOT NULL DEFAULT '',
+                capability TEXT DEFAULT '',
+                events_json TEXT DEFAULT '',
+                attachments_json TEXT DEFAULT '',
+                created_at REAL NOT NULL
+            );
+            CREATE TABLE notebook_entries (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+                question_id TEXT NOT NULL,
+                question TEXT NOT NULL,
+                question_type TEXT DEFAULT '',
+                options_json TEXT DEFAULT '{}',
+                correct_answer TEXT DEFAULT '',
+                explanation TEXT DEFAULT '',
+                difficulty TEXT DEFAULT '',
+                user_answer TEXT DEFAULT '',
+                is_correct INTEGER DEFAULT 0,
+                bookmarked INTEGER DEFAULT 0,
+                followup_session_id TEXT DEFAULT '',
+                created_at REAL NOT NULL,
+                updated_at REAL NOT NULL,
+                UNIQUE(session_id, question_id)
+            );
+            """
+        )
+        conn.execute(
+            "INSERT INTO sessions (id, title, created_at, updated_at) VALUES (?, ?, ?, ?)",
+            ("s1", "Legacy", now, now),
+        )
+        conn.execute(
+            "INSERT INTO messages (session_id, role, content, created_at) VALUES (?, ?, ?, ?)",
+            ("s1", "user", "hi", now),
+        )
+        conn.execute(
+            "INSERT INTO messages (session_id, role, content, created_at) VALUES (?, ?, ?, ?)",
+            ("s1", "assistant", "hello", now + 1),
+        )
+        conn.execute(
+            "INSERT INTO notebook_entries (session_id, question_id, question, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
+            ("s1", "q1", "Q?", now, now),
+        )
+        conn.commit()
+
+    store = SQLiteSessionStore(db_path=db_path)
+
+    messages = asyncio.run(store.get_messages("s1"))
+    assert messages[0]["parent_message_id"] is None
+    assert messages[1]["parent_message_id"] == messages[0]["id"]
+
+    entries = asyncio.run(store.list_notebook_entries())["items"]
+    assert entries[0]["turn_id"] == ""
+    assert entries[0]["user_answer_images"] == []
+    assert entries[0]["ai_judgment"] == ""
+
+    asyncio.run(
+        store.upsert_notebook_entries(
+            "s1",
+            [
+                {
+                    "turn_id": "turn-2",
+                    "question_id": "q1",
+                    "question": "Q?",
+                    "is_correct": True,
+                }
+            ],
+        )
+    )
+    assert asyncio.run(store.list_notebook_entries())["total"] == 2
+
+
 @pytest.fixture
 def store(tmp_path: Path) -> SQLiteSessionStore:
     return SQLiteSessionStore(db_path=tmp_path / "test.db")

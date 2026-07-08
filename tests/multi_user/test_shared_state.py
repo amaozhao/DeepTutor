@@ -129,6 +129,40 @@ def test_postgres_shared_state_imports_file_users_and_secret(mu_isolated_root, m
     assert imported_secret["seed"] == "existing-secret"
 
 
+def test_postgres_shared_state_logs_unreadable_auth_secret_seed(
+    mu_isolated_root, monkeypatch, caplog
+):
+    from deeptutor.multi_user import identity
+
+    class _UnreadableSecret:
+        def exists(self):
+            return True
+
+        def read_text(self, encoding="utf-8"):
+            raise OSError("permission denied")
+
+    fake = _FakeSharedState()
+    imported_secret = {}
+
+    def load_or_create_secret(seed=""):
+        imported_secret["seed"] = seed
+        return seed or fake.secret
+
+    monkeypatch.setattr(identity, "_postgres_enabled", fake.postgres_enabled)
+    monkeypatch.setattr(identity, "SECRET_FILE", _UnreadableSecret())
+    monkeypatch.setattr(
+        "deeptutor.multi_user.shared_state.load_or_create_auth_secret",
+        load_or_create_secret,
+    )
+
+    with caplog.at_level("WARNING", logger="deeptutor.multi_user.identity"):
+        assert identity.load_or_create_auth_secret() == fake.secret
+
+    assert imported_secret["seed"] == ""
+    assert "Failed to read local auth secret seed" in caplog.text
+    assert "permission denied" in caplog.text
+
+
 def test_postgres_shared_state_drives_grants_and_usage_quota(seed_user, as_user, monkeypatch):
     from deeptutor.multi_user import grants, usage
     from deeptutor.multi_user.usage import UsageQuotaExceeded
@@ -158,9 +192,7 @@ def test_postgres_shared_state_drives_grants_and_usage_quota(seed_user, as_user,
         summary={"total_calls": 1},
     )
 
-    assert usage.usage_summary(user_id, now=datetime.now(timezone.utc))["today"][
-        "total_calls"
-    ] == 1
+    assert usage.usage_summary(user_id, now=datetime.now(timezone.utc))["today"]["total_calls"] == 1
     with as_user(user_id, username="alice"):
         try:
             usage.enforce_current_user_quota()

@@ -14,9 +14,9 @@ def _proof_for_registration(auth_router, email: str) -> str:
     nonce = next(
         str(i)
         for i in range(100_000)
-        if hashlib.sha256(f"{token}:{i}".encode("utf-8")).hexdigest().startswith(
-            "0" * auth_router._REGISTER_CHALLENGE_DIFFICULTY
-        )
+        if hashlib.sha256(f"{token}:{i}".encode("utf-8"))
+        .hexdigest()
+        .startswith("0" * auth_router._REGISTER_CHALLENGE_DIFFICULTY)
     )
     return f"{token}:{nonce}"
 
@@ -112,7 +112,9 @@ def test_revoke_sessions_invalidates_existing_token(mu_isolated_root, seed_user,
     assert decode_token(token) is None
 
 
-def test_profile_revoke_sessions_invalidates_current_token(mu_isolated_root, seed_user, monkeypatch):
+def test_profile_revoke_sessions_invalidates_current_token(
+    mu_isolated_root, seed_user, monkeypatch
+):
     import deeptutor.api.routers.auth as auth_router
     from deeptutor.services import auth as auth_service
     from deeptutor.services.auth import create_token, decode_token
@@ -243,9 +245,7 @@ def test_registration_challenge_uses_email_and_accepts_valid_proof(registration_
     nonce = next(
         str(i)
         for i in range(100_000)
-        if hashlib.sha256(f"{token}:{i}".encode("utf-8")).hexdigest().startswith(
-            "0" * difficulty
-        )
+        if hashlib.sha256(f"{token}:{i}".encode("utf-8")).hexdigest().startswith("0" * difficulty)
     )
 
     response = registration_client.post(
@@ -606,9 +606,7 @@ def test_invite_email_binding_is_enforced(invite_registration_client):
     assert response.status_code == 403
 
 
-def test_invite_is_restored_when_registration_write_fails(
-    invite_registration_client, monkeypatch
-):
+def test_invite_is_restored_when_registration_write_fails(invite_registration_client, monkeypatch):
     import deeptutor.api.routers.auth as auth_router
     from deeptutor.multi_user.invites import list_invites
 

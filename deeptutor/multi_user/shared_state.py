@@ -254,7 +254,9 @@ def allow_rate_hit(bucket: str, *, limit: int, window_seconds: int, now: float) 
     cutoff = now - window_seconds
     with connect() as conn:
         _lock(conn, f"dt_rate_hits:{bucket}")
-        conn.execute("DELETE FROM dt_rate_hits WHERE bucket = %s AND hit_at <= %s", (bucket, cutoff))
+        conn.execute(
+            "DELETE FROM dt_rate_hits WHERE bucket = %s AND hit_at <= %s", (bucket, cutoff)
+        )
         row = conn.execute(
             "SELECT count(*) AS count FROM dt_rate_hits WHERE bucket = %s",
             (bucket,),

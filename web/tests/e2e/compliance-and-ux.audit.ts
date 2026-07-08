@@ -14,7 +14,8 @@ async function expectAnyVisible(
 ) {
   for (const loc of locators) {
     try {
-      if (await loc.first().isVisible()) return;
+      await expect(loc.first()).toBeVisible({ timeout: 5000 });
+      return;
     } catch {}
   }
   expect(false, message).toBe(true);
@@ -57,15 +58,7 @@ test.describe("Compliance :: Accessibility & Semantics", () => {
           const text = (a.textContent || "").trim();
           const aria = (a.getAttribute("aria-label") || "").trim();
           const title = (a.getAttribute("title") || "").trim();
-          const imageName = Array.from(a.querySelectorAll("img")).some(
-            (image) => (image.getAttribute("alt") || "").trim().length > 0,
-          );
-          return (
-            text.length === 0 &&
-            aria.length === 0 &&
-            title.length === 0 &&
-            !imageName
-          );
+          return text.length === 0 && aria.length === 0 && title.length === 0;
         }).length,
     );
     expect(
@@ -85,7 +78,7 @@ test.describe("Compliance :: Error Handling & UX Signals", () => {
   test("api error surfaces user-friendly feedback (alert or message)", async ({
     page,
   }) => {
-    await page.route("**/api/notebooks", (route) =>
+    await page.route("**/api/v1/notebook/list", (route) =>
       route.fulfill({
         status: 500,
         headers: { "content-type": "application/json" },
@@ -93,7 +86,7 @@ test.describe("Compliance :: Error Handling & UX Signals", () => {
       }),
     );
 
-    await page.goto(`${BASE_URL}/notebooks`);
+    await page.goto(`${BASE_URL}/space/notebooks`);
 
     await expectAnyVisible(
       [

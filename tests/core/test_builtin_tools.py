@@ -25,6 +25,14 @@ from deeptutor.tools.builtin import (
 )
 
 
+def test_builtin_package_keeps_public_tool_exports() -> None:
+    import deeptutor.tools.builtin as builtin
+
+    for name in builtin.__all__:
+        if name.endswith("Tool") or name.endswith("ToolWrapper"):
+            assert hasattr(builtin, name), name
+
+
 def _install_module(
     monkeypatch: pytest.MonkeyPatch, fullname: str, **attrs: Any
 ) -> types.ModuleType:
