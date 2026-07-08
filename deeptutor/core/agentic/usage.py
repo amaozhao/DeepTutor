@@ -5,6 +5,8 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from deeptutor.logging.stats.llm_stats import get_pricing
+
 logger = logging.getLogger(__name__)
 
 
@@ -82,9 +84,6 @@ class UsageTracker:
             return None
         cost_usd = 0.0
         if self.model:
-            # Local import keeps ``core.agentic`` import-light at module load.
-            from deeptutor.logging.stats.llm_stats import get_pricing
-
             pricing = get_pricing(self.model)
             cost_usd = (self.prompt_tokens / 1000.0) * pricing.get("input", 0.0) + (
                 self.completion_tokens / 1000.0

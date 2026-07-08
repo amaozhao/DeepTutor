@@ -136,7 +136,9 @@ async def test_auto_merge_runs_even_when_update_added_no_facts(memory_dir, monke
         lambda surface: [],
     )
 
-    from deeptutor.services.memory.consolidator.modes import update as update_mod
+    update_mod = __import__(
+        "deeptutor.services.memory.consolidator.modes", fromlist=["update"]
+    ).update
 
     result = await update_mod.run_update("L2", "notebook")
     assert result.facts_added == 0

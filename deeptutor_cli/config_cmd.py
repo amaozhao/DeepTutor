@@ -7,8 +7,18 @@ View and update DeepTutor configuration.
 
 from __future__ import annotations
 
+import json
+
 from rich.console import Console
 import typer
+
+from deeptutor.services.config import (
+    load_config_with_main,
+    load_system_settings,
+    resolve_embedding_runtime_config,
+    resolve_llm_runtime_config,
+    resolve_search_runtime_config,
+)
 
 console = Console()
 
@@ -17,15 +27,6 @@ def register(app: typer.Typer) -> None:
     @app.command("show")
     def config_show() -> None:
         """Show current configuration."""
-        import json
-
-        from deeptutor.services.config import (
-            load_config_with_main,
-            load_system_settings,
-            resolve_embedding_runtime_config,
-            resolve_llm_runtime_config,
-            resolve_search_runtime_config,
-        )
 
         system_settings = load_system_settings()
         llm_runtime = resolve_llm_runtime_config()

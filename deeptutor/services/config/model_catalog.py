@@ -10,6 +10,8 @@ import threading
 from typing import Any
 from uuid import uuid4
 
+from deeptutor.multi_user.context import get_current_user
+from deeptutor.multi_user.paths import get_admin_path_service
 from deeptutor.services.path_service import get_path_service
 
 from .embedding_endpoint import normalize_embedding_endpoint_for_display
@@ -237,9 +239,6 @@ class ModelCatalogService:
 
 def get_model_catalog_service() -> ModelCatalogService:
     try:
-        from deeptutor.multi_user.context import get_current_user
-        from deeptutor.multi_user.paths import get_admin_path_service
-
         if not get_current_user().is_admin:
             return ModelCatalogService.get_instance(
                 get_admin_path_service().get_settings_file("model_catalog")

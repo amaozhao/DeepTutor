@@ -25,8 +25,12 @@ async def test_incremental_add_migrates_matching_legacy_index_to_flat_version(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from deeptutor.services.rag.pipelines.llamaindex import storage as storage_module
-    from deeptutor.services.rag.pipelines.llamaindex.pipeline import LlamaIndexPipeline
+    storage_module = __import__(
+        "deeptutor.services.rag.pipelines.llamaindex", fromlist=["storage"]
+    ).storage
+    LlamaIndexPipeline = __import__(
+        "deeptutor.services.rag.pipelines.llamaindex.pipeline", fromlist=["LlamaIndexPipeline"]
+    ).LlamaIndexPipeline
 
     sig = _signature()
     kb_dir = tmp_path / "kb"
@@ -96,8 +100,12 @@ async def test_incremental_add_migrates_matching_legacy_index_to_flat_version(
 def test_hybrid_retriever_uses_official_query_fusion_when_bm25_available(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from deeptutor.services.rag.pipelines.llamaindex import retrievers as retriever_module
-    from deeptutor.services.rag.pipelines.llamaindex.config import RetrievalConfig
+    retriever_module = __import__(
+        "deeptutor.services.rag.pipelines.llamaindex", fromlist=["retrievers"]
+    ).retrievers
+    RetrievalConfig = __import__(
+        "deeptutor.services.rag.pipelines.llamaindex.config", fromlist=["RetrievalConfig"]
+    ).RetrievalConfig
 
     captured: dict[str, object] = {}
 
@@ -141,8 +149,12 @@ def test_hybrid_retriever_uses_official_query_fusion_when_bm25_available(
 def test_hybrid_retriever_falls_back_to_vector_when_bm25_missing(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from deeptutor.services.rag.pipelines.llamaindex import retrievers as retriever_module
-    from deeptutor.services.rag.pipelines.llamaindex.config import RetrievalConfig
+    retriever_module = __import__(
+        "deeptutor.services.rag.pipelines.llamaindex", fromlist=["retrievers"]
+    ).retrievers
+    RetrievalConfig = __import__(
+        "deeptutor.services.rag.pipelines.llamaindex.config", fromlist=["RetrievalConfig"]
+    ).RetrievalConfig
 
     calls: list[int] = []
 
@@ -167,7 +179,9 @@ def test_hybrid_retriever_falls_back_to_vector_when_bm25_missing(
 def test_bm25_retriever_overrides_persisted_top_k(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from deeptutor.services.rag.pipelines.llamaindex import retrievers as retriever_module
+    retriever_module = __import__(
+        "deeptutor.services.rag.pipelines.llamaindex", fromlist=["retrievers"]
+    ).retrievers
 
     persist_dir = tmp_path / retriever_module.BM25_PERSIST_DIRNAME
     persist_dir.mkdir()
@@ -191,7 +205,9 @@ def test_bm25_retriever_overrides_persisted_top_k(
 def test_bm25_persistence_drops_stale_sidecar_on_rebuild_failure(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from deeptutor.services.rag.pipelines.llamaindex import retrievers as retriever_module
+    retriever_module = __import__(
+        "deeptutor.services.rag.pipelines.llamaindex", fromlist=["retrievers"]
+    ).retrievers
 
     persist_dir = tmp_path / retriever_module.BM25_PERSIST_DIRNAME
     persist_dir.mkdir()
@@ -209,7 +225,9 @@ def test_bm25_persistence_drops_stale_sidecar_on_rebuild_failure(
 
 
 def test_retrieval_config_reads_profile_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    from deeptutor.services.rag.pipelines.llamaindex import config as config_module
+    config_module = __import__(
+        "deeptutor.services.rag.pipelines.llamaindex", fromlist=["config"]
+    ).config
 
     monkeypatch.setenv("DEEPTUTOR_RAG_RETRIEVAL_PROFILE", " vector ")
 

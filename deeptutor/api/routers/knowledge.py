@@ -79,7 +79,16 @@ from deeptutor.services.rag.factory import (
     DEFAULT_PROVIDER,
     provider_uses_embedding_versions,
 )
+from deeptutor.services.rag.index_versioning import find_matching_version
+
+try:
+    from deeptutor.services.rag.pipelines.llamaindex.storage import validate_storage_embeddings
+except ModuleNotFoundError:  # pragma: no cover - optional llamaindex extra
+    validate_storage_embeddings = None
+# Initialize logger with config
+from deeptutor.services.rag.embedding_signature import signature_from_embedding_config
 from deeptutor.services.rag.file_routing import FileTypeRouter
+from deeptutor.services.rag.index_probe import inspect_provider_version
 from deeptutor.utils.document_extractor import (
     MAX_EXTRACTED_CHARS_PER_DOC,
     DocumentExtractionError,
@@ -88,7 +97,6 @@ from deeptutor.utils.document_extractor import (
 from deeptutor.utils.document_validator import DocumentValidator
 from deeptutor.utils.error_utils import format_exception_message
 
-# Initialize logger with config
 config = load_config_with_main("main.yaml", PROJECT_ROOT)
 log_dir = config.get("paths", {}).get("user_log_dir") or config.get("logging", {}).get("log_dir")
 logger = logging.getLogger(__name__)
@@ -260,11 +268,8 @@ def _matching_index_is_valid(kb_name: str, matching_version: dict | None) -> boo
     if not matching_version:
         return False
     try:
-        from deeptutor.services.rag.index_probe import inspect_provider_version
-        from deeptutor.services.rag.pipelines.llamaindex.storage import (
-            validate_storage_embeddings,
-        )
-
+        if validate_storage_embeddings is None:
+            return False
         probe = inspect_provider_version(matching_version, DEFAULT_PROVIDER)
         if not probe.ready:
             logger.warning(
@@ -876,11 +881,6 @@ async def reindex_knowledge_base(
         kb_dir = kb_base_dir / kb_name
         signature_hash = kb_provider
         if provider_uses_embedding_versions(kb_provider):
-            from deeptutor.services.rag.embedding_signature import signature_from_embedding_config
-            from deeptutor.services.rag.index_versioning import (
-                find_matching_version,
-            )
-
             signature = signature_from_embedding_config()
             if signature is None:
                 raise HTTPException(

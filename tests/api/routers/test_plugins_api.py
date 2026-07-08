@@ -37,8 +37,13 @@ def _events(text: str) -> list[tuple[str, dict[str, Any]]]:
 
 
 def _client_with_fake_partner(monkeypatch):
-    from deeptutor.core.stream import StreamEvent, StreamEventType
-    from deeptutor.services.partners.manager import PartnerConfig
+    StreamEvent = __import__("deeptutor.core.stream", fromlist=["StreamEvent"]).StreamEvent
+    StreamEventType = __import__(
+        "deeptutor.core.stream", fromlist=["StreamEventType"]
+    ).StreamEventType
+    PartnerConfig = __import__(
+        "deeptutor.services.partners.manager", fromlist=["PartnerConfig"]
+    ).PartnerConfig
 
     class FakeInstance:
         running = True

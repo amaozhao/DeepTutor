@@ -17,8 +17,13 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from deeptutor.agents._shared.tool_composition import default_optional_tools
 from deeptutor.core.i18n import current_language
 from deeptutor.i18n.metadata_i18n import localized_description, tool_description_i18n
+from deeptutor.runtime.registry import tool_registry as tool_registry_module
+from deeptutor.runtime.registry.deferred_tools import provider_identity
+from deeptutor.services import mcp as mcp_module
+from deeptutor.tools.builtin.names import CONFIGURABLE_BUILTIN_TOOL_NAMES
 
 logger = logging.getLogger(__name__)
 
@@ -33,19 +38,12 @@ async def build_tool_options(
     use the mandatory ``partner_*`` memory tools instead and cannot configure
     chat's memory tools.
     """
-    from deeptutor.agents._shared.tool_composition import default_optional_tools
-    from deeptutor.runtime.registry.deferred_tools import provider_identity
-    from deeptutor.runtime.registry.tool_registry import get_tool_registry
-    from deeptutor.tools.builtin import CONFIGURABLE_BUILTIN_TOOL_NAMES
-
     exclude = exclude_builtin or set()
 
-    registry = get_tool_registry()
+    registry = tool_registry_module.get_tool_registry()
     language = current_language()
     try:
-        from deeptutor.services.mcp import get_mcp_manager
-
-        await get_mcp_manager().ensure_started()
+        await mcp_module.get_mcp_manager().ensure_started()
     except Exception:
         logger.debug("MCP manager unavailable for tool options", exc_info=True)
 

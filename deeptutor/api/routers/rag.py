@@ -2,12 +2,21 @@
 
 from __future__ import annotations
 
+import importlib
 import logging
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
+from deeptutor.services.config import (
+    get_kb_config_service,
+    get_model_catalog_service,
+    get_runtime_settings_service,
+)
 from deeptutor.services.rag.linked_kb import LINKABLE_PROVIDERS
+from deeptutor.services.rag.pipelines.pageindex.config import DEFAULT_API_BASE_URL
+from deeptutor.services.rag.preflight import engine_preflight
+from deeptutor.services.rag.service import RAGService
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -17,9 +26,6 @@ router = APIRouter()
 async def get_rag_providers():
     """Get list of available RAG providers with the active per-engine mode."""
     try:
-        from deeptutor.services.config import get_kb_config_service
-        from deeptutor.services.rag.service import RAGService
-
         providers = RAGService.list_providers()
         kb_config = get_kb_config_service()
         for provider in providers:
@@ -44,9 +50,6 @@ class ProviderModeUpdate(BaseModel):
 @router.put("/rag-providers/{provider}/mode")
 async def set_rag_provider_mode(provider: str, payload: ProviderModeUpdate):
     """Persist the default retrieval mode for a mode-aware engine."""
-    from deeptutor.services.config import get_kb_config_service
-    from deeptutor.services.rag.service import RAGService
-
     entry = next((p for p in RAGService.list_providers() if p["id"] == provider), None)
     modes = (entry or {}).get("modes") or []
     if entry is None or not modes:
@@ -72,7 +75,6 @@ class PageIndexConfigUpdate(BaseModel):
 
 def _pageindex_config_payload() -> dict:
     """PageIndex pipeline settings for the UI, with the API key redacted."""
-    from deeptutor.services.config import get_runtime_settings_service
 
     settings = get_runtime_settings_service().load_pageindex()
     return {
@@ -96,9 +98,6 @@ async def get_pageindex_pipeline_config():
 async def update_pageindex_pipeline_config(payload: PageIndexConfigUpdate):
     """Persist the PageIndex API key / base URL."""
     try:
-        from deeptutor.services.config import get_runtime_settings_service
-        from deeptutor.services.rag.pipelines.pageindex.config import DEFAULT_API_BASE_URL
-
         service = get_runtime_settings_service()
         current = service.load_pageindex(include_process_overrides=False)
 
@@ -113,9 +112,7 @@ async def update_pageindex_pipeline_config(payload: PageIndexConfigUpdate):
         service.save_pageindex({"api_key": api_key, "api_base_url": api_base_url})
 
         try:
-            from deeptutor.services.mcp import get_mcp_manager
-
-            await get_mcp_manager().reload()
+            await importlib.import_module("deeptutor.services.mcp").get_mcp_manager().reload()
         except Exception:
             logger.warning("MCP reload after PageIndex config change failed", exc_info=True)
 
@@ -140,8 +137,6 @@ class LlamaIndexConfigUpdate(BaseModel):
 async def get_llamaindex_pipeline_config():
     """Read the LlamaIndex engine's retrieval and chunking knobs."""
     try:
-        from deeptutor.services.config import get_runtime_settings_service
-
         return get_runtime_settings_service().load_llamaindex()
     except Exception as exc:
         logger.error("Error reading LlamaIndex config: %s", exc)
@@ -152,8 +147,6 @@ async def get_llamaindex_pipeline_config():
 async def update_llamaindex_pipeline_config(payload: LlamaIndexConfigUpdate):
     """Persist the LlamaIndex engine knobs."""
     try:
-        from deeptutor.services.config import get_runtime_settings_service
-
         service = get_runtime_settings_service()
         current = service.load_llamaindex(include_process_overrides=False)
         updates = payload.model_dump(exclude_none=True)
@@ -175,8 +168,6 @@ class GraphRagConfigUpdate(BaseModel):
 async def get_graphrag_pipeline_config():
     """Read GraphRAG's query knobs."""
     try:
-        from deeptutor.services.config import get_runtime_settings_service
-
         return get_runtime_settings_service().load_graphrag()
     except Exception as exc:
         logger.error("Error reading GraphRAG config: %s", exc)
@@ -187,8 +178,6 @@ async def get_graphrag_pipeline_config():
 async def update_graphrag_pipeline_config(payload: GraphRagConfigUpdate):
     """Persist GraphRAG's query knobs."""
     try:
-        from deeptutor.services.config import get_runtime_settings_service
-
         service = get_runtime_settings_service()
         current = service.load_graphrag()
         updates = payload.model_dump(exclude_none=True)
@@ -209,8 +198,6 @@ class LightRagConfigUpdate(BaseModel):
 async def get_lightrag_pipeline_config():
     """Read LightRAG's query knobs."""
     try:
-        from deeptutor.services.config import get_runtime_settings_service
-
         return get_runtime_settings_service().load_lightrag()
     except Exception as exc:
         logger.error("Error reading LightRAG config: %s", exc)
@@ -221,8 +208,6 @@ async def get_lightrag_pipeline_config():
 async def update_lightrag_pipeline_config(payload: LightRagConfigUpdate):
     """Persist LightRAG's query knobs."""
     try:
-        from deeptutor.services.config import get_runtime_settings_service
-
         service = get_runtime_settings_service()
         current = service.load_lightrag()
         updates = payload.model_dump(exclude_none=True)
@@ -236,8 +221,6 @@ async def update_lightrag_pipeline_config(payload: LightRagConfigUpdate):
 async def get_rag_pipeline_preflight(provider: str):
     """Check whether ``provider`` can run in the current environment."""
     try:
-        from deeptutor.services.rag.preflight import engine_preflight
-
         return engine_preflight(provider)
     except Exception as exc:
         logger.error("Error running preflight for '%s': %s", provider, exc)
@@ -249,7 +232,6 @@ _ENGINE_MODEL_KINDS = ("llm", "embedding")
 
 def _model_options_payload(kinds: list[str]) -> dict:
     """Secret-free model options per kind for the engine page picker."""
-    from deeptutor.services.config import get_model_catalog_service
 
     catalog = get_model_catalog_service().load()
     services = catalog.get("services", {})
@@ -314,8 +296,6 @@ async def set_rag_active_model(payload: ActiveModelUpdate):
             detail=f"Unsupported model kind '{payload.kind}'. Choose one of: {', '.join(_ENGINE_MODEL_KINDS)}.",
         )
     try:
-        from deeptutor.services.config import get_model_catalog_service
-
         service = get_model_catalog_service()
         catalog = service.load()
         svc = (catalog.get("services") or {}).get(payload.kind)

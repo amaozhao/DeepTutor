@@ -2,8 +2,13 @@ from __future__ import annotations
 
 
 def test_book_session_ids_are_scoped_per_user(as_user) -> None:
-    from deeptutor.book.storage import BookStorage
-    from deeptutor.services.session import get_sqlite_session_store, get_turn_runtime_manager
+    BookStorage = __import__("deeptutor.book.storage", fromlist=["BookStorage"]).BookStorage
+    get_sqlite_session_store = __import__(
+        "deeptutor.services.session", fromlist=["get_sqlite_session_store"]
+    ).get_sqlite_session_store
+    get_turn_runtime_manager = __import__(
+        "deeptutor.services.session", fromlist=["get_turn_runtime_manager"]
+    ).get_turn_runtime_manager
 
     shared_book_id = "shared-book-id"
 
@@ -34,7 +39,9 @@ def test_partner_data_is_admin_anchored_not_user_scoped(as_user) -> None:
     is enforced at the API layer instead (the /api/v1/partners router is
     admin-gated in ``api/main.py``).
     """
-    from deeptutor.services.partners.manager import PartnerManager
+    PartnerManager = __import__(
+        "deeptutor.services.partners.manager", fromlist=["PartnerManager"]
+    ).PartnerManager
 
     manager = PartnerManager()
 

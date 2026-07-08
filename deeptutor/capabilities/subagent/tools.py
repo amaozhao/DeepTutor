@@ -22,9 +22,15 @@ agent session and it keeps context across the model's questions.
 from __future__ import annotations
 
 import logging
+from pathlib import Path
+import shutil
+import tempfile
 from typing import TYPE_CHECKING, Any
 
 from deeptutor.core.tool_protocol import BaseTool, ToolDefinition, ToolParameter, ToolResult
+from deeptutor.services.subagent import get_backend
+from deeptutor.services.subagent.images import materialize_images
+from deeptutor.services.subagent.sessions import remember_session
 
 if TYPE_CHECKING:  # avoid importing the services package at module-load time (cycle)
     from deeptutor.services.subagent import SubagentEvent
@@ -99,8 +105,6 @@ class ConsultSubagentTool(BaseTool):
                 success=False,
             )
 
-        from deeptutor.services.subagent import get_backend
-
         backend = get_backend(str(spec.get("kind") or ""))
         if backend is None:
             return ToolResult(
@@ -156,8 +160,6 @@ class ConsultSubagentTool(BaseTool):
             return ToolResult(content=f"The subagent run failed: {exc}", success=False)
         finally:
             if image_dir is not None:
-                import shutil
-
                 shutil.rmtree(image_dir, ignore_errors=True)
 
         if result.session_id:
@@ -166,8 +168,6 @@ class ConsultSubagentTool(BaseTool):
             # this same live agent session.
             session_key_value = spec.get("session_key")
             if session_key_value:
-                from deeptutor.services.subagent.sessions import remember_session
-
                 remember_session(
                     str(session_key_value),
                     result.session_id,
@@ -210,16 +210,10 @@ def _stage_images(images: list[Any]) -> tuple[str | None, list[str]]:
     """
     if not images:
         return None, []
-    from pathlib import Path
-    import tempfile
-
-    from deeptutor.services.subagent.images import materialize_images
 
     staging = tempfile.mkdtemp(prefix="dt-subagent-img-")
     paths = materialize_images(images, Path(staging))
     if not paths:
-        import shutil
-
         shutil.rmtree(staging, ignore_errors=True)
         return None, []
     return staging, paths

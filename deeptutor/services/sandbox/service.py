@@ -15,6 +15,7 @@ capability questions the skill/exec layers ask:
 from __future__ import annotations
 
 import asyncio
+import importlib
 import logging
 
 from deeptutor.core.i18n import t
@@ -24,6 +25,10 @@ from deeptutor.services.sandbox.quota import QuotaExceeded, UserExecQuota
 from deeptutor.services.sandbox.spec import ExecRequest, ExecResult, IsolationLevel
 
 logger = logging.getLogger(__name__)
+
+
+def _exec_override():
+    return importlib.import_module("deeptutor.multi_user.tool_access").exec_override()
 
 
 class SandboxService:
@@ -81,9 +86,7 @@ class SandboxService:
         # when the grant denies it, but any path that reaches the sandbox
         # directly still answers to the same policy.
         try:
-            from deeptutor.multi_user.tool_access import exec_override
-
-            if exec_override() is False:
+            if _exec_override() is False:
                 return ExecResult(error=t("sandbox.disabled_for_account"))
         except Exception:
             logger.warning("per-user exec policy check failed; continuing", exc_info=True)

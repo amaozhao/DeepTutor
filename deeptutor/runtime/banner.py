@@ -13,6 +13,7 @@ from rich.panel import Panel
 from rich.text import Text
 
 from deeptutor.__version__ import __version__
+from deeptutor.services.settings.interface_settings import get_ui_language
 
 _ASCII_LOGO = r""" ____                  _____      _
 |  _ \  ___  ___ _ __ |_   _|   _| |_ ___  _ __
@@ -252,8 +253,6 @@ def resolve_language(default: str = "en") -> str:
     silently falls back to the default.
     """
     try:
-        from deeptutor.services.settings.interface_settings import get_ui_language
-
         return _pick_language(get_ui_language(default))
     except Exception:
         return _pick_language(default)

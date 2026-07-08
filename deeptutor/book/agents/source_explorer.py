@@ -34,8 +34,11 @@ import logging
 from typing import Any
 
 from deeptutor.agents.base_agent import BaseAgent
+from deeptutor.services.notebook import notebook_manager
+from deeptutor.tools.rag_tool import rag_search
 from deeptutor.utils.json_parser import parse_json_response
 
+from ..blocks._language import language_directive
 from ..models import (
     BookInputs,
     BookProposal,
@@ -184,8 +187,6 @@ class SourceExplorer(BaseAgent):
         proposal: BookProposal,
         inputs: BookInputs,
     ) -> list[str]:
-        from ..blocks._language import language_directive
-
         system_prompt = self.get_prompt("queries_system") or _FALLBACK_QUERIES_SYSTEM
         system_prompt = system_prompt.rstrip() + language_directive(self.language)
         user_template = self.get_prompt("queries_user") or _FALLBACK_QUERIES_USER
@@ -269,12 +270,6 @@ class SourceExplorer(BaseAgent):
         queries: list[str],
         kb_list: list[str],
     ) -> list[SourceChunk]:
-        try:
-            from deeptutor.tools.rag_tool import rag_search
-        except Exception as exc:  # pragma: no cover - import guard
-            logger.warning(f"rag_tool unavailable: {exc}")
-            return []
-
         async def _one_query(kb: str, query: str) -> list[SourceChunk]:
             try:
                 result = await rag_search(query=query, kb_name=kb)
@@ -352,8 +347,6 @@ class SourceExplorer(BaseAgent):
         # Notebook records
         try:
             if inputs.notebook_refs:
-                from deeptutor.services.notebook import notebook_manager
-
                 records = notebook_manager.get_records_by_references(
                     [r.model_dump() for r in inputs.notebook_refs]
                 )
@@ -433,8 +426,6 @@ class SourceExplorer(BaseAgent):
     ) -> tuple[str, list[str], list[str]]:
         if not chunks:
             return ("", [], [])
-
-        from ..blocks._language import language_directive
 
         system_prompt = self.get_prompt("summary_system") or _FALLBACK_SUMMARY_SYSTEM
         system_prompt = system_prompt.rstrip() + language_directive(self.language)

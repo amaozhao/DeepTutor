@@ -30,6 +30,7 @@ from deeptutor.services.config.embedding_endpoint import (
     is_gemini_native_embedding_endpoint,
     redact_embedding_endpoint_for_display,
 )
+from deeptutor.services.config.provider_runtime import EMBEDDING_PROVIDERS
 from deeptutor.services.llm.config import get_token_limit_kwargs
 from deeptutor.services.provider_registry import PROVIDERS, ProviderSpec, find_by_name
 
@@ -444,8 +445,6 @@ def select_embedding_provider(
     and default endpoints come from ``EMBEDDING_PROVIDERS`` in
     ``provider_runtime`` so we don't duplicate the source of truth.
     """
-
-    from deeptutor.services.config.provider_runtime import EMBEDDING_PROVIDERS
 
     options: list[tuple[str, str, str]] = []
     for name in FEATURED_EMBEDDING_PROVIDERS:

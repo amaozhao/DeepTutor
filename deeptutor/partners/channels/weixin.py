@@ -14,6 +14,7 @@ import base64
 from collections import OrderedDict
 from contextlib import suppress
 import hashlib
+import importlib
 import json
 import os
 from pathlib import Path
@@ -27,6 +28,11 @@ import uuid
 import httpx
 from loguru import logger
 from pydantic import Field
+
+try:
+    import qrcode as qr_lib
+except ModuleNotFoundError:  # pragma: no cover - optional dependency
+    qr_lib = None
 
 from deeptutor.partners.bus.events import OutboundMessage
 from deeptutor.partners.bus.queue import MessageBus
@@ -111,6 +117,21 @@ UPLOAD_MEDIA_VOICE = 4
 _IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".tiff", ".ico", ".svg"}
 _VIDEO_EXTS = {".mp4", ".avi", ".mov", ".mkv", ".webm", ".flv"}
 _VOICE_EXTS = {".mp3", ".wav", ".amr", ".silk", ".ogg", ".m4a", ".aac", ".flac"}
+
+
+def _crypto_cipher_aes():
+    try:
+        return importlib.import_module("Crypto.Cipher").AES
+    except ImportError:
+        return None
+
+
+def _cryptography_cipher_parts():
+    try:
+        module = importlib.import_module("cryptography.hazmat.primitives.ciphers")
+    except ImportError:
+        return None
+    return module.Cipher, module.algorithms, module.modes
 
 
 def _has_downloadable_media_locator(media: dict[str, Any] | None) -> bool:
@@ -434,8 +455,8 @@ class WeixinChannel(BaseChannel):
     @staticmethod
     def _print_qr_code(url: str) -> None:
         try:
-            import qrcode as qr_lib
-
+            if qr_lib is None:
+                raise ImportError
             qr = qr_lib.QRCode(border=1)
             qr.add_data(url)
             qr.make(fit=True)
@@ -1490,14 +1511,17 @@ def _encrypt_aes_ecb(data: bytes, aes_key_b64: str) -> bytes:
     # AES-128-ECB is mandated by the WeChat CDN media protocol — not our choice.
     # The ``Crypto`` namespace is provided by the maintained pycryptodome fork.
     with suppress(ImportError):
-        from Crypto.Cipher import AES  # nosec B413
-
+        AES = _crypto_cipher_aes()  # nosec B413
+        if AES is None:
+            raise ImportError
         cipher = AES.new(key, AES.MODE_ECB)
         return cipher.encrypt(padded)
 
     try:
-        from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
-
+        cipher_parts = _cryptography_cipher_parts()
+        if cipher_parts is None:
+            raise ImportError
+        Cipher, algorithms, modes = cipher_parts
         cipher_obj = Cipher(algorithms.AES(key), modes.ECB())  # nosec B305
         encryptor = cipher_obj.encryptor()
         return encryptor.update(padded) + encryptor.finalize()
@@ -1522,15 +1546,18 @@ def _decrypt_aes_ecb(data: bytes, aes_key_b64: str) -> bytes:
     # AES-128-ECB is mandated by the WeChat CDN media protocol — not our choice.
     # The ``Crypto`` namespace is provided by the maintained pycryptodome fork.
     with suppress(ImportError):
-        from Crypto.Cipher import AES  # nosec B413
-
+        AES = _crypto_cipher_aes()  # nosec B413
+        if AES is None:
+            raise ImportError
         cipher = AES.new(key, AES.MODE_ECB)
         decrypted = cipher.decrypt(data)
 
     if decrypted is None:
         try:
-            from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
-
+            cipher_parts = _cryptography_cipher_parts()
+            if cipher_parts is None:
+                raise ImportError
+            Cipher, algorithms, modes = cipher_parts
             cipher_obj = Cipher(algorithms.AES(key), modes.ECB())  # nosec B305
             decryptor = cipher_obj.decryptor()
             decrypted = decryptor.update(data) + decryptor.finalize()

@@ -21,7 +21,7 @@ def make_user(mu_isolated_root):
     """Build a ``CurrentUser`` rooted under the isolated tmp_path."""
 
     def _make(uid: str, *, role: str = "user", username: str | None = None) -> CurrentUser:
-        from deeptutor.multi_user.paths import admin_scope
+        admin_scope = __import__("deeptutor.multi_user.paths", fromlist=["admin_scope"]).admin_scope
 
         if role == "admin":
             scope = admin_scope()
@@ -66,8 +66,11 @@ def seed_user(mu_isolated_root):
     """Create a user record on disk and return the resulting record dict."""
 
     def _seed(username: str, password: str = "password1234", role: str = "user") -> dict:
-        from deeptutor.multi_user.identity import save_user
-        from deeptutor.services.auth import hash_password
+        save_user = __import__("deeptutor.multi_user.identity", fromlist=["save_user"]).save_user
+        hash_password = __import__(
+            "deeptutor.services.auth",
+            fromlist=["hash_password"],
+        ).hash_password
 
         return save_user(username, hash_password(password), role=role)  # type: ignore[arg-type]
 

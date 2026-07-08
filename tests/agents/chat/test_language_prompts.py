@@ -37,7 +37,9 @@ def test_agentic_chat_final_prompt_uses_selected_language(
         lambda: FakeRegistry(),
     )
 
-    from deeptutor.core.context import UnifiedContext
+    UnifiedContext = __import__(
+        "deeptutor.core.context", fromlist=["UnifiedContext"]
+    ).UnifiedContext
 
     ctx = UnifiedContext()
     zh_prompt = AgenticChatPipeline(language="zh")._build_system_prompt([], ctx)
@@ -65,7 +67,9 @@ def test_mastery_plugin_system_prompt_uses_localized_fallback(
         lambda: FakeRegistry(),
     )
 
-    from deeptutor.core.context import UnifiedContext
+    UnifiedContext = __import__(
+        "deeptutor.core.context", fromlist=["UnifiedContext"]
+    ).UnifiedContext
 
     ctx = UnifiedContext(metadata={"mastery_mode": True, "mastery_path_id": "p1"})
     zh_prompt = AgenticChatPipeline(language="zh")._build_system_prompt([], ctx)
@@ -94,7 +98,9 @@ def test_legacy_chat_agent_system_prompt_uses_selected_language() -> None:
 
 
 def test_prompt_blocks_include_localized_optional_context() -> None:
-    from deeptutor.core.context import UnifiedContext
+    UnifiedContext = __import__(
+        "deeptutor.core.context", fromlist=["UnifiedContext"]
+    ).UnifiedContext
 
     prompts = {
         "general": "通用",

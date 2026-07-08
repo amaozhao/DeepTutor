@@ -4,7 +4,10 @@ Web Search Provider Registry
 This module manages the registration and retrieval of search providers.
 """
 
+import importlib
 from typing import Type
+
+from deeptutor.services.config import resolve_search_runtime_config
 
 from ..base import BaseSearchProvider
 
@@ -137,8 +140,6 @@ def get_default_provider(**kwargs) -> BaseSearchProvider:
     Returns:
         BaseSearchProvider: Default provider instance.
     """
-    from deeptutor.services.config import resolve_search_runtime_config
-
     provider_name = resolve_search_runtime_config().provider.lower()
     if provider_name in _DEPRECATED_UNSUPPORTED:
         provider_name = "duckduckgo"
@@ -147,9 +148,8 @@ def get_default_provider(**kwargs) -> BaseSearchProvider:
 
 def _register_builtin_providers() -> None:
     # Import for side effects (register_provider decorators).
-    from . import brave, duckduckgo, jina, perplexity, searxng, serper, tavily
-
-    _ = (brave, duckduckgo, jina, perplexity, searxng, serper, tavily)
+    for module_name in ("brave", "duckduckgo", "jina", "perplexity", "searxng", "serper", "tavily"):
+        importlib.import_module(f"{__name__}.{module_name}")
 
 
 _register_builtin_providers()

@@ -10,6 +10,8 @@ import json
 
 import typer
 
+from deeptutor.book import get_book_engine
+
 from .common import console
 
 
@@ -17,7 +19,6 @@ def register(app: typer.Typer) -> None:
     @app.command("list")
     def list_books() -> None:
         """List all books in the local workspace."""
-        from deeptutor.book import get_book_engine
 
         engine = get_book_engine()
         books = engine.list_books()
@@ -39,7 +40,6 @@ def register(app: typer.Typer) -> None:
         book_id: str = typer.Argument(..., help="Book id."),
     ) -> None:
         """Inspect KB drift + log.md health for a book."""
-        from deeptutor.book import get_book_engine
 
         engine = get_book_engine()
         drift = engine.kb_drift_report(book_id)
@@ -51,7 +51,6 @@ def register(app: typer.Typer) -> None:
         book_id: str = typer.Argument(..., help="Book id."),
     ) -> None:
         """Re-snapshot KB fingerprints; clears the stale-page list."""
-        from deeptutor.book import get_book_engine
 
         engine = get_book_engine()
         result = engine.refresh_kb_fingerprints(book_id)

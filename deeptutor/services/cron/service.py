@@ -17,12 +17,22 @@ from __future__ import annotations
 import asyncio
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
+import importlib
 import json
 import logging
 from pathlib import Path
 import time
 from typing import Any, Awaitable, Callable
 import uuid
+
+from deeptutor.multi_user.paths import get_admin_path_service
+
+try:
+    from croniter import croniter
+except ImportError:  # pragma: no cover - optional dependency
+    croniter = None
+
+from zoneinfo import ZoneInfo
 
 logger = logging.getLogger(__name__)
 
@@ -129,19 +139,14 @@ def compute_next_run(schedule: CronSchedule, now_ms: int) -> int | None:
 
     if schedule.kind == "cron" and schedule.expr:
         try:
-            from zoneinfo import ZoneInfo
-
-            from croniter import croniter
-
+            if croniter is None:
+                raise ValueError(
+                    "cron expressions need the 'croniter' package — use an 'every' or 'at' schedule instead"
+                )
             tz = ZoneInfo(schedule.tz) if schedule.tz else datetime.now().astimezone().tzinfo
             base = datetime.fromtimestamp(now_ms / 1000, tz=tz)
             next_dt = croniter(schedule.expr, base).get_next(datetime)
             return int(next_dt.timestamp() * 1000)
-        except ImportError:
-            raise ValueError(
-                "cron expressions need the 'croniter' package — "
-                "use an 'every' or 'at' schedule instead"
-            ) from None
         except Exception as exc:
             raise ValueError(f"invalid cron expression {schedule.expr!r}: {exc}") from None
 
@@ -163,8 +168,6 @@ def validate_schedule(schedule: CronSchedule) -> None:
     if schedule.kind == "cron":
         if schedule.tz:
             try:
-                from zoneinfo import ZoneInfo
-
                 ZoneInfo(schedule.tz)
             except Exception:
                 raise ValueError(f"unknown timezone {schedule.tz!r}") from None
@@ -391,15 +394,17 @@ class CronService:
 _service: CronService | None = None
 
 
+async def _execute_job_proxy(job: "CronJob") -> tuple[str, str | None]:
+    module = importlib.import_module("deeptutor.services.cron.executor")
+    return await module.execute_job(job)
+
+
 def get_cron_service() -> CronService:
     """Process-wide cron service, anchored at the admin workspace."""
     global _service
     if _service is None:
-        from deeptutor.multi_user.paths import get_admin_path_service
-        from deeptutor.services.cron.executor import execute_job
-
         store = get_admin_path_service().workspace_root / "cron" / "jobs.json"
-        _service = CronService(store_path=store, on_job=execute_job)
+        _service = CronService(store_path=store, on_job=_execute_job_proxy)
     return _service
 
 

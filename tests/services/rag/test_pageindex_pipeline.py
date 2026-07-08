@@ -181,7 +181,9 @@ def test_factory_dispatches_by_provider(tmp_path, monkeypatch) -> None:
     # Constructing a real LlamaIndexPipeline resolves the active embedding model
     # from the catalog; CI has none, so stub the settings hook (the same way the
     # llamaindex pipeline tests do) — this test only asserts factory routing.
-    from deeptutor.services.rag.pipelines.llamaindex.pipeline import LlamaIndexPipeline
+    LlamaIndexPipeline = __import__(
+        "deeptutor.services.rag.pipelines.llamaindex.pipeline", fromlist=["LlamaIndexPipeline"]
+    ).LlamaIndexPipeline
 
     monkeypatch.setattr(LlamaIndexPipeline, "_configure_settings", lambda self: None)
 
@@ -200,7 +202,7 @@ def test_factory_dispatches_by_provider(tmp_path, monkeypatch) -> None:
 
 
 def test_ragservice_resolves_provider_from_metadata(tmp_path) -> None:
-    from deeptutor.services.rag.service import RAGService
+    RAGService = __import__("deeptutor.services.rag.service", fromlist=["RAGService"]).RAGService
 
     kb = tmp_path / "kbx"
     kb.mkdir()

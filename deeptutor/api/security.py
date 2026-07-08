@@ -12,8 +12,15 @@ import time
 from typing import Any, Iterable, Iterator, Mapping
 from urllib.parse import urlparse
 
+try:
+    import fcntl
+except ImportError:  # pragma: no cover - Windows
+    fcntl = None
+
 from fastapi import HTTPException, Request, status
 
+from deeptutor.multi_user import paths
+from deeptutor.multi_user.shared_state import allow_rate_hit, clear_rate_hits, postgres_enabled
 from deeptutor.services.config import (
     load_auth_settings,
     load_integrations_settings,
@@ -63,7 +70,6 @@ class FileSlidingWindowRateLimiter:
     def root(self) -> Path:
         if self._root is not None:
             return self._root
-        from deeptutor.multi_user import paths
 
         paths.ensure_system_dirs()
         root = paths.SYSTEM_ROOT / "rate"
@@ -79,8 +85,6 @@ class FileSlidingWindowRateLimiter:
         if limit <= 0:
             return False
         if _postgres_shared_state_enabled():
-            from deeptutor.multi_user.shared_state import allow_rate_hit
-
             return allow_rate_hit(key, limit=limit, window_seconds=window_seconds, now=current)
         path = self._path_for(key)
         try:
@@ -110,15 +114,13 @@ class FileSlidingWindowRateLimiter:
         lock_path = path.with_suffix(".lock")
         handle = lock_path.open("a+", encoding="utf-8")
         try:
-            import fcntl
-
-            fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+            if fcntl is not None:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
             yield
         finally:
             try:
-                import fcntl
-
-                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+                if fcntl is not None:
+                    fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
             finally:
                 handle.close()
 
@@ -130,8 +132,6 @@ class FileSlidingWindowRateLimiter:
     def clear(self) -> None:
         self._fallback.clear()
         if _postgres_shared_state_enabled():
-            from deeptutor.multi_user.shared_state import clear_rate_hits
-
             clear_rate_hits()
             return
         try:
@@ -151,7 +151,6 @@ _WORKER_ENV_VARS = ("WEB_CONCURRENCY", "UVICORN_WORKERS", "GUNICORN_WORKERS")
 
 
 def _postgres_shared_state_enabled() -> bool:
-    from deeptutor.multi_user.shared_state import postgres_enabled
 
     return postgres_enabled()
 

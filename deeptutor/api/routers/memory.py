@@ -47,6 +47,21 @@ from deeptutor.services.memory import (
     get_memory_store,
     paths,
 )
+from deeptutor.services.memory import snapshot as snap
+from deeptutor.services.memory.consolidator import (
+    meta as meta_mod,
+)
+from deeptutor.services.memory.consolidator import (
+    run_audit,
+    run_dedup,
+    run_merge,
+    run_update,
+)
+from deeptutor.services.memory.consolidator.line_doc import render_view
+from deeptutor.services.memory.consolidator.runs import RunBusyError, get_run_manager
+from deeptutor.services.memory.document import Document, parse
+from deeptutor.services.memory.settings import memory_settings_dict, save_memory_settings
+from deeptutor.services.memory.trace import iter_since
 
 _ENTRY_ID_RE = re.compile(r"^m_[0-9A-HJKMNP-TV-Z]{26}$")
 
@@ -105,7 +120,6 @@ async def resolve_entry(entry_id: str):
     """
     if not _ENTRY_ID_RE.match(entry_id):
         raise HTTPException(status_code=400, detail="not a valid entry id")
-    from deeptutor.services.memory.document import parse
 
     for surface in SURFACES:
         path = paths.l2_file(surface)
@@ -181,15 +195,11 @@ async def reset_doc(layer: str, key: str):
     lyr = _validate_layer(layer)
     _validate_doc_key(lyr, key)
 
-    from deeptutor.services.memory.consolidator.runs import get_run_manager
-
     if get_run_manager().active_for(lyr, key) is not None:
         raise HTTPException(
             status_code=409,
             detail="cancel the active run before resetting this doc",
         )
-
-    from deeptutor.services.memory.consolidator import meta as meta_mod
 
     doc_path = paths.l2_file(key) if lyr == "L2" else paths.l3_file(key)  # type: ignore[arg-type]
     meta_path = (
@@ -239,13 +249,6 @@ class RunStartRequest(BaseModel):
 
 def _runner_for(req: RunStartRequest):
     """Return an ``async on_event → None`` runner for the requested mode."""
-    from deeptutor.services.memory.consolidator import (
-        run_audit,
-        run_dedup,
-        run_merge,
-        run_update,
-    )
-
     selection = (
         {"profile_id": req.llm_selection.profile_id, "model_id": req.llm_selection.model_id}
         if req.llm_selection
@@ -319,11 +322,6 @@ async def start_run(req: RunStartRequest):
             status_code=405,
             detail="preferences is written by the write_memory tool, not consolidated",
         )
-    from deeptutor.services.memory.consolidator.runs import (
-        RunBusyError,
-        get_run_manager,
-    )
-
     manager = get_run_manager()
     runner = _runner_for(req)
     selection = (
@@ -352,8 +350,6 @@ async def start_run(req: RunStartRequest):
 
 @router.get("/runs/{run_id}")
 async def get_run(run_id: str):
-    from deeptutor.services.memory.consolidator.runs import get_run_manager
-
     run = get_run_manager().get(run_id)
     if run is None:
         raise HTTPException(status_code=404, detail="unknown run_id")
@@ -362,8 +358,6 @@ async def get_run(run_id: str):
 
 @router.post("/runs/{run_id}/cancel")
 async def cancel_run(run_id: str):
-    from deeptutor.services.memory.consolidator.runs import get_run_manager
-
     ok = await get_run_manager().cancel(run_id)
     if not ok:
         raise HTTPException(status_code=409, detail="not active")
@@ -372,11 +366,6 @@ async def cancel_run(run_id: str):
 
 @router.post("/runs/{run_id}/undo")
 async def undo_run_edit(run_id: str):
-    from deeptutor.services.memory.consolidator.runs import (
-        RunBusyError,
-        get_run_manager,
-    )
-
     manager = get_run_manager()
     try:
         event = await manager.undo_last(run_id)
@@ -397,8 +386,6 @@ async def undo_run_edit(run_id: str):
 
 @router.get("/runs")
 async def list_runs(layer: str | None = None, key: str | None = None):
-    from deeptutor.services.memory.consolidator.runs import get_run_manager
-
     lyr = _validate_layer(layer) if layer is not None else None
     if lyr and key is not None:
         _validate_doc_key(lyr, key)
@@ -414,8 +401,6 @@ async def stream_run_events(run_id: str, since: int = 0):
     observed. The manager replays the buffered tail, then blocks on
     new events until the run reaches a terminal state.
     """
-    from deeptutor.services.memory.consolidator.runs import get_run_manager
-
     manager = get_run_manager()
     run = manager.get(run_id)
     if run is None:
@@ -458,10 +443,6 @@ async def stream_run_events(run_id: str, since: int = 0):
 
 def _legacy_run_stream(req: RunStartRequest) -> StreamingResponse:
     """Old contract: POST /doc/{layer}/{key}/<mode> streams events inline."""
-    from deeptutor.services.memory.consolidator.runs import (
-        RunBusyError,
-        get_run_manager,
-    )
 
     async def producer():
         manager = get_run_manager()
@@ -581,9 +562,6 @@ async def get_doc_lines(layer: str, key: str):
     """
     lyr = _validate_layer(layer)
     _validate_doc_key(lyr, key)
-    from deeptutor.services.memory import paths
-    from deeptutor.services.memory.consolidator.line_doc import render_view
-    from deeptutor.services.memory.document import Document, parse
 
     path = paths.l2_file(key) if lyr == "L2" else paths.l3_file(key)  # type: ignore[arg-type]
     doc = (
@@ -614,19 +592,12 @@ async def get_doc_lines(layer: str, key: str):
 @router.get("/settings")
 async def get_memory_settings_endpoint():
     """Return the current ``memory:`` subtree (defaults merged in)."""
-    from deeptutor.services.memory.settings import memory_settings_dict
-
     return memory_settings_dict()
 
 
 @router.put("/settings")
 async def put_memory_settings(payload: dict):
     """Merge the payload into the ``memory:`` subtree and persist."""
-    from deeptutor.services.memory.settings import (
-        memory_settings_dict,
-        save_memory_settings,
-    )
-
     save_memory_settings(payload)
     return memory_settings_dict()
 
@@ -680,7 +651,6 @@ async def apply_doc_ops(layer: str, key: str, payload: ApplyOpsRequest):
 @router.get("/trace/{surface}")
 async def get_trace(surface: str, limit: int = 200, offset: int = 0):
     surf = _validate_surface(surface)
-    from deeptutor.services.memory.trace import iter_since
 
     events = []
     for i, event in enumerate(iter_since(surf)):
@@ -734,7 +704,6 @@ async def get_snapshot(surface: str):
     Refresh commits these pending changes into ``changes.jsonl``.
     """
     surf = _validate_surface(surface)
-    from deeptutor.services.memory import snapshot as snap
 
     entities = snap.read_snapshot(surf)
     pending = snap.pending_changes(surf, entities)
@@ -751,7 +720,6 @@ async def get_snapshot(surface: str):
 async def refresh_snapshot(surface: str):
     """Reconcile persisted state with current workspace; record diffs."""
     surf = _validate_surface(surface)
-    from deeptutor.services.memory import snapshot as snap
 
     changes = snap.refresh_snapshot(surf)
     state = snap.current_state(surf)
@@ -765,7 +733,6 @@ async def refresh_snapshot(surface: str):
 @router.get("/snapshot/{surface}/changes")
 async def get_changes(surface: str, limit: int = 200, offset: int = 0):
     surf = _validate_surface(surface)
-    from deeptutor.services.memory import snapshot as snap
 
     entries = snap.read_changes(surf, limit=limit, offset=offset)
     return {
@@ -779,7 +746,6 @@ async def get_changes(surface: str, limit: int = 200, offset: int = 0):
 @router.delete("/snapshot/{surface}/changes")
 async def clear_snapshot_changes(surface: str):
     surf = _validate_surface(surface)
-    from deeptutor.services.memory import snapshot as snap
 
     snap.clear_changes(surf)
     return {"surface": surf, "cleared": True}

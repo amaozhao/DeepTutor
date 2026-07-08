@@ -14,12 +14,16 @@ the model never supplies them.
 
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import Any
 
 from deeptutor.capabilities.protocol import KnowledgeCapability, PromptBlock
 from deeptutor.capabilities.subagent.binding import connection_for_turn, subagent_refs
 from deeptutor.capabilities.subagent.tools import SUBAGENT_TOOL_NAMES
 from deeptutor.core.context import UnifiedContext
+from deeptutor.services.subagent import PARTNER_BACKEND_KIND, load_subagent_settings
+from deeptutor.services.subagent.config import CONSULT_BUDGET_MAX, CONSULT_BUDGET_MIN
+from deeptutor.services.subagent.sessions import get_session, session_key
 
 # Headroom over the consult budget so the loop always has rounds left to write
 # the final answer after the last consult. Read by the pipeline via
@@ -73,8 +77,6 @@ class SubagentCapability(KnowledgeCapability):
         conn = connection_for_turn(context)
         if conn is None:
             return kwargs
-        from deeptutor.services.subagent import load_subagent_settings
-        from deeptutor.services.subagent.sessions import get_session, session_key
 
         settings = load_subagent_settings()
         # Turn-scoped, mutable: persists across the loop's rounds via the shared
@@ -140,7 +142,6 @@ def _effective_config(config):
     """
     if config.system_prompt.strip():
         return config
-    from dataclasses import replace
 
     return replace(config, system_prompt=_DEFAULT_CONSULT_INSTRUCTION)
 
@@ -149,9 +150,6 @@ def _resolve_budget(context: UnifiedContext) -> int:
     """Consult budget for this turn: a per-turn override from the chat composer
     (``config.subagent_consult_budget``) if present, else the configured default.
     """
-    from deeptutor.services.subagent import load_subagent_settings
-    from deeptutor.services.subagent.config import CONSULT_BUDGET_MAX, CONSULT_BUDGET_MIN
-
     overrides = context.config_overrides if isinstance(context.config_overrides, dict) else {}
     raw = overrides.get("subagent_consult_budget")
     if raw is not None:
@@ -163,8 +161,6 @@ def _resolve_budget(context: UnifiedContext) -> int:
 
 
 def _system_text(language: str, name: str, budget: int, kind: str = "") -> str:
-    from deeptutor.services.subagent import PARTNER_BACKEND_KIND
-
     is_partner = kind == PARTNER_BACKEND_KIND
     zh = str(language or "en").lower().startswith("zh")
     if zh:

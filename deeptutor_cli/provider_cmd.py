@@ -11,6 +11,11 @@ from deeptutor.services.codex_auth import CodexAuthError, get_codex_oauth_servic
 
 from .common import maybe_run
 
+try:
+    from openai import AsyncOpenAI
+except ImportError:  # pragma: no cover - optional provider SDK
+    AsyncOpenAI = None
+
 
 def register(app: typer.Typer) -> None:
     @app.command("login")
@@ -78,9 +83,7 @@ async def _login_openai_codex() -> None:
 
 async def _login_github_copilot() -> None:
     """Validate an existing GitHub Copilot auth session via a lightweight request."""
-    try:
-        from openai import AsyncOpenAI
-    except ImportError:
+    if AsyncOpenAI is None:
         typer.echo(
             "openai is not installed. Install CLI deps from a local checkout: "
             "python -m pip install -e ./packaging/deeptutor-cli"

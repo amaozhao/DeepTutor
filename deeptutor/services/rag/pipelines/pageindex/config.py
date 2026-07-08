@@ -9,6 +9,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from deeptutor.services.config import get_runtime_settings_service
+
 DEFAULT_API_BASE_URL = "https://api.pageindex.ai"
 
 
@@ -29,8 +31,6 @@ def get_pageindex_config(*, require_key: bool = True) -> PageIndexConfig:
     is empty, so callers (indexing / retrieval) fail with a clear, actionable
     message instead of an opaque 401 from the API.
     """
-    from deeptutor.services.config import get_runtime_settings_service
-
     settings = get_runtime_settings_service().load_pageindex()
     api_key = str(settings.get("api_key") or "").strip()
     base_url = str(settings.get("api_base_url") or DEFAULT_API_BASE_URL).strip().rstrip("/")

@@ -14,7 +14,9 @@ from deeptutor.services.sandbox.spec import ExecRequest, ExecResult, IsolationLe
 
 
 def test_backend_selection_runner_url() -> None:
-    from deeptutor.services.sandbox.backends import RunnerSidecarBackend
+    RunnerSidecarBackend = __import__(
+        "deeptutor.services.sandbox.backends", fromlist=["RunnerSidecarBackend"]
+    ).RunnerSidecarBackend
 
     settings = SandboxSettings(runner_url="http://sandbox-runner:8900")
     backend = build_backend(settings)
@@ -28,7 +30,9 @@ def test_backend_selection_none_without_optin() -> None:
     backend = build_backend(settings)
     # On a Linux host with bwrap installed this could be BwrapBackend; the
     # invariant we assert is that subprocess fallback is NOT silently used.
-    from deeptutor.services.sandbox.backends import RestrictedSubprocessBackend
+    RestrictedSubprocessBackend = __import__(
+        "deeptutor.services.sandbox.backends", fromlist=["RestrictedSubprocessBackend"]
+    ).RestrictedSubprocessBackend
 
     assert not isinstance(backend, RestrictedSubprocessBackend)
 
@@ -135,7 +139,7 @@ def test_exec_result_render_error() -> None:
 
 
 def test_runner_server_validates_request_shape() -> None:
-    from deeptutor.services.sandbox.runner import server
+    server = __import__("deeptutor.services.sandbox.runner", fromlist=["server"]).server
 
     assert "command" in server.execute({})["error"]
     assert "workdir" in server.execute({"command": "true", "workdir": 123})["error"]
@@ -145,7 +149,7 @@ def test_runner_server_validates_request_shape() -> None:
 
 
 def test_runner_server_executes_and_truncates_output() -> None:
-    from deeptutor.services.sandbox.runner import server
+    server = __import__("deeptutor.services.sandbox.runner", fromlist=["server"]).server
 
     result = server.execute(
         {
@@ -163,7 +167,7 @@ def test_runner_server_executes_and_truncates_output() -> None:
 def test_runner_server_rejects_workdir_outside_allowed_roots(
     tmp_path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from deeptutor.services.sandbox.runner import server
+    server = __import__("deeptutor.services.sandbox.runner", fromlist=["server"]).server
 
     allowed = tmp_path / "workspace"
     allowed.mkdir()

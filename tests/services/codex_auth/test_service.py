@@ -9,6 +9,9 @@ from urllib.parse import parse_qs, urlsplit
 
 import pytest
 
+from deeptutor.multi_user import paths as paths_module
+from deeptutor.multi_user.context import reset_current_user, set_current_user
+from deeptutor.multi_user.models import CurrentUser, UserScope
 from deeptutor.services.codex_auth import service as service_module
 from deeptutor.services.codex_auth.contracts import (
     CatalogSnapshot,
@@ -28,6 +31,7 @@ from deeptutor.services.codex_auth.service import (
 )
 from deeptutor.services.codex_auth.storage import CodexCredentialStore
 from deeptutor.services.config.model_catalog import ModelCatalogService
+from deeptutor.services.partners.scope import partner_user
 
 
 def test_each_user_gets_their_own_codex_credential_root(
@@ -42,10 +46,6 @@ def test_each_user_gets_their_own_codex_credential_root(
     pre-existing login is relocated from, so pinning it would leave this
     guarantee unguarded.
     """
-    from deeptutor.multi_user import paths as paths_module
-    from deeptutor.multi_user.context import reset_current_user, set_current_user
-    from deeptutor.multi_user.models import CurrentUser, UserScope
-
     admin_root = (tmp_path / "data").resolve()
     monkeypatch.setattr(paths_module, "ADMIN_WORKSPACE_ROOT", admin_root)
     monkeypatch.setattr(paths_module, "USERS_ROOT", admin_root / "users")
@@ -78,10 +78,6 @@ def test_partner_turn_inherits_its_owner_codex_login(
     Before #711 the credential store followed the partner scope to
     ``data/partners/<id>/workspace/user``, found nothing, and failed in 0s.
     """
-    from deeptutor.multi_user import paths as paths_module
-    from deeptutor.multi_user.context import reset_current_user, set_current_user
-    from deeptutor.services.partners.scope import partner_user
-
     admin_root = (tmp_path / "data").resolve()
     monkeypatch.setattr(paths_module, "ADMIN_WORKSPACE_ROOT", admin_root)
     monkeypatch.setattr(paths_module, "USERS_ROOT", admin_root / "users")

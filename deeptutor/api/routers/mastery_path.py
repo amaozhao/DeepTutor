@@ -19,6 +19,8 @@ from deeptutor.learning.models import (
 )
 from deeptutor.learning.service import LearningService
 from deeptutor.learning.storage import LearningStore
+from deeptutor.services.llm import complete
+from deeptutor.services.session import get_turn_runtime_manager
 from deeptutor.services.settings.interface_settings import get_ui_language
 from deeptutor.utils.json_parser import parse_json_response
 
@@ -75,7 +77,6 @@ def _validate_runnable_modules(modules: list[LearningModule], *, status_code: in
 
 
 async def _cancel_active_learning_turn(book_id: str) -> None:
-    from deeptutor.services.session import get_turn_runtime_manager
 
     runtime = get_turn_runtime_manager()
     active_turn = await runtime.store.get_active_turn(book_id)
@@ -243,7 +244,6 @@ async def generate_from_notebook(book_id: str, body: GenerateFromNotebookRequest
         for r in body.records[:20]
     ]
     records_json = json.dumps(records_data, ensure_ascii=False)
-    from deeptutor.services.llm import complete
 
     language = get_ui_language()
     system_prompt, prompt = learning_prompts.notebook_generation_prompts(language, records_json)

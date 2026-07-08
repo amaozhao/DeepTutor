@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib
 import logging
 from pathlib import Path
 import shutil
@@ -25,9 +26,7 @@ BM25_PERSIST_DIRNAME = "bm25_retriever"
 
 def _import_bm25_retriever():
     try:
-        from llama_index.retrievers.bm25 import BM25Retriever
-
-        return BM25Retriever
+        return importlib.import_module("llama_index.retrievers.bm25").BM25Retriever
     except ImportError:
         return None
 

@@ -10,13 +10,15 @@ pytest.importorskip("fastapi")
 
 FastAPI = pytest.importorskip("fastapi").FastAPI
 TestClient = pytest.importorskip("fastapi.testclient").TestClient
+
 notebook_router = importlib.import_module("deeptutor.api.routers.question_notebook").router
 sessions_router = importlib.import_module("deeptutor.api.routers.sessions").router
+SQLiteSessionStore = importlib.import_module(
+    "deeptutor.services.session.sqlite_store"
+).SQLiteSessionStore
 
-from deeptutor.services.session.sqlite_store import SQLiteSessionStore
 
-
-def _build_app(store: SQLiteSessionStore) -> FastAPI:
+def _build_app(store: "SQLiteSessionStore") -> FastAPI:
     app = FastAPI()
     app.include_router(notebook_router, prefix="/api/v1/question-notebook")
     app.include_router(sessions_router, prefix="/api/v1/sessions")
@@ -24,7 +26,7 @@ def _build_app(store: SQLiteSessionStore) -> FastAPI:
 
 
 @pytest.fixture
-def store(tmp_path: Path, monkeypatch) -> SQLiteSessionStore:
+def store(tmp_path: Path, monkeypatch) -> "SQLiteSessionStore":
     instance = SQLiteSessionStore(db_path=tmp_path / "router-test.db")
     monkeypatch.setattr(
         "deeptutor.api.routers.question_notebook.get_sqlite_session_store",

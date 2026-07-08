@@ -11,6 +11,7 @@ async path, and a request-forgery footgun).
 from __future__ import annotations
 
 import base64
+import importlib
 import logging
 from pathlib import Path
 import re
@@ -27,6 +28,10 @@ _EXT_BY_MIME = {
     "image/gif": ".gif",
     "image/webp": ".webp",
 }
+
+
+def _get_attachment_store():
+    return importlib.import_module("deeptutor.services.storage").get_attachment_store()
 
 
 def materialize_images(attachments: list[Any], dest_dir: Path) -> list[str]:
@@ -77,9 +82,7 @@ def _local_store_bytes(url: str) -> bytes | None:
         return None
     sid, aid, name = (unquote(p) for p in parts)
     try:
-        from deeptutor.services.storage import get_attachment_store
-
-        store = get_attachment_store()
+        store = _get_attachment_store()
         resolve = getattr(store, "resolve_path", None)
         if resolve is None:
             return None

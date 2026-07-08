@@ -54,7 +54,9 @@ def _capture_url(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
 
 
 def test_public_embedding_providers_do_not_use_openai_sdk_autopath() -> None:
-    from deeptutor.services.config.provider_runtime import EMBEDDING_PROVIDERS
+    EMBEDDING_PROVIDERS = __import__(
+        "deeptutor.services.config.provider_runtime", fromlist=["EMBEDDING_PROVIDERS"]
+    ).EMBEDDING_PROVIDERS
 
     for name, spec in EMBEDDING_PROVIDERS.items():
         if name == "custom_openai_sdk":

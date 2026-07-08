@@ -7,6 +7,8 @@ import os
 from pathlib import Path
 from typing import Any, Callable
 
+from deeptutor.multi_user.paths import get_admin_path_service
+from deeptutor.services.config.model_catalog import get_model_catalog_service
 from deeptutor.services.file_io import atomic_write_json as _atomic_write_json
 from deeptutor.services.path_service import get_path_service
 
@@ -1024,8 +1026,6 @@ def _bool_env(value: Any) -> str:
 
 def _global_settings_dir() -> Path:
     try:
-        from deeptutor.multi_user.paths import get_admin_path_service
-
         return get_admin_path_service().get_settings_dir()
     except Exception:
         return get_path_service().get_settings_dir()
@@ -1044,8 +1044,6 @@ def ensure_runtime_settings_files() -> None:
     not persisted into the JSON files.
     """
     get_runtime_settings_service().ensure_defaults()
-    from .model_catalog import get_model_catalog_service
-
     get_model_catalog_service().load()
 
 

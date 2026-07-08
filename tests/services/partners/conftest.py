@@ -16,7 +16,7 @@ def partners_root(tmp_path, monkeypatch) -> Path:
     admin workspace root and partner scopes are synthetic ``UserScope``s — so
     patching that module is sufficient to keep tests off the real ``data/``.
     """
-    from deeptutor.multi_user import paths
+    paths = __import__("deeptutor.multi_user", fromlist=["paths"]).paths
 
     project_root = tmp_path
     admin_root = (project_root / "data").resolve()

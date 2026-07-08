@@ -100,8 +100,10 @@ def test_parse_sync_upload_mode_uses_parse_service_and_isolates_output(
 ) -> None:
     """Upload mode goes through the shared ParseService and writes the
     questions JSON to the session output dir, never the shared parse cache."""
-    from deeptutor.agents.question import mimic_source
-    from deeptutor.services.parsing.types import ParsedDocument
+    mimic_source = __import__("deeptutor.agents.question", fromlist=["mimic_source"]).mimic_source
+    ParsedDocument = __import__(
+        "deeptutor.services.parsing.types", fromlist=["ParsedDocument"]
+    ).ParsedDocument
 
     # The parse cache dir the (fake) ParseService returns as the parsed workdir.
     cache_dir = tmp_path / "parse_cache" / "abc"
@@ -147,7 +149,7 @@ def test_parse_sync_upload_mode_uses_parse_service_and_isolates_output(
 
 
 def test_parse_exam_paper_to_templates_happy_path(monkeypatch, tmp_path: Path) -> None:
-    from deeptutor.agents.question import mimic_source
+    mimic_source = __import__("deeptutor.agents.question", fromlist=["mimic_source"]).mimic_source
 
     parsed_dir = tmp_path / "parsed-001"
     parsed_dir.mkdir()

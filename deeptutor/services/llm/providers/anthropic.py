@@ -4,6 +4,7 @@ Anthropic LLM provider implementation.
 
 import asyncio
 from collections.abc import AsyncIterator
+import logging
 from typing import Callable, Protocol, TypeVar, cast
 
 import anthropic
@@ -83,7 +84,6 @@ def _sanitize_kwargs(kwargs: dict[str, object]) -> dict[str, object]:
     Returns:
         Sanitized kwargs safe for the Anthropic SDK.
     """
-    import logging
 
     sanitized = dict(kwargs)
     removed_keys = []

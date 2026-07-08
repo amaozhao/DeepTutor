@@ -47,14 +47,19 @@ from deeptutor.services.memory.consolidator.modes._runtime import (
     today_iso,
     write_doc_checkpoint,
 )
+from deeptutor.services.memory.consolidator.modes.merge import run_merge
 from deeptutor.services.memory.consolidator.references import (
     annotate_l2_line_with_evidence,
     annotate_l3_line_with_evidence,
 )
-from deeptutor.services.memory.document import Document, Entry
+from deeptutor.services.memory.document import Document, Entry, parse
 from deeptutor.services.memory.paths import L3Slot, Surface
 from deeptutor.services.memory.settings import load_memory_settings
 from deeptutor.services.memory.snapshot.entity import Entity
+from deeptutor.services.model_selection.runtime import (
+    activate_llm_selection,
+    reset_llm_selection,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -82,11 +87,6 @@ async def run_audit(
     llm_selection: dict | None = None,
     on_event: OnEvent | None = None,
 ) -> AuditResult:
-    from deeptutor.services.model_selection.runtime import (
-        activate_llm_selection,
-        reset_llm_selection,
-    )
-
     settings = load_memory_settings()
     token = None
     if llm_selection:
@@ -242,8 +242,6 @@ async def _run_audit_l2(
     )
 
     if load_memory_settings().merge.auto_after_audit:
-        from deeptutor.services.memory.consolidator.modes.merge import run_merge
-
         await run_merge(
             "L2",
             surface,
@@ -382,8 +380,6 @@ async def _run_audit_l3(
     )
 
     if load_memory_settings().merge.auto_after_audit:
-        from deeptutor.services.memory.consolidator.modes.merge import run_merge
-
         await run_merge(
             "L3",
             slot,
@@ -465,8 +461,6 @@ def _render_line_index(view: LineView) -> str:
 
 
 def _build_l2_entry_lookup() -> dict[str, Entry]:
-    from deeptutor.services.memory.document import parse
-
     out: dict[str, Entry] = {}
     for surface in paths.SURFACES:
         path = paths.l2_file(surface)

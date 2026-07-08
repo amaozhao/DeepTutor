@@ -6,6 +6,8 @@ from typing import Any
 
 from deeptutor.core.tool_protocol import BaseTool, ToolDefinition, ToolParameter, ToolResult
 from deeptutor.tools.builtin.common import _PromptHintsMixin
+from deeptutor.tools.list_notebook import list_notebooks_or_records
+from deeptutor.tools.write_note import write_note
 
 
 class ListNotebookTool(_PromptHintsMixin, BaseTool):
@@ -45,8 +47,6 @@ class ListNotebookTool(_PromptHintsMixin, BaseTool):
         )
 
     async def execute(self, **kwargs: Any) -> ToolResult:
-        from deeptutor.tools.list_notebook import list_notebooks_or_records
-
         outcome = list_notebooks_or_records(
             notebook_id=str(kwargs.get("notebook_id") or ""),
         )
@@ -155,8 +155,6 @@ class WriteNoteTool(_PromptHintsMixin, BaseTool):
         )
 
     async def execute(self, **kwargs: Any) -> ToolResult:
-        from deeptutor.tools.write_note import write_note
-
         outcome = write_note(
             mode=str(kwargs.get("mode") or ""),
             notebook_id=str(kwargs.get("notebook_id") or ""),

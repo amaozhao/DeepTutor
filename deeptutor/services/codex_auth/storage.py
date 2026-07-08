@@ -16,6 +16,16 @@ from typing import Any, BinaryIO
 
 from .contracts import CodexAuthError, CodexCredentials
 
+try:
+    import fcntl
+except ImportError:  # pragma: no cover - Windows
+    fcntl = None
+
+try:
+    import msvcrt
+except ImportError:  # pragma: no cover - non-Windows
+    msvcrt = None
+
 _SCHEMA_VERSION = 1
 
 
@@ -64,12 +74,8 @@ def _locked_file(path: Path) -> Iterator[BinaryIO]:
         # ``sys.platform`` rather than ``os.name``: the checker narrows on it,
         # so the Windows-only ``msvcrt`` branch type-checks off Windows too.
         if sys.platform == "win32":
-            import msvcrt
-
             msvcrt.locking(handle.fileno(), msvcrt.LK_LOCK, 1)
         else:
-            import fcntl
-
             fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
         try:
             yield handle

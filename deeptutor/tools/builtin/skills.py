@@ -6,6 +6,16 @@ import logging
 from typing import Any
 
 from deeptutor.core.tool_protocol import BaseTool, ToolDefinition, ToolParameter, ToolResult
+from deeptutor.multi_user.context import get_current_user
+from deeptutor.multi_user.paths import get_admin_path_service
+from deeptutor.multi_user.skill_access import assigned_skill_ids
+from deeptutor.services.skill import get_skill_service
+from deeptutor.services.skill.service import (
+    InvalidSkillNameError,
+    InvalidSkillPathError,
+    SkillNotFoundError,
+    SkillService,
+)
 from deeptutor.tools.builtin.common import _PromptHintsMixin
 
 logger = logging.getLogger(__name__)
@@ -49,14 +59,6 @@ class ReadSkillTool(_PromptHintsMixin, BaseTool):
         )
 
     async def execute(self, **kwargs: Any) -> ToolResult:
-        from deeptutor.services.skill import get_skill_service
-        from deeptutor.services.skill.service import (
-            InvalidSkillNameError,
-            InvalidSkillPathError,
-            SkillNotFoundError,
-            SkillService,
-        )
-
         name = str(kwargs.get("name") or "").strip()
         rel_path = str(kwargs.get("file") or "SKILL.md").strip() or "SKILL.md"
         if not name:
@@ -64,10 +66,6 @@ class ReadSkillTool(_PromptHintsMixin, BaseTool):
 
         services: list[SkillService] = [get_skill_service()]
         try:
-            from deeptutor.multi_user.context import get_current_user
-            from deeptutor.multi_user.paths import get_admin_path_service
-            from deeptutor.multi_user.skill_access import assigned_skill_ids
-
             user = get_current_user()
             if not user.is_admin and name in assigned_skill_ids(user.id):
                 services.append(

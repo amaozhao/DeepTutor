@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from deeptutor.multi_user.paths import get_admin_path_service
 from deeptutor.partners.helpers import ensure_dir
 
 
@@ -12,8 +13,6 @@ def _base_dir() -> Path:
     # current-user path service: partner runtimes execute inside a synthetic
     # partner scope whose workspace_root lives below this very tree, so
     # resolving through the contextvar here would recurse the layout.
-    from deeptutor.multi_user.paths import get_admin_path_service
-
     return ensure_dir(get_admin_path_service().workspace_root / "partners")
 
 

@@ -823,7 +823,7 @@ def test_reindex_bypasses_existing_match_when_vectors_are_invalid(
 
 
 def test_assert_not_connected_kb_blocks_connected_writes() -> None:
-    from fastapi import HTTPException
+    HTTPException = __import__("fastapi", fromlist=["HTTPException"]).HTTPException
 
     guard = knowledge_router_module._assert_not_connected_kb
     for kind in ("linked", "obsidian", "lightrag_server"):

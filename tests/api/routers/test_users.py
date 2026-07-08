@@ -11,10 +11,12 @@ import pytest
 
 
 def _client(mu_isolated_root, monkeypatch) -> tuple[TestClient, str]:
-    import deeptutor.api.routers.auth as auth_router
-    from deeptutor.api.security import reset_security_state
-    from deeptutor.multi_user.identity import save_user
-    from deeptutor.services import auth as auth_service
+    auth_router = __import__("deeptutor.api.routers.auth", fromlist=["*"])
+    reset_security_state = __import__(
+        "deeptutor.api.security", fromlist=["reset_security_state"]
+    ).reset_security_state
+    save_user = __import__("deeptutor.multi_user.identity", fromlist=["save_user"]).save_user
+    auth_service = __import__("deeptutor.services", fromlist=["auth"]).auth
 
     reset_security_state()
     admin = save_user("admin", "$2b$12$placeholder", role="admin")
@@ -33,7 +35,9 @@ def _client(mu_isolated_root, monkeypatch) -> tuple[TestClient, str]:
 
 
 def test_parse_user_import_csv_normalizes_and_validates_rows():
-    from deeptutor.api.routers.users import parse_user_import_csv
+    parse_user_import_csv = __import__(
+        "deeptutor.api.routers.users", fromlist=["parse_user_import_csv"]
+    ).parse_user_import_csv
 
     rows = parse_user_import_csv(
         (
@@ -73,9 +77,11 @@ def test_parse_user_import_csv_normalizes_and_validates_rows():
     ],
 )
 def test_parse_user_import_csv_rejects_invalid_input(csv_body, status_code, detail):
-    from fastapi import HTTPException
+    HTTPException = __import__("fastapi", fromlist=["HTTPException"]).HTTPException
 
-    from deeptutor.api.routers.users import parse_user_import_csv
+    parse_user_import_csv = __import__(
+        "deeptutor.api.routers.users", fromlist=["parse_user_import_csv"]
+    ).parse_user_import_csv
 
     with pytest.raises(HTTPException) as exc:
         parse_user_import_csv(csv_body.encode("utf-8"))
@@ -85,8 +91,9 @@ def test_parse_user_import_csv_rejects_invalid_input(csv_body, status_code, deta
 
 
 def test_admin_user_csv_endpoints_stay_mounted_under_auth(mu_isolated_root, monkeypatch):
-    from deeptutor.multi_user.identity import get_user, save_user
-    from deeptutor.services.auth import set_disabled
+    get_user = __import__("deeptutor.multi_user.identity", fromlist=["get_user"]).get_user
+    save_user = __import__("deeptutor.multi_user.identity", fromlist=["save_user"]).save_user
+    set_disabled = __import__("deeptutor.services.auth", fromlist=["set_disabled"]).set_disabled
 
     client, token = _client(mu_isolated_root, monkeypatch)
     headers = {"Authorization": f"Bearer {token}"}

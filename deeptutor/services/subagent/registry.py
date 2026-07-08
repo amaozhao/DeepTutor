@@ -11,6 +11,7 @@ connect-CLI modal.
 from __future__ import annotations
 
 import asyncio
+import importlib
 
 from deeptutor.services.subagent.base import SubagentBackend
 from deeptutor.services.subagent.claude_code import ClaudeCodeBackend
@@ -18,10 +19,9 @@ from deeptutor.services.subagent.codex import CodexBackend
 from deeptutor.services.subagent.gemini import GeminiBackend
 from deeptutor.services.subagent.kimi import KimiBackend
 from deeptutor.services.subagent.opencode_family import MimoBackend, OpencodeBackend
-from deeptutor.services.subagent.partner import PartnerBackend
 from deeptutor.services.subagent.types import DetectResult
 
-_BACKENDS: dict[str, SubagentBackend] = {
+_CLI_BACKENDS: dict[str, SubagentBackend] = {
     backend.kind: backend
     for backend in (
         ClaudeCodeBackend(),
@@ -30,22 +30,26 @@ _BACKENDS: dict[str, SubagentBackend] = {
         KimiBackend(),
         OpencodeBackend(),
         MimoBackend(),
-        PartnerBackend(),
     )
 }
 
 
+def _backends() -> dict[str, SubagentBackend]:
+    partner = importlib.import_module("deeptutor.services.subagent.partner").PartnerBackend()
+    return {**_CLI_BACKENDS, partner.kind: partner}
+
+
 def list_backend_kinds() -> list[str]:
     """Every connectable backend kind (CLIs + partner)."""
-    return list(_BACKENDS.keys())
+    return list(_backends().keys())
 
 
 def get_backend(kind: str) -> SubagentBackend | None:
-    return _BACKENDS.get(str(kind or "").strip())
+    return _backends().get(str(kind or "").strip())
 
 
 def _cli_backends() -> list[SubagentBackend]:
-    return [b for b in _BACKENDS.values() if getattr(b, "local_cli", True)]
+    return list(_CLI_BACKENDS.values())
 
 
 async def detect_all() -> list[DetectResult]:

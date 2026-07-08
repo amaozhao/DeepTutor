@@ -190,7 +190,7 @@ async def test_embed_wraps_api_status_error_with_diagnostics(
 ) -> None:
     """Provider HTTP errors surface as ``EmbeddingProviderError`` with
     status/url/model/body so the diagnostics UI can display them."""
-    from openai import APIStatusError
+    APIStatusError = __import__("openai", fromlist=["APIStatusError"]).APIStatusError
 
     fake_response = MagicMock()
     fake_response.text = '{"error": {"message": "no embeddings here"}}'

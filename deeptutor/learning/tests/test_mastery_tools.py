@@ -6,6 +6,7 @@ path id injected server-side (never by the model)."""
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import pytest
 
@@ -36,7 +37,6 @@ def session_store(tmp_path, monkeypatch):
 
 def _store_init_factory(root):
     def _init(self, root_arg=None):  # mirrors LearningStore.__init__ signature
-        from pathlib import Path
 
         self._root = Path(root) / "learning"
         self._root.mkdir(parents=True, exist_ok=True)

@@ -12,10 +12,12 @@ import pytest
 
 from deeptutor.learning.mastery import compute_mastery
 from deeptutor.learning.models import (
+    ErrorType,
     KnowledgePoint,
     KnowledgeType,
     LearningModule,
     LearningProgress,
+    PendingQuestion,
 )
 from deeptutor.learning.scheduler import SpacedRepetitionScheduler
 from deeptutor.learning.service import LearningService
@@ -181,8 +183,6 @@ def test_grade_and_record_no_scheduler_skips_sr_state(tmp_path):
 
 def test_grade_and_record_blank_wrong_is_metacognitive(tmp_path):
     """A blank wrong answer is classified metacognitive at record time."""
-    from deeptutor.learning.models import ErrorType
-
     store = LearningStore(root=tmp_path)
     service = LearningService(store)
     progress = _make_progress()
@@ -244,8 +244,6 @@ def test_error_record_graduates_on_later_correct_answer(tmp_path):
 
 
 def test_pending_question_set_and_clear_round_trip(tmp_path):
-    from deeptutor.learning.models import PendingQuestion
-
     store = LearningStore(root=tmp_path)
     service = LearningService(store)
     progress = _make_progress()

@@ -323,7 +323,9 @@ async def test_run_skips_seed_result_that_needs_reindex(
 
 @pytest.mark.asyncio
 async def test_run_clips_oversized_seed_passages(monkeypatch: pytest.MonkeyPatch) -> None:
-    from deeptutor.agents.chat.agentic_pipeline import KB_SEED_CHARS_PER_KB
+    KB_SEED_CHARS_PER_KB = __import__(
+        "deeptutor.agents.chat.agentic_pipeline", fromlist=["KB_SEED_CHARS_PER_KB"]
+    ).KB_SEED_CHARS_PER_KB
 
     registry = _SeedRegistry(metadata={"content": "x" * (KB_SEED_CHARS_PER_KB + 500)})
     client = _ScriptedChatClient([[_llm_chunk(content="Done.")]])

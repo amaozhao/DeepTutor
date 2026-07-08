@@ -23,6 +23,7 @@ from llama_index.core.schema import ImageNode
 
 from deeptutor.services.embedding import get_embedding_client
 from deeptutor.services.llm.client import get_llm_client
+from deeptutor.services.parsing import ParserError, get_parse_service
 from deeptutor.services.rag.file_routing import FileTypeRouter
 from deeptutor.utils.document_validator import DocumentValidator
 
@@ -97,8 +98,6 @@ class LlamaIndexDocumentLoader:
         ready) is logged and the file is skipped — matching the sibling
         LightRAG/GraphRAG pipelines — rather than aborting the whole batch.
         """
-        from deeptutor.services.parsing import ParserError, get_parse_service
-
         try:
             parsed = get_parse_service().parse(file_path)
         except ParserError as exc:

@@ -6,6 +6,11 @@ import importlib.util
 from pathlib import Path
 from typing import Callable, Optional
 
+try:
+    from markitdown import MarkItDown
+except ModuleNotFoundError:  # pragma: no cover - optional dependency
+    MarkItDown = None
+
 from ...base import ReadinessReport
 from ...signature import ParserSignature
 from ...types import ParserError
@@ -78,10 +83,10 @@ class MarkItDownParser:
         config: MarkItDownConfig,
         on_output: Optional[Callable[[str], None]] = None,
     ) -> None:
-        from markitdown import MarkItDown
-
         if on_output:
             on_output(f"Converting {Path(source_path).name} via markitdown…")
+        if MarkItDown is None:
+            raise ParserError("markitdown isn't installed.")
         try:
             converter = MarkItDown()
             result = converter.convert(str(source_path))

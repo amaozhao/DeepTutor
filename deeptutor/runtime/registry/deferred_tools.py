@@ -26,6 +26,7 @@ from deeptutor.runtime.providers.text import (
     MANIFEST_DESCRIPTION_MAX_CHARS,
     sanitize_provider_text,
 )
+from deeptutor.services.mcp.session_state import record_loaded_tools
 
 logger = logging.getLogger(__name__)
 
@@ -188,8 +189,6 @@ class DeferredToolLoader:
 
     def _persist(self) -> None:
         try:
-            from deeptutor.services.mcp.session_state import record_loaded_tools
-
             record_loaded_tools(self._session_id, self._loaded)
         except Exception:
             logger.warning("failed to persist deferred-tool state", exc_info=True)

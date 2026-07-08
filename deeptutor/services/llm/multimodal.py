@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import base64 as _b64
 from dataclasses import dataclass
+import importlib
 import logging
 from typing import Any
 from urllib.parse import unquote, urlparse
@@ -24,6 +25,10 @@ logger = logging.getLogger(__name__)
 
 MIME_FALLBACK = "image/png"
 _LOCAL_ATTACHMENT_PREFIX = "/api/attachments/"
+
+
+def _get_attachment_store():
+    return importlib.import_module("deeptutor.services.storage").get_attachment_store()
 
 
 @dataclass
@@ -101,11 +106,7 @@ def _resolve_local_attachment_url(url: str) -> tuple[str, str] | None:
         return None
     sid, aid, name = (unquote(p) for p in parts)
     try:
-        # Local import to avoid an import-time cycle: storage already imports
-        # capabilities indirectly via path service.
-        from deeptutor.services.storage import get_attachment_store
-
-        store = get_attachment_store()
+        store = _get_attachment_store()
         resolve = getattr(store, "resolve_path", None)
         if resolve is None:
             return None

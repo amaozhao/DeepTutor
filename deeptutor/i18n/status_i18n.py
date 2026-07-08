@@ -19,6 +19,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from deeptutor.services.prompt import get_prompt_manager
+
 
 class StatusI18n:
     """Per-capability localized status-string lookup.
@@ -36,8 +38,6 @@ class StatusI18n:
         # would form an import cycle if loaded while the i18n package is being
         # imported during runtime bootstrap. StatusI18n is only constructed at
         # request time, so the deferral is free.
-        from deeptutor.services.prompt import get_prompt_manager
-
         prompts = get_prompt_manager().load_prompts(
             module_name=module,
             agent_name=name,

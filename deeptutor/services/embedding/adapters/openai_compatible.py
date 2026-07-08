@@ -1,5 +1,6 @@
 """OpenAI-compatible embedding adapter for OpenAI, Azure, HuggingFace, LM Studio, etc."""
 
+import asyncio
 import json
 import logging
 from typing import Any, Dict
@@ -141,7 +142,6 @@ class OpenAICompatibleEmbeddingAdapter(BaseEmbeddingAdapter):
         return False
 
     async def embed(self, request: EmbeddingRequest) -> EmbeddingResponse:
-        import asyncio
 
         headers = {"Content-Type": "application/json"}
         api_key = self._auth_api_key()

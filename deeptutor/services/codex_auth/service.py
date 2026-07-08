@@ -7,6 +7,7 @@ from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 import hashlib
+import importlib
 import logging
 from pathlib import Path
 import secrets
@@ -709,9 +710,8 @@ def _codex_user_root() -> Path:
     This is where the store used to live; :func:`_codex_secrets_root` is where
     it lives now, and this is only the location it is relocated from.
     """
-    from deeptutor.multi_user.paths import get_owner_path_service
-
-    return get_owner_path_service().get_user_root().resolve()
+    paths = importlib.import_module("deeptutor.multi_user.paths")
+    return paths.get_owner_path_service().get_user_root().resolve()
 
 
 def _codex_secrets_root() -> Path:

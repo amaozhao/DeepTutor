@@ -4,6 +4,8 @@ Question Tools - Question generation system toolset
 Tools for PDF parsing, question extraction, and mimic entrypoint.
 """
 
+import importlib
+
 # MinerU parsing now lives in the shared parse layer
 # (deeptutor/services/parsing/engines/mineru); re-exported here for the question
 # toolset's backward-compatible public API.
@@ -22,9 +24,9 @@ async def mimic_exam_questions(*args, **kwargs):
     """
     Lazy wrapper to avoid circular imports with question coordinator.
     """
-    from .exam_mimic import mimic_exam_questions as _mimic_exam_questions
-
-    return await _mimic_exam_questions(*args, **kwargs)
+    return await importlib.import_module(
+        "deeptutor.tools.question.exam_mimic"
+    ).mimic_exam_questions(*args, **kwargs)
 
 
 __all__ = [

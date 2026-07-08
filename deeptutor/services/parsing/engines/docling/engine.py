@@ -19,6 +19,20 @@ from ...types import ParserError
 from .._versions import package_version
 from .config import DoclingConfig, resolve_docling_config
 
+try:
+    from docling.document_converter import DocumentConverter
+except Exception:  # pragma: no cover - optional dependency
+    DocumentConverter = None
+
+try:
+    from docling.datamodel.base_models import InputFormat
+    from docling.datamodel.pipeline_options import PdfPipelineOptions
+    from docling.document_converter import PdfFormatOption
+except Exception:  # pragma: no cover - version-dependent optional API
+    InputFormat = None
+    PdfPipelineOptions = None
+    PdfFormatOption = None
+
 _SUPPORTED = frozenset(
     {".pdf", ".docx", ".pptx", ".xlsx", ".html", ".htm", ".md", ".png", ".jpg", ".jpeg"}
 )
@@ -140,13 +154,11 @@ class DoclingParser:
         Docling's options API varies across versions; if option wiring fails we
         fall back to the default converter rather than break the parse.
         """
-        from docling.document_converter import DocumentConverter
-
+        if DocumentConverter is None:
+            raise RuntimeError("Docling is not installed")
         try:
-            from docling.datamodel.base_models import InputFormat
-            from docling.datamodel.pipeline_options import PdfPipelineOptions
-            from docling.document_converter import PdfFormatOption
-
+            if InputFormat is None or PdfPipelineOptions is None or PdfFormatOption is None:
+                raise RuntimeError("Docling PDF options API unavailable")
             pipeline_options = PdfPipelineOptions()
             pipeline_options.do_ocr = config.do_ocr
             pipeline_options.do_table_structure = config.do_table_structure

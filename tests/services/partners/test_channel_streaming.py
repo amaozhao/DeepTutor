@@ -32,7 +32,9 @@ def _meta(stream_id: str, end: bool = False) -> dict[str, Any]:
 
 def _telegram_channel():
     pytest.importorskip("telegram")
-    from deeptutor.partners.channels.telegram import TelegramChannel
+    TelegramChannel = __import__(
+        "deeptutor.partners.channels.telegram", fromlist=["TelegramChannel"]
+    ).TelegramChannel
 
     ch = TelegramChannel({"enabled": True, "token": "t", "allowFrom": ["*"]}, MessageBus())
     bot = SimpleNamespace(

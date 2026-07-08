@@ -5,6 +5,11 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
+try:
+    from ddgs import DDGS
+except ModuleNotFoundError:  # pragma: no cover - optional dependency
+    DDGS = None
+
 from ..base import BaseSearchProvider
 from ..types import Citation, SearchResult, WebSearchResponse
 from . import register_provider
@@ -27,8 +32,10 @@ class DuckDuckGoProvider(BaseSearchProvider):
         timeout: int = 20,
         **kwargs: Any,
     ) -> WebSearchResponse:
-        from ddgs import DDGS
-
+        if DDGS is None:
+            raise ImportError(
+                "ddgs is not installed. To use DuckDuckGo search, please install: pip install ddgs"
+            )
         count = max(1, min(int(max_results), 10))
         ddgs = DDGS(proxy=self.proxy, timeout=timeout)
         rows = list(ddgs.text(query, max_results=count) or [])

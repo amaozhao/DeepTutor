@@ -13,6 +13,7 @@ from typing import Any
 from deeptutor.agents.base_agent import BaseAgent
 from deeptutor.utils.json_parser import parse_json_response
 
+from ..blocks._language import language_directive
 from ..inputs import IdeationContext
 from ..models import BookProposal
 
@@ -43,8 +44,6 @@ class IdeationAgent(BaseAgent):
         *,
         ideation_context: IdeationContext,
     ) -> BookProposal:
-        from ..blocks._language import language_directive
-
         system_prompt = self.get_prompt("system") or _FALLBACK_SYSTEM
         system_prompt = system_prompt.rstrip() + language_directive(self.language)
         user_template = self.get_prompt("user_template") or _FALLBACK_USER

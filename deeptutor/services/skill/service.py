@@ -49,6 +49,7 @@ must shape the voice from the first token.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import importlib
 import json
 import os
 from pathlib import Path
@@ -205,9 +206,7 @@ def _sandbox_available(kind: str) -> bool:
     fails closed when the sandbox service is absent or disabled.
     """
     try:
-        from deeptutor.services.sandbox import exec_capability_available
-
-        return exec_capability_available(kind)
+        return importlib.import_module("deeptutor.services.sandbox").exec_capability_available(kind)
     except Exception:
         return False
 

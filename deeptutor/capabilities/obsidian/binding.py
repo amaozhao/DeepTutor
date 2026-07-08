@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from deeptutor.core.context import UnifiedContext
 from deeptutor.knowledge.kb_types import OBSIDIAN_KB_TYPE
+from deeptutor.multi_user.knowledge_access import resolve_kb_metadata
 
 # Cached on context.metadata: a {"name", "path"} dict, or "" once we've looked
 # and found none. Absence of the key means "not resolved yet".
@@ -30,8 +31,6 @@ def vault_for_turn(context: UnifiedContext) -> dict[str, str] | None:
 
 
 def _resolve(context: UnifiedContext) -> dict[str, str] | None:
-    from deeptutor.multi_user.knowledge_access import resolve_kb_metadata
-
     for ref in context.knowledge_bases or []:
         ref = str(ref).strip()
         if not ref:
@@ -52,8 +51,6 @@ def obsidian_vault_refs(context: UnifiedContext) -> set[str]:
     but all vault refs are reported here so the chat pipeline can exclude them
     from the ``rag`` surface — ``rag`` has no index for a live vault (issue #650).
     """
-    from deeptutor.multi_user.knowledge_access import resolve_kb_metadata
-
     refs: set[str] = set()
     for ref in context.knowledge_bases or []:
         ref = str(ref).strip()

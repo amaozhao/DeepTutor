@@ -24,13 +24,7 @@ import os
 from pathlib import Path
 from typing import Any, Optional
 
-# Optional ops-set allowlist of filesystem roots a linked folder must live
-# under, as an ``os.pathsep``-separated list. Unset (the default) means no
-# restriction, which is correct for the local/self-hosted single-trust-domain
-# deployments this feature targets. Shared multi-user servers should set it so a
-# non-admin cannot point a KB at another user's data or system paths.
-LINK_ROOTS_ENV = "DEEPTUTOR_LINKED_FOLDER_ROOTS"
-
+from deeptutor.services.rag.embedding_signature import signature_from_embedding_config
 from deeptutor.services.rag.factory import (
     DEFAULT_PROVIDER,
     GRAPHRAG_PROVIDER,
@@ -38,6 +32,14 @@ from deeptutor.services.rag.factory import (
     PAGEINDEX_PROVIDER,
     normalize_provider_name,
 )
+from deeptutor.services.rag.index_probe import inspect_kb_versions
+
+# Optional ops-set allowlist of filesystem roots a linked folder must live
+# under, as an ``os.pathsep``-separated list. Unset (the default) means no
+# restriction, which is correct for the local/self-hosted single-trust-domain
+# deployments this feature targets. Shared multi-user servers should set it so a
+# non-admin cannot point a KB at another user's data or system paths.
+LINK_ROOTS_ENV = "DEEPTUTOR_LINKED_FOLDER_ROOTS"
 
 # Engines whose index is self-contained on disk and therefore mountable. The
 # cloud-backed PageIndex is excluded — see module docstring.
@@ -147,8 +149,6 @@ def probe_linked_folder(folder_path: str, provider: str) -> ProbeResult:
 
     result.external_path = str(folder.resolve())
 
-    from deeptutor.services.rag.index_probe import inspect_kb_versions
-
     versions = inspect_kb_versions(folder, provider)
     ready = [v for v in versions if v.get("ready")]
     if not ready:
@@ -176,8 +176,6 @@ def probe_linked_folder(folder_path: str, provider: str) -> ProbeResult:
 
 def _check_embedding(provider: str, version: dict, result: ProbeResult) -> None:
     """Compare the index's embedding identity against the active config."""
-    from deeptutor.services.rag.embedding_signature import signature_from_embedding_config
-
     current = signature_from_embedding_config()
     compat = result.embedding
     compat.current_model = current.model if current else None

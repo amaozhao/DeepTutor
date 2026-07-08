@@ -16,6 +16,7 @@ from typing import Any
 
 from pydantic import BaseModel
 
+from deeptutor.partners.channels.registry import discover_all_with_errors
 from deeptutor.services.partners.manager import _is_secret_field
 
 
@@ -153,7 +154,6 @@ def all_channel_schemas() -> dict[str, dict[str, Any]]:
     still appear, marked ``available: False`` with the import error — the UI
     shows them grayed out instead of silently dropping them.
     """
-    from deeptutor.partners.channels.registry import discover_all_with_errors
 
     channels, errors = discover_all_with_errors()
 

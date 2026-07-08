@@ -36,6 +36,7 @@ from typing import Any
 
 import yaml
 
+from deeptutor.capabilities.explore_context.explorer import ContextExplorer
 from deeptutor.capabilities.protocol import PromptBlock
 from deeptutor.core.context import UnifiedContext
 from deeptutor.core.stream_bus import StreamBus
@@ -129,8 +130,6 @@ class ExploreContextCapability:
         # ``capabilities`` package-import time — importing it eagerly would form
         # a circular import through the LLM config stack. By ``pre_loop`` call
         # time everything is initialised.
-        from deeptutor.capabilities.explore_context.explorer import ContextExplorer
-
         explorer = ContextExplorer(
             language=context.language,
             prompts=_load_prompts(context.language),

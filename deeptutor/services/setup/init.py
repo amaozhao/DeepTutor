@@ -10,87 +10,19 @@ from pathlib import Path
 
 import yaml
 
+from deeptutor.multi_user.paths import get_admin_path_service
+from deeptutor.services.config import ensure_runtime_settings_files
+from deeptutor.services.config.launch_settings import load_launch_settings
 from deeptutor.services.path_service import get_path_service
+from deeptutor.services.persona.service import PersonaService
+from deeptutor.services.setup.defaults import (
+    DEFAULT_AGENTS_SETTINGS,
+    DEFAULT_INTERFACE_SETTINGS,
+    DEFAULT_MAIN_SETTINGS,
+)
 
 # Initialize logger for setup operations
 _setup_logger = None
-
-DEFAULT_INTERFACE_SETTINGS = {
-    # "snow" is the pure-white neutral theme, shown as "Default" in the UI.
-    "theme": "snow",
-    "language": "en",
-    "sidebar_description": "✨ Data Intelligence Lab @ HKU",
-    "sidebar_nav_order": {
-        "start": ["/", "/history", "/knowledge", "/notebook"],
-        "learnResearch": ["/question", "/solver", "/research", "/co_writer"],
-    },
-}
-
-DEFAULT_MAIN_SETTINGS = {
-    "system": {
-        "language": "en",
-    },
-    "logging": {
-        "level": "WARNING",
-        "save_to_file": True,
-        "console_output": True,
-    },
-    "tools": {
-        "run_code": {
-            "allowed_roots": ["./data/user"],
-        },
-        "web_search": {
-            "enabled": True,
-        },
-    },
-    "capabilities": {
-        "solve": {
-            "max_rounds": 12,
-            "max_replans": 2,
-        },
-        "research": {
-            "researching": {
-                "note_agent_mode": "auto",
-                "tool_timeout": 60,
-                "tool_max_retries": 2,
-                "paper_search_years_limit": 3,
-            },
-        },
-        "question": {
-            "exploring": {
-                "max_iterations": 8,
-                "tool_summarizer": {
-                    "enabled": True,
-                    "max_tokens": 800,
-                },
-            },
-        },
-    },
-}
-
-DEFAULT_AGENTS_SETTINGS = {
-    "capabilities": {
-        "solve": {"temperature": 0.3, "max_tokens": 8192},
-        "research": {"temperature": 0.5, "max_tokens": 12000},
-        "question": {"temperature": 0.7, "max_tokens": 4096},
-        "co_writer": {"temperature": 0.7, "max_tokens": 4096},
-        "visualize": {"temperature": 0.4, "max_tokens": 16384},
-        "chat": {
-            "temperature": 0.2,
-            "responding": {"max_tokens": 8000},
-        },
-    },
-    "tools": {
-        "brainstorm": {"temperature": 0.8, "max_tokens": 2048},
-    },
-    "services": {
-        "personalization": {"temperature": 0.5, "max_tokens": 8192},
-    },
-    "plugins": {
-        "vision_solver": {"temperature": 0.3, "max_tokens": 12000},
-        "math_animator": {"temperature": 0.4, "max_tokens": 12000},
-    },
-}
 
 
 def _get_setup_logger():
@@ -166,8 +98,6 @@ def _ensure_essential_settings(path_service) -> None:
     _write_yaml_if_missing(agents_file, DEFAULT_AGENTS_SETTINGS)
 
     try:
-        from deeptutor.services.config import ensure_runtime_settings_files
-
         ensure_runtime_settings_files()
     except Exception as e:
         _get_setup_logger().warning(f"Failed to initialise runtime JSON settings: {e}")
@@ -184,9 +114,6 @@ def _seed_default_personas() -> None:
     Best-effort — never blocks startup.
     """
     try:
-        from deeptutor.multi_user.paths import get_admin_path_service
-        from deeptutor.services.persona.service import PersonaService
-
         admin_personas = get_admin_path_service().get_workspace_dir() / "personas"
         seeded = PersonaService(root=admin_personas).seed_presets()
         if seeded:
@@ -236,8 +163,6 @@ def get_backend_port(project_root: Path | None = None) -> int:
         Backend port number (default: 8001)
     """
     try:
-        from deeptutor.services.config.launch_settings import load_launch_settings
-
         return load_launch_settings(project_root).backend_port
     except Exception as exc:
         logger = _get_setup_logger()
@@ -253,8 +178,6 @@ def get_frontend_port(project_root: Path | None = None) -> int:
         Frontend port number (default: 3782)
     """
     try:
-        from deeptutor.services.config.launch_settings import load_launch_settings
-
         return load_launch_settings(project_root).frontend_port
     except Exception as exc:
         logger = _get_setup_logger()

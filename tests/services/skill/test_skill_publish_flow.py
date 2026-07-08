@@ -152,7 +152,9 @@ def test_publish_overrides_win_over_frontmatter(tmp_path: Path) -> None:
 
 
 def test_publish_requires_version(tmp_path: Path) -> None:
-    from deeptutor.services.skill.service import SkillImportError
+    SkillImportError = __import__(
+        "deeptutor.services.skill.service", fromlist=["SkillImportError"]
+    ).SkillImportError
 
     root = _write_skill(tmp_path, frontmatter="name: NoVersion")
     with pytest.raises(SkillImportError):
@@ -163,7 +165,7 @@ def test_publish_requires_version(tmp_path: Path) -> None:
 
 
 def test_select_domains_resolution(monkeypatch: pytest.MonkeyPatch) -> None:
-    from deeptutor_cli import skill_prompts
+    skill_prompts = __import__("deeptutor_cli", fromlist=["skill_prompts"]).skill_prompts
 
     # Script the multi-selects: roots = [arts, math]; arts children = [instruments];
     # math children = [] (so math contributes itself).
@@ -178,7 +180,9 @@ def test_select_domains_resolution(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_parse_indices() -> None:
-    from deeptutor_cli.skill_prompts import _parse_indices
+    _parse_indices = __import__(
+        "deeptutor_cli.skill_prompts", fromlist=["_parse_indices"]
+    )._parse_indices
 
     assert _parse_indices("1, 3 4", 5) == [0, 2, 3]
     assert _parse_indices("", 5) == []

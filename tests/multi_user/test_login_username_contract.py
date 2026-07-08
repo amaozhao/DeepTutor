@@ -82,7 +82,7 @@ def test_authenticate_round_trip_with_plain_username(
     monkeypatch: pytest.MonkeyPatch, seed_user
 ) -> None:
     pytest.importorskip("bcrypt")  # password hashing dep; present in CI/Docker
-    from deeptutor.services import auth as auth_service
+    auth_service = __import__("deeptutor.services", fromlist=["auth"]).auth
 
     monkeypatch.setattr(auth_service, "AUTH_ENABLED", True)
     seed_user("plainuser", password="password1234")

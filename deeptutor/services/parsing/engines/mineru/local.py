@@ -16,6 +16,8 @@ import time
 # Minimum seconds between on_output callbacks. MinerU's CLI emits tqdm-style
 # progress that universal-newline decoding turns into many lines per second;
 # without a floor the trace panel gets flooded during model downloads.
+import traceback
+
 _ON_OUTPUT_MIN_INTERVAL = 0.5
 
 
@@ -215,7 +217,6 @@ def parse_pdf_with_mineru(
 
     except Exception as e:
         print(f"✗ Error occurred during parsing: {e!s}")
-        import traceback
 
         traceback.print_exc()
         return False

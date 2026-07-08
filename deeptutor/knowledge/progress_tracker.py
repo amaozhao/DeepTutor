@@ -10,6 +10,10 @@ import json
 import logging
 from pathlib import Path
 
+from deeptutor.api.utils.progress_broadcaster import ProgressBroadcaster
+from deeptutor.api.utils.task_log_stream import get_task_stream_manager
+from deeptutor.knowledge.manager import KnowledgeBaseManager
+from deeptutor.runtime.mode import is_server
 from deeptutor.services.file_io import atomic_write_json
 
 # Use unified logging system
@@ -54,12 +58,8 @@ class ProgressTracker:
 
     def _notify(self, progress: dict):
         """Notify progress update (call all callbacks)"""
-        from deeptutor.runtime.mode import is_server
-
         if is_server():
             try:
-                from deeptutor.api.utils.progress_broadcaster import ProgressBroadcaster
-
                 broadcaster = ProgressBroadcaster.get_instance()
 
                 try:
@@ -80,8 +80,6 @@ class ProgressTracker:
         """Save progress to kb_config.json and local .progress.json file"""
         # Save to kb_config.json (centralized config)
         try:
-            from deeptutor.knowledge.manager import KnowledgeBaseManager
-
             manager = KnowledgeBaseManager(base_dir=str(self.base_dir))
 
             # Determine status based on stage
@@ -202,8 +200,6 @@ class ProgressTracker:
 
         if self.task_id:
             try:
-                from deeptutor.api.utils.task_log_stream import get_task_stream_manager
-
                 get_task_stream_manager().emit(self.task_id, "progress", progress)
             except Exception as e:
                 _logger_instance().debug("Failed to emit task progress event: %s", e)
@@ -220,8 +216,6 @@ class ProgressTracker:
                 _logger_instance().debug(f"Failed to read progress file for '{self.kb_name}': {e}")
 
         try:
-            from deeptutor.knowledge.manager import KnowledgeBaseManager
-
             manager = KnowledgeBaseManager(base_dir=str(self.base_dir))
             status = manager.get_kb_status(self.kb_name)
             if status and status.get("progress"):

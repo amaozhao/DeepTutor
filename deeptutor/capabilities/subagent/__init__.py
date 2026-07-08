@@ -1,21 +1,8 @@
-"""Subagent capability — consult a user's live local agent (Claude Code / Codex).
-
-Selected like any connected KB: when the user picks a ``type: subagent`` KB, the
-chat turn runs exclusively on the ``consult_subagent`` tool, driving the live CLI
-through :mod:`deeptutor.services.subagent` and streaming its native run to the
-sidebar. The chat model gathers what it needs across a bounded number of
-consults, then answers the user itself.
-"""
+"""Subagent capability exports."""
 
 from __future__ import annotations
 
-from deeptutor.capabilities.subagent.binding import connection_for_turn
-from deeptutor.capabilities.subagent.capability import SubagentCapability
-from deeptutor.capabilities.subagent.tools import (
-    SUBAGENT_TOOL_NAMES,
-    SUBAGENT_TOOL_TYPES,
-    ConsultSubagentTool,
-)
+import importlib
 
 __all__ = [
     "SubagentCapability",
@@ -24,3 +11,14 @@ __all__ = [
     "SUBAGENT_TOOL_TYPES",
     "connection_for_turn",
 ]
+
+
+def __getattr__(name: str):
+    if name == "connection_for_turn":
+        return importlib.import_module(f"{__name__}.binding").connection_for_turn
+    if name == "SubagentCapability":
+        return importlib.import_module(f"{__name__}.capability").SubagentCapability
+    if name in {"ConsultSubagentTool", "SUBAGENT_TOOL_NAMES", "SUBAGENT_TOOL_TYPES"}:
+        module = importlib.import_module(f"{__name__}.tools")
+        return getattr(module, name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

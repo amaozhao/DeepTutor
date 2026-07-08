@@ -31,7 +31,9 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Awaitable, Callable
+from contextlib import AsyncExitStack
 from dataclasses import dataclass, field
+import importlib
 import logging
 import re
 from typing import Any
@@ -79,6 +81,38 @@ _TRANSIENT_ERRORS = (
     BrokenPipeError,
     ConnectionResetError,
 )
+
+
+def _mcp_attr(module_name: str, attr: str):
+    return getattr(importlib.import_module(module_name), attr)
+
+
+def _mcp_types():
+    return _mcp_attr("mcp", "types")
+
+
+def _mcp_client_session():
+    return _mcp_attr("mcp", "ClientSession")
+
+
+def _mcp_stdio_server_parameters():
+    return _mcp_attr("mcp", "StdioServerParameters")
+
+
+def _mcp_sse_client():
+    return _mcp_attr("mcp.client.sse", "sse_client")
+
+
+def _mcp_stdio_client():
+    return _mcp_attr("mcp.client.stdio", "stdio_client")
+
+
+def _mcp_streamable_http_client():
+    return _mcp_attr("mcp.client.streamable_http", "streamable_http_client")
+
+
+def _tool_registry():
+    return importlib.import_module("deeptutor.runtime.registry.tool_registry").get_tool_registry()
 
 
 def wrapped_tool_name(server: str, tool: str) -> str:
@@ -284,10 +318,9 @@ class MCPConnectionManager:
         """
         if owner == SHARED_OWNER:
             return self.adapters_for(SHARED_OWNER)
-        from deeptutor.services.mcp.user_config import load_user_mcp_config
-
         async with self._lock_for(owner):
-            config, _rejected = load_user_mcp_config(owner)
+            user_config = importlib.import_module("deeptutor.services.mcp.user_config")
+            config, _rejected = user_config.load_user_mcp_config(owner)
             if not config.servers and not self._has_scope(owner):
                 self._scope_used.pop(owner, None)
                 return []
@@ -306,10 +339,9 @@ class MCPConnectionManager:
         if owner == SHARED_OWNER:
             await self.reload()
             return
-        from deeptutor.services.mcp.user_config import load_user_mcp_config
-
         async with self._lock_for(owner):
-            config, _rejected = load_user_mcp_config(owner)
+            user_config = importlib.import_module("deeptutor.services.mcp.user_config")
+            config, _rejected = user_config.load_user_mcp_config(owner)
             await self._sync_to_config(config, owner=owner)
             self._scope_used[owner] = asyncio.get_running_loop().time()
 
@@ -448,8 +480,7 @@ class MCPConnectionManager:
         timeout: int,
         on_progress: "ProgressCallback | None" = None,
     ) -> str:
-        from mcp import types
-
+        types = _mcp_types()
         result = await asyncio.wait_for(
             conn.session.call_tool(
                 tool_name,
@@ -541,16 +572,12 @@ class MCPConnectionManager:
 
     async def _run_server(self, conn: _ServerConnection, ready: asyncio.Future) -> None:
         """Connection task: owns the AsyncExitStack for one server."""
-        from contextlib import AsyncExitStack
-
-        from mcp import ClientSession
-
         try:
             async with AsyncExitStack() as stack:
                 read, write = await self._open_transport(
                     stack, conn.config, owner=conn.owner, server_name=conn.name
                 )
-                session = await stack.enter_async_context(ClientSession(read, write))
+                session = await stack.enter_async_context(_mcp_client_session()(read, write))
                 await session.initialize()
                 listing = await session.list_tools()
                 adapters = [
@@ -596,15 +623,14 @@ class MCPConnectionManager:
         one transport open. See :mod:`deeptutor.services.mcp.secrets` for why the
         stored config holds references instead.
         """
-        from deeptutor.services.mcp.secrets import resolve_references, resolve_url_references
-
-        resolved = resolve_references(owner, cfg.model_dump(mode="json"))
+        secrets = importlib.import_module("deeptutor.services.mcp.secrets")
+        resolved = secrets.resolve_references(owner, cfg.model_dump(mode="json"))
         # Several hosted services authenticate with a query parameter, so the
         # url needs component-wise resolution: the whole string is not a
         # reference, only one of its query values is.
         url = resolved.get("url")
         if isinstance(url, str) and url:
-            resolved["url"] = resolve_url_references(owner, url)
+            resolved["url"] = secrets.resolve_url_references(owner, url)
         return MCPServerConfig.model_validate(resolved)
 
     @staticmethod
@@ -616,11 +642,6 @@ class MCPConnectionManager:
         server_name: str = "",
     ) -> tuple[Any, Any]:
         """Enter the configured transport on *stack*; return (read, write)."""
-        from mcp import StdioServerParameters
-        from mcp.client.sse import sse_client
-        from mcp.client.stdio import stdio_client
-        from mcp.client.streamable_http import streamable_http_client
-
         # A server the deployment owns is administrator-configured; one owned by
         # an account is user input, and this request is made by the app process,
         # which holds every provider key. So user-owned servers get the strict
@@ -634,21 +655,20 @@ class MCPConnectionManager:
         if transport == "stdio":
             if self_service:
                 raise ValueError("stdio MCP servers are administrator-only")
-            params = StdioServerParameters(
+            params = _mcp_stdio_server_parameters()(
                 command=cfg.command,
                 args=list(cfg.args),
                 env=dict(cfg.env) or None,
                 cwd=cfg.cwd or None,
             )
-            read, write = await stack.enter_async_context(stdio_client(params))
+            read, write = await stack.enter_async_context(_mcp_stdio_client()(params))
             return read, write
 
         if self_service:
             # Re-validated here, not only where the server was saved: DNS can
             # change between the two, and this is the last point before a socket.
-            from deeptutor.services.mcp.network import validate_mcp_url_async
-
-            ok, error = await validate_mcp_url_async(cfg.url, strict=True)
+            network = importlib.import_module("deeptutor.services.mcp.network")
+            ok, error = await network.validate_mcp_url_async(cfg.url, strict=True)
             if not ok:
                 raise ValueError(error)
         follow_redirects = not self_service
@@ -660,13 +680,12 @@ class MCPConnectionManager:
         # a person clicked (`space_mcp.authorize`).
         oauth_auth = None
         if cfg.auth == "oauth":
-            from deeptutor.services.mcp.oauth import build_auth, oauth_redirect_uri
-
-            oauth_auth = build_auth(
+            oauth = importlib.import_module("deeptutor.services.mcp.oauth")
+            oauth_auth = oauth.build_auth(
                 server_url=cfg.url,
                 server_name=server_name,
                 owner_id=owner,
-                redirect_uri=oauth_redirect_uri(),
+                redirect_uri=oauth.oauth_redirect_uri(),
             )
 
         if transport == "sse":
@@ -687,7 +706,7 @@ class MCPConnectionManager:
                 )
 
             read, write = await stack.enter_async_context(
-                sse_client(cfg.url, httpx_client_factory=httpx_client_factory)
+                _mcp_sse_client()(cfg.url, httpx_client_factory=httpx_client_factory)
             )
             return read, write
         if transport == "streamableHttp":
@@ -702,7 +721,7 @@ class MCPConnectionManager:
                 )
             )
             read, write, _ = await stack.enter_async_context(
-                streamable_http_client(cfg.url, http_client=http_client)
+                _mcp_streamable_http_client()(cfg.url, http_client=http_client)
             )
             return read, write
         raise ValueError(f"MCP server has no usable transport (type={cfg.type!r})")
@@ -722,9 +741,7 @@ class MCPConnectionManager:
 
     @staticmethod
     def _registry():
-        from deeptutor.runtime.registry.tool_registry import get_tool_registry
-
-        return get_tool_registry()
+        return _tool_registry()
 
     def _register_adapters(self, conn: _ServerConnection) -> None:
         """Publish a *deployment* server's tools to the process registry.
@@ -765,9 +782,6 @@ async def probe_server(
     and stored credentials the real connection would use — a Test that is more
     permissive than the connection it previews is worse than no Test.
     """
-    from contextlib import AsyncExitStack
-
-    from mcp import ClientSession
 
     async def _probe() -> list[dict[str, str]]:
         # Collected inside the stack, returned outside it: returning from within
@@ -777,7 +791,7 @@ async def probe_server(
         tools: list[dict[str, str]] = []
         async with AsyncExitStack() as stack:
             read, write = await MCPConnectionManager._open_transport(stack, cfg, owner=owner)
-            session = await stack.enter_async_context(ClientSession(read, write))
+            session = await stack.enter_async_context(_mcp_client_session()(read, write))
             await session.initialize()
             listing = await session.list_tools()
             tools = [{"name": t.name, "description": t.description or ""} for t in listing.tools]
@@ -823,10 +837,11 @@ def _needs_authorization(exc: BaseException) -> bool:
     Checked against the unwrapped leaves for the same reason the message is: the
     SDK's task group hides the interesting exception one level down.
     """
-    from deeptutor.services.mcp.oauth import AuthorizationRequired
-
-    return any(isinstance(leaf, AuthorizationRequired) for leaf in _exception_leaves(exc)) or (
-        isinstance(exc, AuthorizationRequired)
+    authorization_required = importlib.import_module(
+        "deeptutor.services.mcp.oauth"
+    ).AuthorizationRequired
+    return any(isinstance(leaf, authorization_required) for leaf in _exception_leaves(exc)) or (
+        isinstance(exc, authorization_required)
     )
 
 

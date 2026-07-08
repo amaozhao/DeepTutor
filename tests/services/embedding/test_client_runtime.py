@@ -227,7 +227,7 @@ def test_embedding_client_redacts_endpoint_query_credentials_in_validation_error
 
 
 def test_get_embedding_client_refreshes_when_config_changes(monkeypatch) -> None:
-    from deeptutor.services.embedding import client as client_module
+    client_module = __import__("deeptutor.services.embedding", fromlist=["client"]).client
 
     _FakeAdapter.instances = []
     first_config = _build_config("openai")
@@ -273,7 +273,9 @@ def test_embedding_client_propagates_send_dimensions_to_adapter(
 
 def test_every_registered_provider_has_adapter() -> None:
     """All EMBEDDING_PROVIDERS entries must resolve to a valid adapter class."""
-    from deeptutor.services.config.provider_runtime import EMBEDDING_PROVIDERS
+    EMBEDDING_PROVIDERS = __import__(
+        "deeptutor.services.config.provider_runtime", fromlist=["EMBEDDING_PROVIDERS"]
+    ).EMBEDDING_PROVIDERS
 
     for name in EMBEDDING_PROVIDERS:
         cls = _resolve_adapter_class(name)

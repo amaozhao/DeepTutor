@@ -16,6 +16,10 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from deeptutor.agents.visualize.pipeline import VisualizePipeline
+from deeptutor.agents.visualize.utils import validate_visualization
+from deeptutor.services.llm.config import get_llm_config
+
 from ..models import BlockType, SourceAnchor
 from .base import BlockContext, BlockGenerator, GenerationFailure
 
@@ -53,10 +57,6 @@ class InteractiveGenerator(BlockGenerator):
         )
 
         try:
-            from deeptutor.agents.visualize.pipeline import VisualizePipeline
-            from deeptutor.agents.visualize.utils import validate_visualization
-            from deeptutor.services.llm.config import get_llm_config
-
             llm_config = get_llm_config()
             pipeline = VisualizePipeline(
                 api_key=llm_config.api_key,

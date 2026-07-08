@@ -16,6 +16,11 @@ import tempfile
 from typing import Any
 
 from deeptutor.agents._shared.capability_result import emit_capability_result
+from deeptutor.agents.question.agents.followup_agent import FollowupAgent
+from deeptutor.agents.question.history import load_session_quiz_history
+from deeptutor.agents.question.mimic_source import parse_exam_paper_to_templates
+from deeptutor.agents.question.pipeline import QuestionPipeline
+from deeptutor.agents.question.request_config import build_question_runtime_config
 from deeptutor.core.agentic.usage import UsageTracker
 from deeptutor.core.capability_protocol import BaseCapability, CapabilityManifest
 from deeptutor.core.context import UnifiedContext
@@ -23,6 +28,10 @@ from deeptutor.core.stream_bus import StreamBus
 from deeptutor.core.trace import merge_trace_metadata
 from deeptutor.i18n import StatusI18n
 from deeptutor.runtime.request_contracts import get_capability_request_schema
+from deeptutor.services.config import load_config_with_main
+from deeptutor.services.llm.config import get_llm_config
+from deeptutor.services.parsing.engines.mineru.config import MinerUError
+from deeptutor.services.path_service import get_path_service
 
 
 class DeepQuestionCapability(BaseCapability):
@@ -36,9 +45,6 @@ class DeepQuestionCapability(BaseCapability):
     )
 
     async def run(self, context: UnifiedContext, stream: StreamBus) -> None:
-        from deeptutor.services.llm.config import get_llm_config
-        from deeptutor.services.path_service import get_path_service
-
         llm_config = get_llm_config()
         kb_name = context.knowledge_bases[0] if context.knowledge_bases else None
         turn_id = str(context.metadata.get("turn_id", "") or context.session_id or "deep-question")
@@ -50,8 +56,6 @@ class DeepQuestionCapability(BaseCapability):
         if isinstance(followup_question_context, dict) and followup_question_context.get(
             "question"
         ):
-            from deeptutor.agents.question.agents.followup_agent import FollowupAgent
-
             usage = UsageTracker(model=getattr(llm_config, "model", None))
             agent = FollowupAgent(
                 language=context.language,
@@ -100,13 +104,6 @@ class DeepQuestionCapability(BaseCapability):
             # New custom-mode pipeline: explore → plan → per-question quiz loop.
             # The pipeline owns its own stream.content / stream.result emission;
             # nothing here to render afterwards.
-            from deeptutor.agents.question.history import load_session_quiz_history
-            from deeptutor.agents.question.pipeline import QuestionPipeline
-            from deeptutor.agents.question.request_config import (
-                build_question_runtime_config,
-            )
-            from deeptutor.services.config import load_config_with_main
-
             if not topic:
                 await stream.error(
                     i18n.t(
@@ -179,17 +176,6 @@ class DeepQuestionCapability(BaseCapability):
                                          "mimic the attached source" hint
                                          prefixed onto the user_message
         """
-        from deeptutor.agents.question.history import load_session_quiz_history
-        from deeptutor.agents.question.mimic_source import (
-            parse_exam_paper_to_templates,
-        )
-        from deeptutor.agents.question.pipeline import QuestionPipeline
-        from deeptutor.agents.question.request_config import (
-            build_question_runtime_config,
-        )
-        from deeptutor.services.config import load_config_with_main
-        from deeptutor.services.parsing.engines.mineru.config import MinerUError
-
         if i18n is None:
             i18n = StatusI18n(self.name, context.language, module="question")
         paper_path = str(overrides.get("paper_path", "") or "").strip()

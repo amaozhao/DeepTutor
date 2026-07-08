@@ -15,6 +15,10 @@ import importlib.util
 import logging
 from typing import Any
 
+from deeptutor.agents.math_animator.pipeline import MathAnimatorPipeline
+from deeptutor.agents.math_animator.request_config import MathAnimatorRequestConfig
+from deeptutor.services.llm.config import get_llm_config
+
 from ..models import BlockType, SourceAnchor
 from .base import BlockContext, BlockGenerator, GenerationFailure
 
@@ -59,12 +63,6 @@ class AnimationGenerator(BlockGenerator):
         )
 
         try:
-            from deeptutor.agents.math_animator.pipeline import MathAnimatorPipeline
-            from deeptutor.agents.math_animator.request_config import (
-                MathAnimatorRequestConfig,
-            )
-            from deeptutor.services.llm.config import get_llm_config
-
             llm_config = get_llm_config()
             request_config = MathAnimatorRequestConfig(
                 output_mode="video",

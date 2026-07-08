@@ -1,22 +1,8 @@
-"""Turn-scoped chat-loop capabilities.
+"""Turn-scoped chat-loop capabilities."""
 
-Each loop capability lives in its own subpackage under
-:mod:`deeptutor.capabilities` (``solve``, ``mastery``). The chat loop imports
-only the generic registry/protocol from this package; feature-specific prompts,
-tools, and kwargs injection stay inside each capability subpackage.
+from __future__ import annotations
 
-A loop capability is "chat engine + decoupled capability logic": it reuses the
-full chat tool surface and adds its own owned tools + a system prompt block on
-top when active, instead of running a bespoke pipeline.
-"""
-
-from deeptutor.capabilities.protocol import KnowledgeCapability, LoopCapability, PromptBlock
-from deeptutor.capabilities.registry import (
-    LOOP_CAPABILITIES,
-    active_loop_capabilities,
-    any_exclusive_capability_active,
-    capability_tool_owners,
-)
+import importlib
 
 __all__ = [
     "LOOP_CAPABILITIES",
@@ -27,3 +13,18 @@ __all__ = [
     "any_exclusive_capability_active",
     "capability_tool_owners",
 ]
+
+
+def __getattr__(name: str):
+    if name in {"KnowledgeCapability", "LoopCapability", "PromptBlock"}:
+        module = importlib.import_module(f"{__name__}.protocol")
+        return getattr(module, name)
+    if name in {
+        "LOOP_CAPABILITIES",
+        "active_loop_capabilities",
+        "any_exclusive_capability_active",
+        "capability_tool_owners",
+    }:
+        module = importlib.import_module(f"{__name__}.registry")
+        return getattr(module, name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

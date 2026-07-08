@@ -51,7 +51,7 @@ import { notifyCoWriterChanged } from "@/lib/co-writer-events";
 import SaveToNotebookModal, {
   type NotebookSavePayload,
 } from "@/components/notebook/SaveToNotebookModal";
-import { CO_WRITER_SAMPLE_TEMPLATE } from "../sampleTemplate";
+import { CO_WRITER_SAMPLE_TEMPLATE } from "@/app/(workspace)/co-writer/sampleTemplate";
 
 const MarkdownRenderer = dynamic(
   () => import("@/components/common/MarkdownRenderer"),

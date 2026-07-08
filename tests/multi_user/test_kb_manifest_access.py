@@ -11,7 +11,11 @@ from __future__ import annotations
 from pathlib import Path
 
 from deeptutor.knowledge.manager import KnowledgeBaseManager
-from deeptutor.multi_user.knowledge_access import resolve_kb_manifest
+from deeptutor.multi_user.knowledge_access import (
+    admin_kb_manager,
+    current_kb_manager,
+    resolve_kb_manifest,
+)
 
 
 def _make_kb(manager: KnowledgeBaseManager, name: str, *files: str) -> None:
@@ -24,8 +28,6 @@ def _make_kb(manager: KnowledgeBaseManager, name: str, *files: str) -> None:
 
 
 def test_user_sees_their_own_kb(mu_isolated_root, as_user) -> None:
-    from deeptutor.multi_user.knowledge_access import current_kb_manager
-
     with as_user("u_alice", role="user"):
         _make_kb(current_kb_manager(), "alice-kb", "a.pdf", "b.pdf")
 
@@ -37,8 +39,6 @@ def test_user_sees_their_own_kb(mu_isolated_root, as_user) -> None:
 
 
 def test_pattern_and_limit_reach_the_filesystem(mu_isolated_root, as_user) -> None:
-    from deeptutor.multi_user.knowledge_access import current_kb_manager
-
     with as_user("u_alice", role="user"):
         _make_kb(current_kb_manager(), "alice-kb", "a.pdf", "b.pdf", "notes.md")
 
@@ -55,8 +55,6 @@ def test_unknown_kb_yields_no_manifest(mu_isolated_root, as_user) -> None:
 
 def test_ungranted_admin_kb_yields_no_manifest(mu_isolated_root, as_user) -> None:
     """Naming an admin KB directly must not leak its file list (403 → None)."""
-    from deeptutor.multi_user.knowledge_access import admin_kb_manager
-
     with as_user("u_admin", role="admin"):
         _make_kb(admin_kb_manager(), "admin-kb", "secret.pdf")
 

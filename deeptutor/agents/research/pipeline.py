@@ -47,6 +47,7 @@ from deeptutor.agents._shared.tool_composition import (
     user_has_memory,
     user_has_notebooks,
 )
+from deeptutor.agents.chat.agentic_pipeline import _format_user_reply_body, _normalise_user_reply
 from deeptutor.agents.research.data_structures import (
     DynamicTopicQueue,
     ToolTrace,
@@ -85,7 +86,7 @@ from deeptutor.services.llm import get_llm_config, prepare_multimodal_messages
 from deeptutor.services.path_service import get_path_service
 from deeptutor.services.prompt import get_prompt_manager
 from deeptutor.services.prompt.language import append_language_directive
-from deeptutor.services.sandbox import exec_capability_available
+from deeptutor.services.sandbox import Mount, exec_capability_available
 from deeptutor.utils.json_parser import parse_json_response
 
 logger = logging.getLogger(__name__)
@@ -1808,8 +1809,6 @@ class ResearchPipeline:
             if self.kb_name:
                 kwargs.setdefault("kb_name", self.kb_name)
         elif tool_name == "code_execution":
-            from deeptutor.services.sandbox import Mount
-
             if task_dir is not None:
                 code_dir = task_dir / "code_runs"
                 code_dir.mkdir(parents=True, exist_ok=True)
@@ -2712,11 +2711,6 @@ class _RephraseLoopHost:
         return outcome
 
     async def resolve_pause(self, dispatch: DispatchOutcome) -> bool:
-        from deeptutor.agents.chat.agentic_pipeline import (
-            _format_user_reply_body,
-            _normalise_user_reply,
-        )
-
         ask_user = (dispatch.pause_payload or {}).get("ask_user") or {}
         waiter = self._context.metadata.get("wait_for_user_reply")
         if not callable(waiter):

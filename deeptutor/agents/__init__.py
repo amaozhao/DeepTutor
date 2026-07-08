@@ -1,11 +1,4 @@
-"""
-Agents Module - Unified agent system for OpenTutor.
-
-This module provides a unified BaseAgent class and module-specific agents:
-- research: Deep research agents (DecomposeAgent, ResearchAgent, etc.)
-- question: Question generation agents (ReAct architecture, separate base)
-- chat: ``AgenticChatPipeline`` — single-loop chat on the agentic engine
-  (Deep Solve also runs here, via the solve loop capability)
+"""Agents package exports.
 
 Note: ``co_writer`` and ``book`` are independent top-level modules under
 ``deeptutor/`` (e.g. ``deeptutor.co_writer``, ``deeptutor.book``). They
@@ -20,16 +13,20 @@ Usage:
             ...
 """
 
-from importlib import import_module
+from __future__ import annotations
+
+import importlib
 
 __all__ = ["BaseAgent", "ChatAgent", "SessionManager"]
 
 
 def __getattr__(name: str):
     if name == "BaseAgent":
-        value = import_module(f"{__name__}.base_agent").BaseAgent
-    elif name in {"ChatAgent", "SessionManager"}:
-        value = getattr(import_module(f"{__name__}.chat"), name)
+        value = importlib.import_module(f"{__name__}.base_agent").BaseAgent
+    elif name == "ChatAgent":
+        value = importlib.import_module(f"{__name__}.chat.chat_agent").ChatAgent
+    elif name == "SessionManager":
+        value = importlib.import_module(f"{__name__}.chat.session_manager").SessionManager
     else:
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
     globals()[name] = value

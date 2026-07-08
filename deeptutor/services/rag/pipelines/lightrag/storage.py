@@ -26,6 +26,7 @@ from pathlib import Path
 from typing import Any
 
 from deeptutor.services.file_io import atomic_write_json
+from deeptutor.services.rag.embedding_signature import embedding_meta_fields
 
 logger = logging.getLogger(__name__)
 
@@ -151,8 +152,6 @@ def write_meta(root_dir: Path) -> None:
     embedding compatibility at connect time (LightRAG otherwise fails retrieval
     silently on a dimension mismatch).
     """
-    from deeptutor.services.rag.embedding_signature import embedding_meta_fields
-
     target = Path(root_dir)
     payload = {
         "version": target.name,

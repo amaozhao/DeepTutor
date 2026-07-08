@@ -13,6 +13,12 @@ from deeptutor.api.routers import auth as auth_router
 from deeptutor.api.routers.users import UserInfo
 from deeptutor.multi_user.audit import log_admin_action
 from deeptutor.multi_user.data_governance import apply_user_delete_policy, export_user_data
+from deeptutor.multi_user.identity import (
+    delete_avatar_file,
+    get_avatar_file,
+    get_user,
+    save_avatar_file,
+)
 from deeptutor.services.auth import (
     TokenPayload,
     delete_user,
@@ -124,8 +130,6 @@ async def update_profile(
     if not set_avatar(current.username, body.avatar):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
 
-    from deeptutor.multi_user.identity import delete_avatar_file
-
     if current.user_id and auth_router._USER_ID_RE.match(current.user_id):
         delete_avatar_file(current.user_id)
     return {"ok": True, "avatar": body.avatar}
@@ -144,7 +148,6 @@ async def change_profile_password(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Password changes are not available in PocketBase mode.",
         )
-    from deeptutor.multi_user.identity import get_user
 
     record = get_user(current.username)
     if not record or not verify_password(body.current_password, str(record.get("hash") or "")):
@@ -240,8 +243,6 @@ async def delete_profile(
             detail="Admin account deletion must be handled by another admin.",
         )
 
-    from deeptutor.multi_user.identity import get_user
-
     record = get_user(current.username)
     if not record or not verify_password(body.password, str(record.get("hash") or "")):
         raise HTTPException(
@@ -298,8 +299,6 @@ async def upload_avatar(
             detail="Avatar must be a PNG, JPEG or WebP image.",
         )
 
-    from deeptutor.multi_user.identity import save_avatar_file
-
     previous = str(info.get("avatar") or "")
     version = 1
     if previous.startswith("img:"):
@@ -322,7 +321,6 @@ async def remove_avatar(
 ) -> dict:
     """Remove the current user's uploaded avatar image and reset the marker."""
     current = _require_profile_identity(payload)
-    from deeptutor.multi_user.identity import delete_avatar_file
 
     if current.user_id and auth_router._USER_ID_RE.match(current.user_id):
         delete_avatar_file(current.user_id)
@@ -338,8 +336,6 @@ async def get_avatar_image(
     """Serve a stored avatar image for authenticated users."""
     if not auth_router._USER_ID_RE.match(user_id):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Avatar not found")
-
-    from deeptutor.multi_user.identity import get_avatar_file
 
     target = get_avatar_file(user_id)
     if target is None:

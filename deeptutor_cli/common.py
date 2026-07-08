@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import importlib
 import json
 from pathlib import Path
 import signal
@@ -13,11 +14,13 @@ from typing import Any, Callable, Iterator, TextIO
 from rich.console import Console
 from rich.markdown import Markdown
 from rich.markup import escape
+from rich.panel import Panel
 from rich.status import Status
 from rich.table import Table
 from rich.text import Text
 
 from deeptutor.app import DeepTutorApp, TurnRequest
+from deeptutor.core.stream_bus import get_bus
 
 from ._tool_result import ToolResultBuffer, ToolResultEntry
 
@@ -39,7 +42,7 @@ def _utf8_aware_terminal_input(stream: TextIO) -> Iterator[None]:
     """Make canonical-mode erase treat UTF-8 input as complete characters."""
 
     try:
-        import termios
+        termios = importlib.import_module("termios")
     except ImportError:
         yield
         return
@@ -499,7 +502,6 @@ class TurnStreamRenderer:
 
     async def _on_wait_for_input(self, item: dict[str, Any]) -> None:
         """Legacy in-band input request (``StreamBus.wait_for_input``)."""
-        from deeptutor.core.stream_bus import get_bus
 
         self._status_stop()
         bus = get_bus(self.turn_id)
@@ -811,8 +813,6 @@ def _one_line(value: Any) -> str:
 
 def render_tool_result_entry(entry: ToolResultEntry) -> None:
     """Fully print a stored tool result. Backs the ``/show`` REPL command."""
-
-    from rich.panel import Panel
 
     console.print(
         Panel(

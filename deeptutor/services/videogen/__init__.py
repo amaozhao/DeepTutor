@@ -10,12 +10,19 @@ forward render status to the caller (e.g. the chat stream).
 
 from __future__ import annotations
 
+import importlib
 from typing import Any
 
 from deeptutor.services.generation_http import GenerationProviderError
 from deeptutor.services.videogen.adapters import get_videogen_adapter
 from deeptutor.services.videogen.base import ProgressFn
 from deeptutor.services.videogen.config import VideogenConfig
+
+
+def _resolve_videogen_runtime_config(*, catalog: dict[str, Any] | None = None):
+    return importlib.import_module(
+        "deeptutor.services.config.provider_runtime"
+    ).resolve_videogen_runtime_config(catalog=catalog)
 
 
 async def generate_video(
@@ -32,12 +39,10 @@ async def generate_video(
     Returns ``(video_bytes, content_type)``. ``aspect_ratio`` / ``duration`` /
     ``resolution`` override the catalog defaults for this call.
     """
-    from deeptutor.services.config.provider_runtime import resolve_videogen_runtime_config
-
     prompt = (prompt or "").strip()
     if not prompt:
         raise GenerationProviderError("Cannot generate a video from an empty prompt.")
-    config = resolve_videogen_runtime_config(catalog=catalog)
+    config = _resolve_videogen_runtime_config(catalog=catalog)
     if aspect_ratio:
         config.aspect_ratio = aspect_ratio
     if duration:
@@ -54,10 +59,8 @@ async def probe_video(prompt: str, *, catalog: dict[str, Any] | None = None) -> 
     Used by the Settings "Test connection" probe to validate endpoint + auth +
     model cheaply (a full render is slow and billable).
     """
-    from deeptutor.services.config.provider_runtime import resolve_videogen_runtime_config
-
     prompt = (prompt or "").strip() or "A short test clip."
-    config = resolve_videogen_runtime_config(catalog=catalog)
+    config = _resolve_videogen_runtime_config(catalog=catalog)
     adapter = get_videogen_adapter(config.adapter)
     return await adapter.submit_task(prompt, config)
 

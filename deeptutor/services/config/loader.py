@@ -8,6 +8,7 @@ Provides YAML configuration loading, path resolution, and language parsing.
 """
 
 import asyncio
+import importlib
 from pathlib import Path
 from typing import Any
 
@@ -15,6 +16,7 @@ import yaml
 
 from deeptutor.runtime.home import get_runtime_home
 from deeptutor.services.path_service import get_path_service
+from deeptutor.services.setup.defaults import DEFAULT_AGENTS_SETTINGS
 
 # Runtime workspace root. Application settings live under PROJECT_ROOT/data/user/settings.
 PROJECT_ROOT = get_runtime_home()
@@ -189,9 +191,8 @@ def parse_language(language: Any) -> str:
     if not isinstance(language, str) or not language.strip():
         return "zh"
 
-    from deeptutor.services.prompt.language import normalize_language
-
-    code = normalize_language(language)
+    language_module = importlib.import_module("deeptutor.services.prompt.language")
+    code = language_module.normalize_language(language)
     if code in ("en", "english"):
         return "en"
     if code in ("zh", "chinese", "cn"):
@@ -251,9 +252,6 @@ def get_agent_params(module_name: str) -> dict:
     # Per-module defaults come from the shipped DEFAULT_AGENTS_SETTINGS so that
     # adding a new capability seeded with non-default tokens (e.g. visualize at
     # 16k) doesn't require existing users to hand-edit their stale agents.yaml.
-    # Imported lazily to avoid a circular dependency with services.setup.
-    from deeptutor.services.setup.init import DEFAULT_AGENTS_SETTINGS
-
     seeded: dict[str, Any] = DEFAULT_AGENTS_SETTINGS
     for key in section:
         seeded = seeded.get(key, {}) if isinstance(seeded, dict) else {}

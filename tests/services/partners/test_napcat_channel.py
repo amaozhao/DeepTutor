@@ -594,7 +594,7 @@ class TestSend:
 class TestDispatchFrame:
     @pytest.mark.asyncio
     async def test_action_response_resolves_pending_future(self):
-        import asyncio
+        asyncio = __import__("asyncio")
 
         ch = _make_channel()
         loop = asyncio.get_running_loop()
@@ -622,7 +622,9 @@ class TestDispatchFrame:
 
 class TestChannelSchema:
     def test_napcat_in_all_channel_schemas(self):
-        from deeptutor.api.routers._partners_channel_schema import all_channel_schemas
+        all_channel_schemas = __import__(
+            "deeptutor.api.routers._partners_channel_schema", fromlist=["all_channel_schemas"]
+        ).all_channel_schemas
 
         schemas = all_channel_schemas()
         assert "napcat" in schemas
@@ -633,7 +635,9 @@ class TestChannelSchema:
         assert payload["default_config"]["ws_url"] == "ws://127.0.0.1:3001"
 
     def test_coexists_with_official_qq_channel(self):
-        from deeptutor.api.routers._partners_channel_schema import all_channel_schemas
+        all_channel_schemas = __import__(
+            "deeptutor.api.routers._partners_channel_schema", fromlist=["all_channel_schemas"]
+        ).all_channel_schemas
 
         schemas = all_channel_schemas()
         assert "qq" in schemas

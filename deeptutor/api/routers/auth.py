@@ -24,18 +24,11 @@ from fastapi import (
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, field_validator
 
-from deeptutor.services.config import load_auth_settings
-
-# SameSite=None lets the cookie work when the browser accesses the frontend via
-# 127.0.0.1 and the backend via localhost (different origins on the same machine).
-# Browsers require Secure=True for SameSite=None, but that needs HTTPS — so in
-# local dev we fall back to SameSite=Lax and tell users to use localhost:// URLs.
-_SECURE = bool(load_auth_settings()["cookie_secure"])
-_SAMESITE = "none" if _SECURE else "lax"
-
 from deeptutor.api.security import client_ip, require_rate_limit, websocket_ip
 from deeptutor.multi_user.context import set_current_user, user_from_token_payload
+from deeptutor.multi_user.identity import load_or_create_auth_secret, record_terms_acceptance
 from deeptutor.multi_user.invites import consume_invite, unconsume_invite
+from deeptutor.multi_user.models import LOCAL_ADMIN_ID, LOCAL_ADMIN_USERNAME
 from deeptutor.multi_user.paths import local_admin_user
 from deeptutor.services.auth import (
     AUTH_ENABLED,
@@ -55,6 +48,14 @@ from deeptutor.services.auth import (
 )
 from deeptutor.services.codex_auth.contracts import CodexAuthError
 from deeptutor.services.codex_auth.service import deliver_codex_oauth_callback
+from deeptutor.services.config import load_auth_settings
+
+# SameSite=None lets the cookie work when the browser accesses the frontend via
+# 127.0.0.1 and the backend via localhost (different origins on the same machine).
+# Browsers require Secure=True for SameSite=None, but that needs HTTPS — so in
+# local dev we fall back to SameSite=Lax and tell users to use localhost:// URLs.
+_SECURE = bool(load_auth_settings()["cookie_secure"])
+_SAMESITE = "none" if _SECURE else "lax"
 
 logger = logging.getLogger(__name__)
 
@@ -188,8 +189,6 @@ def _is_email(value: str) -> bool:
 
 
 def _captcha_secret() -> str:
-    from deeptutor.multi_user.identity import load_or_create_auth_secret
-
     return load_or_create_auth_secret()
 
 
@@ -474,8 +473,6 @@ def _local_admin_token_payload() -> TokenPayload:
     mode. Values are kept aligned with ``local_admin_user()`` in
     ``deeptutor/multi_user/paths.py``.
     """
-    from deeptutor.multi_user.models import LOCAL_ADMIN_ID, LOCAL_ADMIN_USERNAME
-
     return TokenPayload(
         username=LOCAL_ADMIN_USERNAME,
         role="admin",
@@ -731,8 +728,6 @@ async def register(body: RegisterRequest, request: Request) -> dict:
         if review_required:
             set_disabled(body.username, True, reason="pending registration review")
         if body.terms_accepted:
-            from deeptutor.multi_user.identity import record_terms_acceptance
-
             record_terms_acceptance(body.username, **_agreement_versions())
         user = next((u for u in list_users() if u.get("username") == body.username), {})
         logger.info("Public user registered: '%s'", body.username)

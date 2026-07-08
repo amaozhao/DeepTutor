@@ -7,15 +7,21 @@ from contextlib import suppress
 import hashlib
 from typing import Any
 
+try:
+    from loguru import logger as _log
+except ImportError:  # pragma: no cover - optional logging backend
+    import logging as _logging
+
+    _log = _logging.getLogger(__name__)
+
 from deeptutor.partners.bus.events import OutboundMessage
 from deeptutor.partners.bus.queue import MessageBus
 from deeptutor.partners.channels.base import BaseChannel
+from deeptutor.partners.channels.registry import discover_all
 from deeptutor.partners.config.schema import ChannelsConfig
 
 
 def _logger():
-    from loguru import logger as _log
-
     return _log
 
 
@@ -56,8 +62,6 @@ class ChannelManager:
 
     def _init_channels(self) -> None:
         """Initialize channels discovered via pkgutil scan + entry_points plugins."""
-        from deeptutor.partners.channels.registry import discover_all
-
         for name, cls in discover_all().items():
             section = getattr(self.channels_config, name, None)
             if section is None:

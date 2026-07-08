@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 from typing import Dict, List, Optional
 
+from deeptutor.multi_user.knowledge_access import resolve_for_rag
 from deeptutor.services.rag.service import RAGService
 
 
@@ -34,8 +35,6 @@ async def rag_search(
         raise ValueError("RAG requires an explicit kb_name.")
 
     if kb_base_dir is None:
-        from deeptutor.multi_user.knowledge_access import resolve_for_rag
-
         resource = resolve_for_rag(kb_name)
         if resource is None:
             raise ValueError(f"Knowledge base '{kb_name}' is not accessible.")

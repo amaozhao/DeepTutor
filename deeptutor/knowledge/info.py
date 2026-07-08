@@ -7,12 +7,14 @@ from typing import Any
 
 from deeptutor.knowledge.kb_types import external_root_of
 from deeptutor.knowledge.manifest import iter_kb_documents
+from deeptutor.services.rag.embedding_signature import signature_from_embedding_config
 from deeptutor.services.rag.factory import normalize_provider_name, provider_uses_embedding_versions
 from deeptutor.services.rag.index_probe import (
     inspect_kb_versions,
     inspect_provider_version,
     provider_failure_summary,
 )
+from deeptutor.services.rag.index_versioning import find_matching_version
 
 
 def embedding_fields(kb_config: dict) -> dict:
@@ -143,9 +145,6 @@ def get_info(base_dir: Path, kb_name: str, kb_config: dict, is_default: bool) ->
         metadata["last_error_at"] = kb_config.get("last_error_at")
 
     raw_count, images_count, content_lists_count = _count_files(kb_dir, dir_exists)
-
-    from deeptutor.services.rag.embedding_signature import signature_from_embedding_config
-    from deeptutor.services.rag.index_versioning import find_matching_version
 
     kb_probe_dir = kb_dir if dir_exists else None
     rag_initialized = has_ready_provider

@@ -31,12 +31,15 @@ from __future__ import annotations
 
 from collections import defaultdict
 from collections.abc import Awaitable, Callable
+import inspect
+import json
 import logging
 from typing import Any
 
 from deeptutor.agents.base_agent import BaseAgent
 from deeptutor.utils.json_parser import parse_json_response
 
+from ..blocks._language import language_directive
 from ..models import (
     BookProposal,
     Chapter,
@@ -253,8 +256,6 @@ class SpineSynthesizer(BaseAgent):
         user_prompt: str,
         stage: str,
     ) -> dict[str, Any]:
-        from ..blocks._language import language_directive
-
         system_prompt = system_prompt.rstrip() + language_directive(self.language)
         try:
             # Blocking rather than streamed: nothing consumes the partial JSON,
@@ -772,7 +773,6 @@ def _ensure_full_coverage(chapters: list[Chapter], graph: ConceptGraph) -> Conce
 
 
 def _safe_json(payload: Any) -> str:
-    import json
 
     try:
         return json.dumps(payload, ensure_ascii=False)
@@ -781,7 +781,6 @@ def _safe_json(payload: Any) -> str:
 
 
 async def _maybe_await(value: Any) -> None:
-    import inspect
 
     if inspect.isawaitable(value):
         await value

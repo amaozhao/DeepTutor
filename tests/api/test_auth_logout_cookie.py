@@ -13,10 +13,10 @@ from __future__ import annotations
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from deeptutor.api.routers import auth as auth_router
+
 
 def test_logout_sets_secure_when_cookie_secure_enabled(monkeypatch) -> None:
-    from deeptutor.api.routers import auth as auth_router
-
     monkeypatch.setattr(auth_router, "_SECURE", True)
     monkeypatch.setattr(auth_router, "_SAMESITE", "none")
 
@@ -40,8 +40,6 @@ def test_logout_sets_secure_when_cookie_secure_enabled(monkeypatch) -> None:
 def test_logout_omits_secure_when_cookie_secure_disabled(monkeypatch) -> None:
     """Local dev (cookie_secure=false → SameSite=Lax) must not gain a stray
     Secure attribute — browsers drop Secure cookies over plain HTTP."""
-    from deeptutor.api.routers import auth as auth_router
-
     monkeypatch.setattr(auth_router, "_SECURE", False)
     monkeypatch.setattr(auth_router, "_SAMESITE", "lax")
 

@@ -14,6 +14,7 @@ native query modes.
 
 from __future__ import annotations
 
+import importlib
 import logging
 from pathlib import Path
 from typing import Any
@@ -36,8 +37,9 @@ def build_rag(working_dir: Path) -> Any:
     Pinned to RAG-Anything's config-based constructor; this is the single spot
     to touch if its API changes between releases.
     """
-    from raganything import RAGAnything, RAGAnythingConfig
-
+    raganything = importlib.import_module("raganything")
+    RAGAnything = raganything.RAGAnything
+    RAGAnythingConfig = raganything.RAGAnythingConfig
     config = RAGAnythingConfig(working_dir=str(working_dir))
     rag = RAGAnything(
         config=config,

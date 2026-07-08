@@ -2,16 +2,22 @@
 
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
+import sys
 
 import typer
 
+from deeptutor.app import DeepTutorApp
 from deeptutor.logging import configure_logging
+from deeptutor.runtime.launcher import start as start_web
 from deeptutor.runtime.mode import RunMode, set_mode
+from deeptutor.services.config import HTTP_KEEP_ALIVE_TIMEOUT, get_ws_max_size
+from deeptutor.services.setup import get_backend_port
 
 from .book import register as register_book
 from .chat import register as register_chat
-from .common import build_turn_request, console, maybe_run
+from .common import build_turn_request, console, maybe_run, run_turn_and_render
 from .config_cmd import register as register_config
 from .init_cmd import register as register_init
 from .kb import register as register_kb
@@ -22,6 +28,11 @@ from .plugin import register as register_plugin
 from .provider_cmd import register as register_provider
 from .session_cmd import register as register_session
 from .skill import register as register_skill
+
+try:
+    import uvicorn
+except ImportError:  # pragma: no cover - depends on installed extras
+    uvicorn = None
 
 set_mode(RunMode.CLI)
 configure_logging()
@@ -95,9 +106,6 @@ def run_capability(
     fmt: str = typer.Option("rich", "--format", "-f", help="Output format: rich | json."),
 ) -> None:
     """Run any capability in a single turn (agent-first entry point)."""
-    from deeptutor.app import DeepTutorApp
-
-    from .common import run_turn_and_render
 
     request = build_turn_request(
         content=message,
@@ -124,7 +132,6 @@ def start(
     ),
 ) -> None:
     """Launch backend + frontend together. Source installs default to production."""
-    from deeptutor.runtime.launcher import start as start_web
 
     start_web(home=home, dev=dev)
 
@@ -136,13 +143,9 @@ def serve(
     reload: bool = typer.Option(False, help="Enable auto-reload for development."),
 ) -> None:
     """Start the DeepTutor API server."""
-    import asyncio
-    import sys
 
     set_mode(RunMode.SERVER)
     if port is None:
-        from deeptutor.services.setup import get_backend_port
-
         port = get_backend_port()
 
     # Windows: uvicorn defaults to SelectorEventLoop which does not support
@@ -151,16 +154,12 @@ def serve(
     if sys.platform == "win32":
         asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
 
-    try:
-        import uvicorn
-    except ImportError:
+    if uvicorn is None:
         console.print(
             "[bold red]Error:[/] API server dependencies not installed.\n"
             "Run: pip install -U deeptutor"
         )
         raise typer.Exit(code=1)
-
-    from deeptutor.services.config import HTTP_KEEP_ALIVE_TIMEOUT, get_ws_max_size
 
     # ws_max_size tracks the configured chat-attachment total so base64
     # uploads fit in one WS frame (uvicorn defaults to 16MB).

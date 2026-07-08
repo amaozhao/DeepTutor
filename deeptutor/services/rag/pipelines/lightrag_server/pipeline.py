@@ -18,6 +18,7 @@ import logging
 from typing import Any, Dict, List, Optional
 
 from deeptutor.runtime.home import get_runtime_data_root
+from deeptutor.services.rag.pipelines.lightrag_server.client import LightRagServerClient
 from deeptutor.services.rag.provider_binding import load_kb_config_entry
 
 from ..modes import resolve_kb_mode
@@ -48,7 +49,6 @@ class LightRagServerPipeline:
     def _client(self, config):
         if self._client_factory is not None:
             return self._client_factory(config)
-        from .client import LightRagServerClient
 
         return LightRagServerClient(config)
 

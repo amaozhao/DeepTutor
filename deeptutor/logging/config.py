@@ -5,6 +5,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
+from deeptutor.services.config import (
+    PROJECT_ROOT,
+    get_path_from_config,
+    load_config_with_main,
+)
+from deeptutor.services.path_service import get_path_service
+
 
 @dataclass(frozen=True)
 class LoggingConfig:
@@ -17,20 +24,12 @@ class LoggingConfig:
 
 
 def get_default_log_dir() -> Path:
-    from deeptutor.services.path_service import get_path_service
-
     return get_path_service().get_logs_dir()
 
 
 def load_logging_config() -> LoggingConfig:
     """Load logging settings from ``data/user/settings/main.yaml``."""
     try:
-        from deeptutor.services.config import (
-            PROJECT_ROOT,
-            get_path_from_config,
-            load_config_with_main,
-        )
-
         config = load_config_with_main("main.yaml", PROJECT_ROOT)
         logging_config = config.get("logging", {}) or {}
         return LoggingConfig(

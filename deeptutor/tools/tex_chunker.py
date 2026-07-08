@@ -71,7 +71,6 @@ class TexChunker:
         - Remove overly long repeated character sequences
         - Limit single line length
         """
-        import re
 
         # Remove overly long repeated characters (e.g., consecutive spaces, newlines, etc.)
         text = re.sub(r"(\s)\1{100,}", r"\1" * 10, text)

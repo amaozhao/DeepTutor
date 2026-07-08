@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+
 import pytest
 
 from deeptutor.core.agentic import client as agentic_client
@@ -342,9 +344,7 @@ async def test_agentic_client_pool_reuses_and_bounds_clients(monkeypatch) -> Non
         return client
 
     monkeypatch.setattr(agentic_client, "_build_openai_client", _build)
-    monkeypatch.setattr(
-        agentic_client, "load_system_settings", lambda: {"disable_ssl_verify": False}
-    )
+    monkeypatch.setattr(agentic_client, "disable_ssl_verify_enabled", lambda: False)
     base = LLMClientConfig(
         binding="openai",
         model="model-0",
@@ -363,8 +363,6 @@ async def test_agentic_client_pool_reuses_and_bounds_clients(monkeypatch) -> Non
                 base_url="https://example.test/v1",
             )
         )
-
-    import asyncio
 
     await asyncio.sleep(0)
     assert agentic_client.agentic_client_pool_size() == (

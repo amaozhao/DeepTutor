@@ -17,6 +17,7 @@ from deeptutor.services.provider_registry import (
     find_gateway,
 )
 
+from . import cloud_provider, local_provider
 from .capabilities import supports_response_format, supports_vision
 from .config import LLMConfig, get_llm_config
 from .error_mapping import map_error
@@ -592,11 +593,7 @@ async def fetch_models(
     api_key: str | None = None,
 ) -> list[str]:
     if is_local_llm_server(base_url):
-        from . import local_provider
-
         return await local_provider.fetch_models(base_url, api_key)
-
-    from . import cloud_provider
 
     return await cloud_provider.fetch_models(base_url, api_key, binding)
 

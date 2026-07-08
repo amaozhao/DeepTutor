@@ -7,6 +7,7 @@ import stat
 
 import pytest
 
+from deeptutor.services.codex_auth import storage as storage_module
 from deeptutor.services.codex_auth.contracts import CodexAuthError, CodexCredentials
 from deeptutor.services.codex_auth.storage import CodexCredentialStore
 
@@ -149,13 +150,11 @@ def test_windows_reparse_point_is_rejected(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    from deeptutor.services.codex_auth import storage
-
     store = CodexCredentialStore(tmp_path)
     store.root.mkdir(parents=True)
     store.credentials_path.write_text("{}", encoding="utf-8")
     monkeypatch.setattr(
-        storage,
+        storage_module,
         "_is_reparse_point",
         lambda path: path == store.credentials_path,
     )

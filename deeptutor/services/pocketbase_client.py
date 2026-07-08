@@ -26,7 +26,14 @@ import logging
 import time
 from typing import Any
 
+import httpx
+
 from deeptutor.services.config import load_integrations_settings
+
+try:
+    from pocketbase import PocketBase  # type: ignore[import]
+except ImportError:  # pragma: no cover - optional dependency
+    PocketBase = None
 
 logger = logging.getLogger(__name__)
 
@@ -76,12 +83,8 @@ def get_pb_client():
     if _client_initialised and _client_key == cache_key:
         return _client
 
-    try:
-        from pocketbase import PocketBase  # type: ignore[import]
-    except ImportError as exc:
-        raise RuntimeError(
-            "The 'pocketbase' package is not installed. Run: pip install pocketbase"
-        ) from exc
+    if PocketBase is None:
+        raise RuntimeError("The 'pocketbase' package is not installed. Run: pip install pocketbase")
 
     pb = PocketBase(pocketbase_url)
 
@@ -136,8 +139,6 @@ def validate_pb_token(token: str) -> dict[str, Any] | None:
 
     # Cache miss — call PocketBase
     try:
-        from pocketbase import PocketBase  # type: ignore[import]
-
         pb = PocketBase(pocketbase_url)
         # Inject the user token so auth_refresh validates it
         pb.auth_store.save(token, None)
@@ -175,8 +176,6 @@ async def ping_pocketbase() -> bool:
         return False
 
     try:
-        import httpx
-
         async with httpx.AsyncClient(timeout=5.0) as client:
             resp = await client.get(f"{pocketbase_url}/api/health")
             if resp.status_code == 200:

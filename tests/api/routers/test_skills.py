@@ -8,6 +8,7 @@ login). The hub provider is mocked over an ``httpx`` transport.
 from __future__ import annotations
 
 import importlib
+from typing import TYPE_CHECKING
 
 import httpx
 import pytest
@@ -23,11 +24,13 @@ pytestmark = pytest.mark.skipif(
     FastAPI is None or TestClient is None, reason="fastapi not installed"
 )
 
-from deeptutor.services.skill import hub as hub_module
-from deeptutor.services.skill.hub import ClawHubProvider
+hub_module = importlib.import_module("deeptutor.services.skill.hub")
+
+if TYPE_CHECKING:
+    from deeptutor.services.skill.hub import ClawHubProvider
 
 
-def _mock_provider() -> ClawHubProvider:
+def _mock_provider() -> "ClawHubProvider":
     def handler(request: httpx.Request) -> httpx.Response:
         path = request.url.path
         if path == "/api/v1/skills":
@@ -67,7 +70,7 @@ def _mock_provider() -> ClawHubProvider:
             )
         return httpx.Response(404, text="nope")
 
-    return ClawHubProvider(
+    return hub_module.ClawHubProvider(
         "eduhub",
         base_url="https://eduhub.deeptutor.info/api/v1",
         client=httpx.Client(transport=httpx.MockTransport(handler)),

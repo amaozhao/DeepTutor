@@ -8,10 +8,12 @@ Note: This is a legacy interface. Prefer using the factory functions directly:
     from deeptutor.services.llm import complete, stream
 """
 
+import asyncio
 from collections.abc import Awaitable, Callable
 import logging
 from typing import Any, cast
 
+from . import factory
 from .capabilities import supports_vision
 from .config import LLMConfig, get_llm_config
 from .utils import sanitize_url
@@ -55,8 +57,6 @@ class LLMClient:
         Returns:
             LLM response text
         """
-        from . import factory
-
         factory_complete = cast(Callable[..., Awaitable[str]], factory.complete)
         messages = history or None
         return await factory_complete(
@@ -85,7 +85,6 @@ class LLMClient:
 
         Use this when you need to call from non-async context.
         """
-        import asyncio
 
         try:
             asyncio.get_running_loop()
@@ -122,7 +121,6 @@ class LLMClient:
 
     def _build_factory_model_func(self, allow_multimodal: bool) -> Callable[..., object]:
         """Build adapter callables on top of the unified factory.complete API."""
-        from . import factory
 
         def _resolve_messages(
             prompt: str,

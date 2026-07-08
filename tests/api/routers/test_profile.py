@@ -31,9 +31,9 @@ def profile_client(mu_isolated_root, monkeypatch):
     ``ghost-token`` (a valid JWT whose user is absent from the local store,
     mirroring PocketBase-backed identities).
     """
-    import deeptutor.api.routers.auth as auth_router
-    from deeptutor.multi_user.identity import save_user
-    from deeptutor.services.auth import TokenPayload
+    auth_router = __import__("deeptutor.api.routers.auth", fromlist=["*"])
+    save_user = __import__("deeptutor.multi_user.identity", fromlist=["save_user"]).save_user
+    TokenPayload = __import__("deeptutor.services.auth", fromlist=["TokenPayload"]).TokenPayload
 
     alice = save_user("alice", "$2b$12$placeholder", role="admin")
     bob = save_user("bob", "$2b$12$placeholder", role="user")
@@ -85,7 +85,7 @@ def test_get_profile_falls_back_to_token_claims(profile_client):
 
 
 def test_put_profile_sets_marker_on_own_record_only(profile_client):
-    from deeptutor.multi_user.identity import load_users
+    load_users = __import__("deeptutor.multi_user.identity", fromlist=["load_users"]).load_users
 
     client, _ = profile_client
     response = client.put(
@@ -111,7 +111,10 @@ def test_put_profile_rejects_img_and_malformed_markers(profile_client):
 
 
 def test_upload_avatar_stores_file_and_bumps_version(profile_client):
-    from deeptutor.multi_user.identity import get_avatar_file, load_users
+    get_avatar_file = __import__(
+        "deeptutor.multi_user.identity", fromlist=["get_avatar_file"]
+    ).get_avatar_file
+    load_users = __import__("deeptutor.multi_user.identity", fromlist=["load_users"]).load_users
 
     client, users = profile_client
     bob_id = users["bob"]["id"]
@@ -163,7 +166,7 @@ def test_upload_avatar_enforces_size_cap(profile_client):
 
 
 def test_upload_avatar_disabled_in_pocketbase_mode(profile_client, monkeypatch):
-    import deeptutor.api.routers.auth as auth_router
+    auth_router = __import__("deeptutor.api.routers.auth", fromlist=["*"])
 
     client, _ = profile_client
     monkeypatch.setattr(auth_router, "POCKETBASE_ENABLED", True)
@@ -176,7 +179,10 @@ def test_upload_avatar_disabled_in_pocketbase_mode(profile_client, monkeypatch):
 
 
 def test_delete_avatar_removes_file_and_resets_marker(profile_client):
-    from deeptutor.multi_user.identity import get_avatar_file, load_users
+    get_avatar_file = __import__(
+        "deeptutor.multi_user.identity", fromlist=["get_avatar_file"]
+    ).get_avatar_file
+    load_users = __import__("deeptutor.multi_user.identity", fromlist=["load_users"]).load_users
 
     client, users = profile_client
     client.put(
@@ -192,7 +198,9 @@ def test_delete_avatar_removes_file_and_resets_marker(profile_client):
 
 
 def test_picking_icon_after_upload_drops_the_image_file(profile_client):
-    from deeptutor.multi_user.identity import get_avatar_file
+    get_avatar_file = __import__(
+        "deeptutor.multi_user.identity", fromlist=["get_avatar_file"]
+    ).get_avatar_file
 
     client, users = profile_client
     client.put(
@@ -227,7 +235,9 @@ def test_avatar_serving_headers_and_visibility(profile_client):
 
 def test_admin_user_deletion_keep_preserves_avatar_file(profile_client):
     """Default account deletion keeps user workspace data, including avatar files."""
-    from deeptutor.multi_user.identity import get_avatar_file
+    get_avatar_file = __import__(
+        "deeptutor.multi_user.identity", fromlist=["get_avatar_file"]
+    ).get_avatar_file
 
     client, users = profile_client
     client.put(
@@ -244,7 +254,9 @@ def test_admin_user_deletion_keep_preserves_avatar_file(profile_client):
 
 def test_admin_user_deletion_delete_removes_avatar_file(profile_client):
     """Deleting an account must not leave its avatar image orphaned on disk."""
-    from deeptutor.multi_user.identity import get_avatar_file
+    get_avatar_file = __import__(
+        "deeptutor.multi_user.identity", fromlist=["get_avatar_file"]
+    ).get_avatar_file
 
     client, users = profile_client
     client.put(

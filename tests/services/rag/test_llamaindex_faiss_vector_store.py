@@ -231,11 +231,15 @@ def test_validation_skips_binary_faiss_files(tmp_path: Path) -> None:
 
 def test_reindex_supersedes_legacy_simple_version_with_faiss(tmp_path: Path) -> None:
     """Re-indexing a legacy KB writes a newer FAISS version that wins on read."""
-    from deeptutor.services.rag.index_versioning import (
-        EmbeddingSignature,
-        resolve_storage_dir_for_read,
-        write_version_meta,
-    )
+    EmbeddingSignature = __import__(
+        "deeptutor.services.rag.index_versioning", fromlist=["EmbeddingSignature"]
+    ).EmbeddingSignature
+    resolve_storage_dir_for_read = __import__(
+        "deeptutor.services.rag.index_versioning", fromlist=["resolve_storage_dir_for_read"]
+    ).resolve_storage_dir_for_read
+    write_version_meta = __import__(
+        "deeptutor.services.rag.index_versioning", fromlist=["write_version_meta"]
+    ).write_version_meta
 
     kb_dir = tmp_path / "kb"
     sig = EmbeddingSignature(binding="b", model="m", dimension=_DIM, base_url="", api_version="")
@@ -259,7 +263,7 @@ def test_reindex_supersedes_legacy_simple_version_with_faiss(tmp_path: Path) -> 
 
 def test_storage_create_index_persists_faiss_end_to_end(tmp_path: Path) -> None:
     """The production create path (ingestion -> storage) persists a FAISS index."""
-    from llama_index.core import Document
+    Document = __import__("llama_index.core", fromlist=["Document"]).Document
 
     storage_dir = tmp_path / "version-1"
     storage_dir.mkdir()

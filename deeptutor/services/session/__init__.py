@@ -3,49 +3,11 @@ Session Management Module
 =========================
 
 Provides unified session management for all agent modules.
-
-Usage:
-    from deeptutor.services.session import BaseSessionManager
-
-    class MySessionManager(BaseSessionManager):
-        def __init__(self):
-            super().__init__("my_module")
-
-        def _get_session_id_prefix(self) -> str:
-            return "my_"
-
-        def _get_default_title(self) -> str:
-            return "New My Session"
-
-        # ... implement other abstract methods
 """
 
-from .base_session_manager import BaseSessionManager
-from .protocol import SessionStoreProtocol
-from .sqlite_store import (
-    SQLiteSessionStore,
-    get_sqlite_session_store,
-    make_imported_session_id,
-)
-from .turn_runtime import TurnRuntimeManager, get_turn_runtime_manager
+from __future__ import annotations
 
-
-def get_session_store() -> SessionStoreProtocol:
-    """
-    Return the active session store backend.
-
-    When integrations.pocketbase_url is configured, returns a
-    PocketBaseSessionStore. Otherwise falls back to the local
-    SQLiteSessionStore (default, zero-config behaviour).
-    """
-    from deeptutor.services.pocketbase_client import is_pocketbase_enabled
-
-    if is_pocketbase_enabled():
-        from .pocketbase_store import PocketBaseSessionStore
-
-        return PocketBaseSessionStore()
-    return get_sqlite_session_store()
-
+import importlib
 
 __all__ = [
     "BaseSessionManager",
@@ -57,3 +19,22 @@ __all__ = [
     "get_turn_runtime_manager",
     "make_imported_session_id",
 ]
+
+
+def __getattr__(name: str):
+    if name == "BaseSessionManager":
+        module = importlib.import_module(f"{__name__}.base_session_manager")
+        return module.BaseSessionManager
+    if name == "SessionStoreProtocol":
+        module = importlib.import_module(f"{__name__}.protocol")
+        return module.SessionStoreProtocol
+    if name in {"SQLiteSessionStore", "get_sqlite_session_store", "make_imported_session_id"}:
+        module = importlib.import_module(f"{__name__}.sqlite_store")
+        return getattr(module, name)
+    if name == "get_session_store":
+        module = importlib.import_module(f"{__name__}.store")
+        return module.get_session_store
+    if name in {"TurnRuntimeManager", "get_turn_runtime_manager"}:
+        module = importlib.import_module(f"{__name__}.turn_runtime")
+        return getattr(module, name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

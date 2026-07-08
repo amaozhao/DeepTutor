@@ -37,7 +37,9 @@ def test_settings_partial_payload_falls_back_to_defaults() -> None:
         create=True,
     ):
         pass  # no-op; the next assertion exercises the real coercion path
-    from deeptutor.services.memory.settings import _from_dict
+    _from_dict = __import__(
+        "deeptutor.services.memory.settings", fromlist=["_from_dict"]
+    )._from_dict
 
     merged = _from_dict(
         MemorySettings,
@@ -50,7 +52,9 @@ def test_settings_partial_payload_falls_back_to_defaults() -> None:
 
 
 def test_settings_clamps_out_of_range_values() -> None:
-    from deeptutor.services.memory.settings import _from_dict
+    _from_dict = __import__(
+        "deeptutor.services.memory.settings", fromlist=["_from_dict"]
+    )._from_dict
 
     merged = _from_dict(
         MemorySettings,
@@ -69,7 +73,7 @@ def test_settings_clamps_out_of_range_values() -> None:
 
 def test_l2_meta_roundtrip(tmp_path, monkeypatch) -> None:
     # Redirect paths to a temp memory dir.
-    from deeptutor.services.memory import paths as paths_mod
+    paths_mod = __import__("deeptutor.services.memory", fromlist=["paths"]).paths
 
     monkeypatch.setattr(paths_mod, "memory_root", lambda: tmp_path)
     (tmp_path / "L2").mkdir(parents=True, exist_ok=True)
@@ -84,7 +88,7 @@ def test_l2_meta_roundtrip(tmp_path, monkeypatch) -> None:
 
 
 def test_l3_meta_roundtrip(tmp_path, monkeypatch) -> None:
-    from deeptutor.services.memory import paths as paths_mod
+    paths_mod = __import__("deeptutor.services.memory", fromlist=["paths"]).paths
 
     monkeypatch.setattr(paths_mod, "memory_root", lambda: tmp_path)
     (tmp_path / "L3").mkdir(parents=True, exist_ok=True)
@@ -96,7 +100,7 @@ def test_l3_meta_roundtrip(tmp_path, monkeypatch) -> None:
 
 
 def test_l2_meta_missing_file_returns_empty() -> None:
-    from deeptutor.services.memory.consolidator.meta import L2Meta
+    L2Meta = __import__("deeptutor.services.memory.consolidator.meta", fromlist=["L2Meta"]).L2Meta
 
     m = L2Meta()
     assert m.seen_entity_refs == set()

@@ -11,21 +11,29 @@ delegate to the right viewer.
 
 from __future__ import annotations
 
+import importlib.util
 import logging
+import time
 from typing import Any
 
 from deeptutor.agents._shared.capability_result import emit_capability_result
+from deeptutor.agents.math_animator.pipeline import MathAnimatorPipeline
+from deeptutor.agents.math_animator.request_config import MathAnimatorRequestConfig
+from deeptutor.agents.visualize.models import ReviewResult
+from deeptutor.agents.visualize.pipeline import VisualizePipeline
+from deeptutor.agents.visualize.utils import build_fallback_html, validate_visualization
 from deeptutor.core.agentic.usage import UsageTracker
 from deeptutor.core.capability_protocol import BaseCapability, CapabilityManifest
 from deeptutor.core.context import UnifiedContext
 from deeptutor.core.stream_bus import StreamBus
-from deeptutor.core.trace import merge_trace_metadata
+from deeptutor.core.trace import build_trace_metadata, merge_trace_metadata, new_call_id
 from deeptutor.i18n import StatusI18n
 from deeptutor.runtime.request_contracts import (
     VisualizeRequestConfig,
     get_capability_request_schema,
     validate_visualize_request_config,
 )
+from deeptutor.services.llm.config import get_llm_config
 
 logger = logging.getLogger(__name__)
 
@@ -61,14 +69,6 @@ class VisualizeCapability(BaseCapability):
     )
 
     async def run(self, context: UnifiedContext, stream: StreamBus) -> None:
-        from deeptutor.agents.visualize.models import ReviewResult
-        from deeptutor.agents.visualize.pipeline import VisualizePipeline
-        from deeptutor.agents.visualize.utils import (
-            build_fallback_html,
-            validate_visualization,
-        )
-        from deeptutor.services.llm.config import get_llm_config
-
         request_config = validate_visualize_request_config(context.config_overrides)
         render_mode = request_config.render_mode
         i18n = StatusI18n(self.name, context.language, module="visualize")
@@ -291,8 +291,6 @@ class VisualizeCapability(BaseCapability):
         the final result with ``render_type`` as the discriminator so the
         unified frontend dispatcher can route to ``MathAnimatorViewer``.
         """
-        import importlib.util
-        import time
 
         if importlib.util.find_spec("manim") is None:
             raise RuntimeError(
@@ -300,11 +298,6 @@ class VisualizeCapability(BaseCapability):
                 "Install with `pip install 'deeptutor[math-animator]'` "
                 "or `pip install -r requirements/math-animator.txt`."
             )
-
-        from deeptutor.agents.math_animator.pipeline import MathAnimatorPipeline
-        from deeptutor.agents.math_animator.request_config import MathAnimatorRequestConfig
-        from deeptutor.core.trace import build_trace_metadata, new_call_id
-        from deeptutor.services.llm.config import get_llm_config
 
         if i18n is None:
             i18n = StatusI18n(self.name, context.language, module="visualize")

@@ -9,7 +9,9 @@ to prove the streaming primitive surfaces stdout/stderr in order with an exit.
 
 from __future__ import annotations
 
+import importlib
 import sys
+import uuid
 
 import pytest
 
@@ -24,6 +26,11 @@ from deeptutor.services.subagent.config import (
 )
 from deeptutor.services.subagent.process import stream_process_lines
 from deeptutor.services.subagent.types import ConsultResult
+
+
+def _subagent_module(name: str):
+    return importlib.import_module(f"deeptutor.services.subagent.{name}")
+
 
 # ---- command building --------------------------------------------------------
 
@@ -419,11 +426,13 @@ def test_settings_defaults() -> None:
 
 
 def test_materialize_images_writes_only_resolvable_images(tmp_path) -> None:
-    import base64 as _b64
-    from pathlib import Path
+    _b64 = __import__("base64")
+    Path = __import__("pathlib", fromlist=["Path"]).Path
 
-    from deeptutor.core.context import Attachment
-    from deeptutor.services.subagent.images import materialize_images
+    Attachment = __import__("deeptutor.core.context", fromlist=["Attachment"]).Attachment
+    materialize_images = __import__(
+        "deeptutor.services.subagent.images", fromlist=["materialize_images"]
+    ).materialize_images
 
     atts = [
         Attachment(
@@ -469,7 +478,9 @@ _CLAUDE_MODEL_SCREEN = """\
 
 
 def test_parse_claude_model_screen() -> None:
-    from deeptutor.services.subagent.claude_models import _parse_model_screen
+    _parse_model_screen = __import__(
+        "deeptutor.services.subagent.claude_models", fromlist=["_parse_model_screen"]
+    )._parse_model_screen
 
     models = _parse_model_screen(_CLAUDE_MODEL_SCREEN)
     # Default (recommended) → CLI default (skipped); Fable (disabled) → skipped.
@@ -483,7 +494,7 @@ def test_parse_claude_model_screen() -> None:
 
 
 def test_claude_models_cache_roundtrip(monkeypatch, tmp_path) -> None:
-    from deeptutor.services.subagent import claude_models as cm
+    cm = __import__("deeptutor.services.subagent", fromlist=["claude_models"]).claude_models
 
     monkeypatch.setattr(cm, "_cache_path", lambda: tmp_path / "claude_models_cache.json")
     assert cm.load_cached_claude_models() == ([], "")
@@ -498,11 +509,10 @@ def test_claude_models_cache_roundtrip(monkeypatch, tmp_path) -> None:
 async def test_claude_options_prefers_synced_cache(monkeypatch) -> None:
     """When a /model sync has cached a catalog, _claude_options uses it over the
     curated fallback."""
-    from deeptutor.services.subagent import claude_models as cm
-    from deeptutor.services.subagent import models as models_mod
+    models_mod = __import__("deeptutor.services.subagent", fromlist=["models"]).models
 
     monkeypatch.setattr(
-        cm,
+        models_mod,
         "load_cached_claude_models",
         lambda: ([{"slug": "opus", "display_name": "Opus 4.8 (synced)"}], "2026-06-17T00:00:00Z"),
     )
@@ -522,7 +532,7 @@ async def test_claude_options_prefers_synced_cache(monkeypatch) -> None:
 
 
 def test_session_registry_roundtrip(monkeypatch, tmp_path) -> None:
-    from deeptutor.services.subagent import sessions as sess
+    sess = __import__("deeptutor.services.subagent", fromlist=["sessions"]).sessions
 
     monkeypatch.setattr(sess, "_path", lambda: tmp_path / "subagent_sessions.json")
     key = sess.session_key("chat1", "agentX")
@@ -549,9 +559,9 @@ def test_session_registry_roundtrip(monkeypatch, tmp_path) -> None:
 async def test_list_backend_options_reads_codex_cache(monkeypatch, tmp_path) -> None:
     """Codex options come from the live models_cache.json + config.toml default;
     Claude Code falls back to its aliases and allows a free-text model."""
-    import json
+    json = __import__("json")
 
-    from deeptutor.services.subagent import models as models_mod
+    models_mod = __import__("deeptutor.services.subagent", fromlist=["models"]).models
 
     home = tmp_path / "codex"
     home.mkdir()
@@ -601,7 +611,7 @@ async def test_list_backend_options_reads_codex_cache(monkeypatch, tmp_path) -> 
 @pytest.mark.asyncio
 async def test_codex_options_tolerate_missing_cache(monkeypatch, tmp_path) -> None:
     """No models_cache.json → empty model list, still allows a custom model."""
-    from deeptutor.services.subagent import models as models_mod
+    models_mod = __import__("deeptutor.services.subagent", fromlist=["models"]).models
 
     monkeypatch.setenv("CODEX_HOME", str(tmp_path / "empty-codex"))
 
@@ -621,7 +631,13 @@ async def test_codex_options_tolerate_missing_cache(monkeypatch, tmp_path) -> No
 
 
 def test_registry_partner_is_non_cli_backend() -> None:
-    from deeptutor.services.subagent import PARTNER_BACKEND_KIND, get_backend, list_backend_kinds
+    PARTNER_BACKEND_KIND = __import__(
+        "deeptutor.services.subagent", fromlist=["PARTNER_BACKEND_KIND"]
+    ).PARTNER_BACKEND_KIND
+    get_backend = __import__("deeptutor.services.subagent", fromlist=["get_backend"]).get_backend
+    list_backend_kinds = __import__(
+        "deeptutor.services.subagent", fromlist=["list_backend_kinds"]
+    ).list_backend_kinds
 
     assert PARTNER_BACKEND_KIND in list_backend_kinds()
     backend = get_backend(PARTNER_BACKEND_KIND)
@@ -632,7 +648,7 @@ def test_registry_partner_is_non_cli_backend() -> None:
 
 @pytest.mark.asyncio
 async def test_detect_all_excludes_partner_backend() -> None:
-    from deeptutor.services.subagent import detect_all
+    detect_all = __import__("deeptutor.services.subagent", fromlist=["detect_all"]).detect_all
 
     kinds = {d.kind for d in await detect_all()}
     assert "partner" not in kinds
@@ -685,15 +701,22 @@ class _FakePartnerManager:
 
 
 def _patch_manager(monkeypatch, manager) -> None:
-    import deeptutor.services.partners as partners_pkg
-
-    monkeypatch.setattr(partners_pkg, "get_partner_manager", lambda: manager)
+    monkeypatch.setattr(
+        _subagent_module("partner"),
+        "get_partner_manager",
+        lambda: manager,
+    )
 
 
 @pytest.mark.asyncio
 async def test_partner_consult_mints_session_key_and_returns_reply(monkeypatch) -> None:
-    from deeptutor.core.stream import StreamEvent, StreamEventType
-    from deeptutor.services.subagent.partner import PartnerBackend
+    StreamEvent = __import__("deeptutor.core.stream", fromlist=["StreamEvent"]).StreamEvent
+    StreamEventType = __import__(
+        "deeptutor.core.stream", fromlist=["StreamEventType"]
+    ).StreamEventType
+    PartnerBackend = __import__(
+        "deeptutor.services.subagent.partner", fromlist=["PartnerBackend"]
+    ).PartnerBackend
 
     manager = _FakePartnerManager(reply="The answer.")
     manager.script_trace(
@@ -734,7 +757,9 @@ async def test_partner_consult_mints_session_key_and_returns_reply(monkeypatch) 
 
 @pytest.mark.asyncio
 async def test_partner_consult_resumes_given_session(monkeypatch) -> None:
-    from deeptutor.services.subagent.partner import PartnerBackend
+    PartnerBackend = __import__(
+        "deeptutor.services.subagent.partner", fromlist=["PartnerBackend"]
+    ).PartnerBackend
 
     manager = _FakePartnerManager()
     _patch_manager(monkeypatch, manager)
@@ -752,7 +777,9 @@ async def test_partner_consult_resumes_given_session(monkeypatch) -> None:
 
 @pytest.mark.asyncio
 async def test_partner_consult_starts_partner_when_idle(monkeypatch) -> None:
-    from deeptutor.services.subagent.partner import PartnerBackend
+    PartnerBackend = __import__(
+        "deeptutor.services.subagent.partner", fromlist=["PartnerBackend"]
+    ).PartnerBackend
 
     manager = _FakePartnerManager(running=False)
     _patch_manager(monkeypatch, manager)
@@ -766,7 +793,9 @@ async def test_partner_consult_starts_partner_when_idle(monkeypatch) -> None:
 
 @pytest.mark.asyncio
 async def test_partner_consult_requires_partner_id() -> None:
-    from deeptutor.services.subagent.partner import PartnerBackend
+    PartnerBackend = __import__(
+        "deeptutor.services.subagent.partner", fromlist=["PartnerBackend"]
+    ).PartnerBackend
 
     async def on_event(ev):
         pass
@@ -778,7 +807,9 @@ async def test_partner_consult_requires_partner_id() -> None:
 
 @pytest.mark.asyncio
 async def test_partner_consult_unknown_partner(monkeypatch) -> None:
-    from deeptutor.services.subagent.partner import PartnerBackend
+    PartnerBackend = __import__(
+        "deeptutor.services.subagent.partner", fromlist=["PartnerBackend"]
+    ).PartnerBackend
 
     manager = _FakePartnerManager(exists=False)
     _patch_manager(monkeypatch, manager)
@@ -793,7 +824,9 @@ async def test_partner_consult_unknown_partner(monkeypatch) -> None:
 
 @pytest.mark.asyncio
 async def test_partner_consult_empty_reply_is_unsuccessful(monkeypatch) -> None:
-    from deeptutor.services.subagent.partner import PartnerBackend
+    PartnerBackend = __import__(
+        "deeptutor.services.subagent.partner", fromlist=["PartnerBackend"]
+    ).PartnerBackend
 
     manager = _FakePartnerManager(reply="")
     _patch_manager(monkeypatch, manager)
@@ -811,8 +844,13 @@ def _partner_trace_state() -> dict[str, dict[str, str]]:
 
 
 def test_partner_event_mapping_covers_channels() -> None:
-    from deeptutor.core.stream import StreamEvent, StreamEventType
-    from deeptutor.services.subagent.partner import _to_subagent_events
+    StreamEvent = __import__("deeptutor.core.stream", fromlist=["StreamEvent"]).StreamEvent
+    StreamEventType = __import__(
+        "deeptutor.core.stream", fromlist=["StreamEventType"]
+    ).StreamEventType
+    _to_subagent_events = __import__(
+        "deeptutor.services.subagent.partner", fromlist=["_to_subagent_events"]
+    )._to_subagent_events
 
     def kinds(etype, **kw):
         return [
@@ -843,8 +881,13 @@ def test_partner_tool_call_pairs_with_its_result_adjacently() -> None:
     # TOOL_RESULT events - sharing a call_id per tool. Each call is buffered and
     # re-emitted right before its own result, so the trace reads as adjacent
     # call -> result pairs (never two calls then two results).
-    from deeptutor.core.stream import StreamEvent, StreamEventType
-    from deeptutor.services.subagent.partner import _to_subagent_events
+    StreamEvent = __import__("deeptutor.core.stream", fromlist=["StreamEvent"]).StreamEvent
+    StreamEventType = __import__(
+        "deeptutor.core.stream", fromlist=["StreamEventType"]
+    ).StreamEventType
+    _to_subagent_events = __import__(
+        "deeptutor.services.subagent.partner", fromlist=["_to_subagent_events"]
+    )._to_subagent_events
 
     st = _partner_trace_state()
     a = _to_subagent_events(
@@ -886,8 +929,13 @@ def test_partner_tool_call_pairs_with_its_result_adjacently() -> None:
 def test_partner_content_accumulates_cumulatively() -> None:
     # Incremental CONTENT deltas accumulate into a growing full-text row under a
     # stable merge_id - so the streamed answer never gets wiped by a new chunk.
-    from deeptutor.core.stream import StreamEvent, StreamEventType
-    from deeptutor.services.subagent.partner import _to_subagent_events
+    StreamEvent = __import__("deeptutor.core.stream", fromlist=["StreamEvent"]).StreamEvent
+    StreamEventType = __import__(
+        "deeptutor.core.stream", fromlist=["StreamEventType"]
+    ).StreamEventType
+    _to_subagent_events = __import__(
+        "deeptutor.services.subagent.partner", fromlist=["_to_subagent_events"]
+    )._to_subagent_events
 
     st = _partner_trace_state()
     a = _to_subagent_events(
@@ -904,8 +952,7 @@ def test_partner_content_accumulates_cumulatively() -> None:
 
 
 def test_gemini_command_build_fresh_resume_and_approval_mapping() -> None:
-    from deeptutor.services.subagent.gemini import GeminiBackend
-
+    GeminiBackend = _subagent_module("gemini").GeminiBackend
     backend = GeminiBackend()
     fresh = backend._build_command(
         "hi", session_id=None, config=BackendConfig(system_prompt="be brief")
@@ -930,8 +977,7 @@ def test_gemini_command_build_fresh_resume_and_approval_mapping() -> None:
 
 
 def test_gemini_command_attaches_images_via_at_syntax() -> None:
-    from deeptutor.services.subagent.gemini import GeminiBackend
-
+    GeminiBackend = _subagent_module("gemini").GeminiBackend
     backend = GeminiBackend()
     cmd = backend._build_command(
         "look", session_id=None, config=BackendConfig(), images=["/tmp/stage/a.png"]
@@ -941,8 +987,7 @@ def test_gemini_command_attaches_images_via_at_syntax() -> None:
 
 
 async def _drive_gemini(events):
-    from deeptutor.services.subagent.gemini import GeminiBackend
-
+    GeminiBackend = _subagent_module("gemini").GeminiBackend
     backend = GeminiBackend()
     result = ConsultResult()
     stream: dict = {"blocks": [], "open": False}
@@ -1010,8 +1055,7 @@ async def test_gemini_warning_is_log_and_error_result_fails() -> None:
 
 
 def test_kimi_command_build_session_yolo_and_thinking() -> None:
-    from deeptutor.services.subagent.kimi import KimiBackend
-
+    KimiBackend = _subagent_module("kimi").KimiBackend
     backend = KimiBackend()
     cmd = backend._build_command(
         "hi",
@@ -1038,10 +1082,7 @@ def test_kimi_command_build_session_yolo_and_thinking() -> None:
 @pytest.mark.asyncio
 async def test_kimi_consult_mints_session_id_upfront() -> None:
     """A fresh consult pre-generates the session id (never parsed from output)."""
-    import uuid as uuid_mod
-
-    from deeptutor.services.subagent.kimi import KimiBackend
-
+    KimiBackend = _subagent_module("kimi").KimiBackend
     backend = KimiBackend()
 
     captured: dict = {}
@@ -1059,13 +1100,12 @@ async def test_kimi_consult_mints_session_id_upfront() -> None:
     result = await backend.consult("q", on_event=on_event)
     assert captured["fresh"] is True
     assert result.session_id == captured["sid"]
-    assert uuid_mod.UUID(result.session_id)  # a well-formed UUID
+    assert uuid.UUID(result.session_id)  # a well-formed UUID
 
 
 @pytest.mark.asyncio
 async def test_kimi_line_parsing_roles_parts_and_tools() -> None:
-    from deeptutor.services.subagent.kimi import KimiBackend
-
+    KimiBackend = _subagent_module("kimi").KimiBackend
     backend = KimiBackend()
     events = [
         # content as a plain string (single text part shorthand)
@@ -1098,8 +1138,7 @@ async def test_kimi_line_parsing_roles_parts_and_tools() -> None:
 
 @pytest.mark.asyncio
 async def test_kimi_echoed_user_lines_are_dropped() -> None:
-    from deeptutor.services.subagent.kimi import KimiBackend
-
+    KimiBackend = _subagent_module("kimi").KimiBackend
     _, emitted = await _drive(KimiBackend(), [{"role": "user", "content": "echo"}])
     assert emitted == []
 
@@ -1108,8 +1147,7 @@ async def test_kimi_echoed_user_lines_are_dropped() -> None:
 
 
 async def _drive_opencode(events, *, auto_approve=True):
-    from deeptutor.services.subagent.opencode_family import OpencodeBackend
-
+    OpencodeBackend = _subagent_module("opencode_family").OpencodeBackend
     backend = OpencodeBackend()
     state: dict = {"parts": {}, "kinds": {}, "error": ""}
     emitted: list[tuple[str, str, dict]] = []
@@ -1267,8 +1305,7 @@ async def test_opencode_session_error_and_foreign_session_filtering() -> None:
 
 
 def test_opencode_prompt_body_model_variant_system_and_images(tmp_path) -> None:
-    from deeptutor.services.subagent.opencode_family import OpencodeBackend
-
+    OpencodeBackend = _subagent_module("opencode_family").OpencodeBackend
     img = tmp_path / "shot.png"
     img.write_bytes(b"\x89PNG fake")
     backend = OpencodeBackend()
@@ -1293,8 +1330,7 @@ def test_opencode_prompt_body_model_variant_system_and_images(tmp_path) -> None:
 
 
 def test_opencode_final_text_skips_synthetic_parts() -> None:
-    from deeptutor.services.subagent.opencode_family import _text_from_parts
-
+    _text_from_parts = _subagent_module("opencode_family")._text_from_parts
     parts = [
         {"type": "text", "text": "real answer"},
         {"type": "text", "text": "injected", "synthetic": True},
@@ -1323,8 +1359,7 @@ class _FakeServerProc:
 
 
 def test_server_registry_reaps_idle_and_dead_handles() -> None:
-    from deeptutor.services.subagent import opencode_server as srv
-
+    srv = _subagent_module("opencode_server")
     fresh_proc, stale_proc, dead_proc = _FakeServerProc(), _FakeServerProc(), _FakeServerProc()
     dead_proc.returncode = 1
     fresh = srv.ServerHandle(base_url="http://x", username="u", password="p", process=fresh_proc)
@@ -1347,8 +1382,7 @@ def test_server_registry_reaps_idle_and_dead_handles() -> None:
 
 @pytest.mark.asyncio
 async def test_server_registry_shutdown_terminates_everything() -> None:
-    from deeptutor.services.subagent import opencode_server as srv
-
+    srv = _subagent_module("opencode_server")
     proc = _FakeServerProc()
     srv._servers.clear()
     srv._servers[("cli", "a")] = srv.ServerHandle(

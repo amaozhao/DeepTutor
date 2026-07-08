@@ -44,6 +44,8 @@ from deeptutor.services.memory.consolidator.modes._runtime import (
     today_iso,
     write_doc_checkpoint,
 )
+from deeptutor.services.memory.consolidator.modes.dedup import run_dedup
+from deeptutor.services.memory.consolidator.modes.merge import run_merge
 from deeptutor.services.memory.consolidator.references import (
     ExtractedFact,
     refs_in_span_l2,
@@ -52,11 +54,15 @@ from deeptutor.services.memory.consolidator.references import (
     render_traces_for_concat,
     validate_fact_refs,
 )
-from deeptutor.services.memory.document import Document, Entry, serialize
+from deeptutor.services.memory.document import Document, Entry, parse, serialize
 from deeptutor.services.memory.ops import AddOp
 from deeptutor.services.memory.ops import apply as apply_ops
 from deeptutor.services.memory.paths import L3Slot, Surface
 from deeptutor.services.memory.settings import load_memory_settings
+from deeptutor.services.model_selection.runtime import (
+    activate_llm_selection,
+    reset_llm_selection,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -93,11 +99,6 @@ async def run_update(
     installed as a scoped LLM config for the duration of the run so
     every internal :func:`call_llm` resolves to the right provider.
     """
-    from deeptutor.services.model_selection.runtime import (
-        activate_llm_selection,
-        reset_llm_selection,
-    )
-
     settings = load_memory_settings()
     token = None
     if llm_selection:
@@ -174,8 +175,6 @@ async def _run_update_l2(
         # be in the legacy entry-keyed footnote layout and the user
         # expects "click update" to clean it up.
         if settings.merge.auto_after_update:
-            from deeptutor.services.memory.consolidator.modes.merge import run_merge
-
             await run_merge(
                 "L2",
                 surface,
@@ -324,8 +323,6 @@ async def _run_update_l2(
 
     if settings.dedup.auto_after_update and facts_added > 0:
         # Avoid a circular import: dedup imports settings, refs, line_doc.
-        from deeptutor.services.memory.consolidator.modes.dedup import run_dedup
-
         await run_dedup(
             "L2",
             surface,
@@ -337,8 +334,6 @@ async def _run_update_l2(
         )
 
     if settings.merge.auto_after_update:
-        from deeptutor.services.memory.consolidator.modes.merge import run_merge
-
         await run_merge(
             "L2",
             surface,
@@ -402,8 +397,6 @@ async def _run_update_l3(
     if new_count == 0:
         save_l3_meta(slot, seen_l2_entry_ids=seen_now)
         if settings.merge.auto_after_update:
-            from deeptutor.services.memory.consolidator.modes.merge import run_merge
-
             await run_merge(
                 "L3",
                 slot,
@@ -553,8 +546,6 @@ async def _run_update_l3(
     )
 
     if settings.dedup.auto_after_update and facts_added > 0:
-        from deeptutor.services.memory.consolidator.modes.dedup import run_dedup
-
         await run_dedup(
             "L3",
             slot,
@@ -566,8 +557,6 @@ async def _run_update_l3(
         )
 
     if settings.merge.auto_after_update:
-        from deeptutor.services.memory.consolidator.modes.merge import run_merge
-
         await run_merge(
             "L3",
             slot,
@@ -680,8 +669,6 @@ def _chunk_with_ref_header(chunk_text: str, allowed: set[str]) -> str:
 
 
 def _load_all_l2_docs() -> dict[str, Document]:
-    from deeptutor.services.memory.document import parse
-
     docs: dict[str, Document] = {}
     for surface in paths.SURFACES:
         path = paths.l2_file(surface)

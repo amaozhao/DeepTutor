@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 import os
 
+from deeptutor.services.config import load_llamaindex_settings
+
 VECTOR_PROFILE = "vector"
 HYBRID_PROFILE = "hybrid"
 SUPPORTED_RETRIEVAL_PROFILES = {VECTOR_PROFILE, HYBRID_PROFILE}
@@ -50,8 +52,6 @@ def retrieval_config_from_env() -> RetrievalConfig:
 
 def _load_runtime_settings() -> dict:
     """Load the persisted LlamaIndex engine settings (env overrides applied)."""
-    from deeptutor.services.config import load_llamaindex_settings
-
     return load_llamaindex_settings()
 
 

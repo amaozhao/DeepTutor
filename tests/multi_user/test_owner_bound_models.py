@@ -11,6 +11,7 @@ from types import SimpleNamespace
 import pytest
 
 from deeptutor.multi_user import model_access
+from deeptutor.multi_user import router as multi_user_router
 from deeptutor.multi_user.context import reset_current_user, set_current_user
 from deeptutor.multi_user.models import CurrentUser, UserScope
 
@@ -59,8 +60,6 @@ def test_owner_bound_profile_is_withheld_from_granted_users(tmp_path, monkeypatc
 
 def test_owner_bound_profile_is_not_offered_as_assignable(tmp_path, monkeypatch):
     """Admins must not be shown a grant the server would silently discard."""
-    from deeptutor.multi_user import router as multi_user_router
-
     monkeypatch.setattr(
         multi_user_router,
         "ModelCatalogService",
