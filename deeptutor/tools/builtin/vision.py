@@ -6,7 +6,9 @@ import json
 import logging
 from typing import Any
 
+from deeptutor.agents.vision_solver.vision_solver_agent import VisionSolverAgent
 from deeptutor.core.tool_protocol import BaseTool, ToolDefinition, ToolParameter, ToolResult
+from deeptutor.services.llm.config import get_llm_config
 from deeptutor.tools.builtin.common import _PromptHintsMixin
 
 logger = logging.getLogger(__name__)
@@ -40,9 +42,6 @@ class GeoGebraAnalysisTool(_PromptHintsMixin, BaseTool):
         )
 
     async def execute(self, **kwargs: Any) -> ToolResult:
-        from deeptutor.agents.vision_solver.vision_solver_agent import VisionSolverAgent
-        from deeptutor.services.llm.config import get_llm_config
-
         question = kwargs.get("question", "")
         image_base64 = kwargs.get("image_base64", "")
         # language is server-injected from the user's session setting by the

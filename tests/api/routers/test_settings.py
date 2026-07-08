@@ -293,7 +293,9 @@ async def test_mineru_test_connection_reports_missing_token(
 async def test_mineru_payload_includes_local_cli_probe(
     monkeypatch: pytest.MonkeyPatch, tmp_path
 ) -> None:
-    from deeptutor.services.parsing.engines.mineru import backend as mineru_backend
+    mineru_backend = __import__(
+        "deeptutor.services.parsing.engines.mineru", fromlist=["backend"]
+    ).backend
 
     service = RuntimeSettingsService(tmp_path / "settings", process_env={})
     monkeypatch.setattr(settings_router, "get_runtime_settings_service", lambda: service)
@@ -313,7 +315,9 @@ async def test_mineru_payload_includes_local_cli_probe(
 
 @pytest.mark.asyncio
 async def test_mineru_test_connection_local_mode(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
-    from deeptutor.services.parsing.engines.mineru import backend as mineru_backend
+    mineru_backend = __import__(
+        "deeptutor.services.parsing.engines.mineru", fromlist=["backend"]
+    ).backend
 
     service = RuntimeSettingsService(tmp_path / "settings", process_env={})
     monkeypatch.setattr(settings_router, "get_runtime_settings_service", lambda: service)
@@ -358,7 +362,9 @@ async def test_mineru_test_connection_local_mode(monkeypatch: pytest.MonkeyPatch
 async def test_mineru_models_download_start_requires_downloader(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from deeptutor.services.parsing.engines.mineru import models as mineru_models
+    mineru_models = __import__(
+        "deeptutor.services.parsing.engines.mineru", fromlist=["models"]
+    ).models
 
     monkeypatch.setattr(
         mineru_models, "resolve_models_downloader", lambda p: {"found": False, "path": ""}
@@ -386,7 +392,9 @@ async def test_mineru_models_download_start_requires_downloader(
 async def test_mineru_models_download_start_and_status_passthrough(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from deeptutor.services.parsing.engines.mineru import models as mineru_models
+    mineru_models = __import__(
+        "deeptutor.services.parsing.engines.mineru", fromlist=["models"]
+    ).models
 
     calls: dict[str, object] = {}
 
@@ -638,7 +646,7 @@ async def test_complete_tour_invalidates_runtime_caches(
 
 @pytest.mark.asyncio
 async def test_fetch_models_returns_picker_options(monkeypatch: pytest.MonkeyPatch) -> None:
-    import deeptutor.services.llm.factory as factory_module
+    factory_module = __import__("deeptutor.services.llm.factory", fromlist=["*"])
 
     async def _fake_fetch(binding: str, base_url: str, api_key: str | None = None):
         assert binding == "openai"  # "OpenAI" is normalized to lowercase
@@ -664,7 +672,7 @@ async def test_fetch_models_returns_picker_options(monkeypatch: pytest.MonkeyPat
 
 @pytest.mark.asyncio
 async def test_fetch_models_requires_base_url() -> None:
-    from fastapi import HTTPException
+    HTTPException = __import__("fastapi", fromlist=["HTTPException"]).HTTPException
 
     with pytest.raises(HTTPException) as exc_info:
         await settings_router.fetch_models_from_provider(
@@ -675,9 +683,9 @@ async def test_fetch_models_requires_base_url() -> None:
 
 @pytest.mark.asyncio
 async def test_fetch_models_maps_provider_error_to_502(monkeypatch: pytest.MonkeyPatch) -> None:
-    from fastapi import HTTPException
+    HTTPException = __import__("fastapi", fromlist=["HTTPException"]).HTTPException
 
-    import deeptutor.services.llm.factory as factory_module
+    factory_module = __import__("deeptutor.services.llm.factory", fromlist=["*"])
 
     async def _boom(binding: str, base_url: str, api_key: str | None = None):
         raise RuntimeError("connection refused")

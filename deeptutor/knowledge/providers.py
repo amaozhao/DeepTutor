@@ -12,6 +12,10 @@ from deeptutor.services.rag.factory import (
     PAGEINDEX_PROVIDER,
     normalize_provider_name,
 )
+from deeptutor.services.rag.pipelines.graphrag.config import is_graphrag_available
+from deeptutor.services.rag.pipelines.lightrag.config import is_lightrag_available
+from deeptutor.services.rag.pipelines.pageindex.config import is_pageindex_configured
+from deeptutor.services.rag.pipelines.pageindex.pipeline import SUPPORTED_EXTENSIONS
 
 
 def validate_registered_provider(raw_provider: str | None) -> str:
@@ -22,8 +26,6 @@ def validate_registered_provider(raw_provider: str | None) -> str:
 def assert_provider_ready(provider: str) -> None:
     """Block creating/using a KB whose engine isn't ready."""
     if provider == PAGEINDEX_PROVIDER:
-        from deeptutor.services.rag.pipelines.pageindex.config import is_pageindex_configured
-
         if not is_pageindex_configured():
             raise HTTPException(
                 status_code=400,
@@ -35,8 +37,6 @@ def assert_provider_ready(provider: str) -> None:
             )
 
     if provider == GRAPHRAG_PROVIDER:
-        from deeptutor.services.rag.pipelines.graphrag.config import is_graphrag_available
-
         if not is_graphrag_available():
             raise HTTPException(
                 status_code=400,
@@ -48,8 +48,6 @@ def assert_provider_ready(provider: str) -> None:
             )
 
     if provider == LIGHTRAG_PROVIDER:
-        from deeptutor.services.rag.pipelines.lightrag.config import is_lightrag_available
-
         if not is_lightrag_available():
             raise HTTPException(
                 status_code=400,
@@ -65,7 +63,6 @@ def enforce_provider_formats(provider: str, files: list[UploadFile]) -> None:
     """Reject files PageIndex's document endpoint does not accept, up front."""
     if provider != PAGEINDEX_PROVIDER:
         return
-    from deeptutor.services.rag.pipelines.pageindex.pipeline import SUPPORTED_EXTENSIONS
 
     unsupported = [
         f.filename

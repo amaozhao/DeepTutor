@@ -17,17 +17,40 @@ users until a grant assigns it.
 
 from __future__ import annotations
 
+import os
+import sys
+
 from rich.table import Table
 import typer
 
+from deeptutor.services.skill import credentials
+from deeptutor.services.skill.hub import (
+    HubError,
+    default_hub,
+    get_hub_provider,
+    install_from_hub,
+    preflight_skill_dir,
+    publish_to_hub,
+    read_skill_metadata,
+    resolve_publish_identity,
+)
+from deeptutor.services.skill.service import (
+    InvalidSkillNameError,
+    SkillExistsError,
+    SkillImportError,
+    SkillNotFoundError,
+    SkillReadOnlyError,
+    get_skill_service,
+)
+from deeptutor.services.skill.taxonomy import Option, domain_label, track_label
+
 from .common import console
+from .skill_login import hub_origin_from_base, run_login
+from .skill_prompts import collect_classification, select_one
 
 
 def _resolve_token(explicit: str | None, hub: str) -> str | None:
     """Publish token precedence: --token → env → ``skill login`` store."""
-    import os
-
-    from deeptutor.services.skill import credentials
 
     return (
         explicit
@@ -46,7 +69,6 @@ def _summary_table(
     overrides: dict[str, str],
 ) -> Table:
     """Confirmation table for the resolved classification (publish/update)."""
-    from deeptutor.services.skill.taxonomy import domain_label, track_label
 
     def shown(key: str, empty: str, *, as_domain: bool = False) -> str:
         vals = [v for v in overrides.get(key, "").split(",") if v]
@@ -81,7 +103,6 @@ def register(app: typer.Typer) -> None:
         limit: int = typer.Option(10, "--limit", min=1, max=50, help="Max results."),
     ) -> None:
         """Search a skill hub."""
-        from deeptutor.services.skill.hub import HubError, default_hub, get_hub_provider
 
         target = (hub or default_hub()).strip().lower()
         try:
@@ -121,14 +142,6 @@ def register(app: typer.Typer) -> None:
         ),
     ) -> None:
         """Install a skill from a hub into the local skill library."""
-        from deeptutor.services.skill.hub import HubError, install_from_hub
-        from deeptutor.services.skill.service import (
-            InvalidSkillNameError,
-            SkillExistsError,
-            SkillImportError,
-            get_skill_service,
-        )
-
         service = get_skill_service()
         try:
             outcome = install_from_hub(
@@ -179,12 +192,6 @@ def register(app: typer.Typer) -> None:
         ),
     ) -> None:
         """浏览器授权登录到 skill hub，令牌保存在本地供 publish / update 使用。"""
-        from deeptutor.services.skill import credentials
-        from deeptutor.services.skill.hub import HubError, default_hub, get_hub_provider
-        from deeptutor.services.skill.taxonomy import Option
-
-        from .skill_login import hub_origin_from_base, run_login
-        from .skill_prompts import select_one
 
         target_hub = (hub or default_hub()).strip().lower()
         try:
@@ -230,8 +237,6 @@ def register(app: typer.Typer) -> None:
         hub: str | None = typer.Option(None, "--hub", help="Target hub (default from settings)."),
     ) -> None:
         """清除本地保存的某个 hub 登录令牌。"""
-        from deeptutor.services.skill import credentials
-        from deeptutor.services.skill.hub import default_hub
 
         target_hub = (hub or default_hub()).strip().lower()
         if credentials.clear_token(target_hub):
@@ -268,19 +273,6 @@ def register(app: typer.Typer) -> None:
         optional facets — pre-filled from SKILL.md frontmatter — shows a summary
         for confirmation, then publishes. ``--yes`` skips the prompts for CI.
         """
-        import sys
-
-        from deeptutor.services.skill.hub import (
-            HubError,
-            default_hub,
-            preflight_skill_dir,
-            publish_to_hub,
-            read_skill_metadata,
-            resolve_publish_identity,
-        )
-        from deeptutor.services.skill.service import SkillImportError
-
-        from .skill_prompts import collect_classification
 
         target_hub = (hub or default_hub()).strip().lower()
 
@@ -377,19 +369,6 @@ def register(app: typer.Typer) -> None:
         升级新版本时，打标环节默认沿用该技能当前的 track 与各维度标签；回退则
         把 ``latest`` 指针指回某个更旧的已发布版本，不新建版本。
         """
-        import sys
-
-        from deeptutor.services.skill.hub import (
-            HubError,
-            default_hub,
-            get_hub_provider,
-            preflight_skill_dir,
-            publish_to_hub,
-        )
-        from deeptutor.services.skill.service import SkillImportError
-        from deeptutor.services.skill.taxonomy import Option
-
-        from .skill_prompts import collect_classification, select_one
 
         target_hub = (hub or default_hub()).strip().lower()
         if not sys.stdin.isatty():
@@ -523,7 +502,6 @@ def register(app: typer.Typer) -> None:
     @app.command("list")
     def skill_list() -> None:
         """List local skills, including hub provenance."""
-        from deeptutor.services.skill.service import get_skill_service
 
         service = get_skill_service()
         table = Table(title="Skills")
@@ -545,13 +523,6 @@ def register(app: typer.Typer) -> None:
         name: str = typer.Argument(..., help="Skill name to remove."),
     ) -> None:
         """Remove a user-layer skill (builtin skills are read-only)."""
-        from deeptutor.services.skill.service import (
-            InvalidSkillNameError,
-            SkillNotFoundError,
-            SkillReadOnlyError,
-            get_skill_service,
-        )
-
         try:
             get_skill_service().delete(name)
         except (SkillNotFoundError, InvalidSkillNameError):

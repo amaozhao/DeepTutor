@@ -9,10 +9,20 @@ from typing import Any
 from deeptutor.partners.bus.events import InboundMessage, OutboundMessage
 from deeptutor.partners.bus.queue import MessageBus
 
+try:
+    from loguru import logger as _log
+except ImportError:  # pragma: no cover - optional logging backend
+    import logging as _logging
+
+    _log = _logging.getLogger(__name__)
+
+try:
+    from deeptutor.partners.transcription import GroqTranscriptionProvider
+except Exception:  # pragma: no cover - optional transcription backend
+    GroqTranscriptionProvider = None
+
 
 def _logger():
-    from loguru import logger as _log
-
     return _log
 
 
@@ -48,9 +58,9 @@ class BaseChannel(ABC):
         """Transcribe an audio file via Groq Whisper. Returns empty string on failure."""
         if not self.transcription_api_key:
             return ""
+        if GroqTranscriptionProvider is None:
+            return ""
         try:
-            from deeptutor.partners.transcription import GroqTranscriptionProvider
-
             provider = GroqTranscriptionProvider(api_key=self.transcription_api_key)
             return await provider.transcribe(file_path)
         except Exception as e:

@@ -12,6 +12,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 import logging
 
+from deeptutor.tools.rag_tool import rag_search
+
 from ..models import SourceAnchor
 
 logger = logging.getLogger(__name__)
@@ -88,8 +90,6 @@ async def optional_rag_lookup(*, query: str, ctx) -> RagLookup:
         return RagLookup()
 
     try:
-        from deeptutor.tools.rag_tool import rag_search
-
         result = await rag_search(query=query, kb_name=ctx.primary_kb)
     except Exception as exc:
         logger.debug(f"RAG lookup skipped ({ctx.primary_kb}): {exc}")

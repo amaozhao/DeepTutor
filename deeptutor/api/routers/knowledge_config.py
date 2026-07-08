@@ -10,7 +10,9 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException
 
 from deeptutor.knowledge.providers import validate_registered_provider
+from deeptutor.services.config import get_kb_config_service
 from deeptutor.services.rag.factory import DEFAULT_PROVIDER
+from deeptutor.services.rag.index_probe import has_ready_provider_index
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -34,8 +36,6 @@ def _current_kb_base_dir() -> Path:
 async def get_all_kb_configs():
     """Get all knowledge base configurations from centralized config file."""
     try:
-        from deeptutor.services.config import get_kb_config_service
-
         service = get_kb_config_service()
         return service.get_all_configs()
     except Exception as exc:
@@ -47,8 +47,6 @@ async def get_all_kb_configs():
 async def get_kb_config(kb_name: str):
     """Get configuration for a specific knowledge base."""
     try:
-        from deeptutor.services.config import get_kb_config_service
-
         service = get_kb_config_service()
         config = service.get_kb_config(kb_name)
         return {"kb_name": kb_name, "config": config}
@@ -61,9 +59,6 @@ async def get_kb_config(kb_name: str):
 async def update_kb_config(kb_name: str, config: dict):
     """Update configuration for a specific knowledge base."""
     try:
-        from deeptutor.services.config import get_kb_config_service
-        from deeptutor.services.rag.index_probe import has_ready_provider_index
-
         config = dict(config or {})
         if "rag_provider" in config:
             requested_provider = validate_registered_provider(config.get("rag_provider"))
@@ -111,8 +106,6 @@ async def update_kb_config(kb_name: str, config: dict):
 async def sync_configs_from_metadata():
     """Sync all KB configurations from their metadata.json files to centralized config."""
     try:
-        from deeptutor.services.config import get_kb_config_service
-
         service = get_kb_config_service()
         service.sync_all_from_metadata(_current_kb_base_dir())
         return {"status": "success", "message": "Configurations synced from metadata files"}

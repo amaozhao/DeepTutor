@@ -10,6 +10,10 @@ from rich.console import Console
 from rich.table import Table
 import typer
 
+from deeptutor.services.partners import get_partner_manager
+from deeptutor.services.partners.manager import PartnerConfig
+from deeptutor.services.partners.workspace import write_soul
+
 console = Console()
 
 
@@ -17,7 +21,6 @@ def register(app: typer.Typer) -> None:
     @app.command("list")
     def partner_list() -> None:
         """List all partners."""
-        from deeptutor.services.partners import get_partner_manager
 
         partners = get_partner_manager().list_partners()
         if not partners:
@@ -49,7 +52,6 @@ def register(app: typer.Typer) -> None:
         name: str = typer.Argument(..., help="Partner ID to start."),
     ) -> None:
         """Start a partner."""
-        from deeptutor.services.partners import get_partner_manager
 
         mgr = get_partner_manager()
         try:
@@ -64,7 +66,6 @@ def register(app: typer.Typer) -> None:
         name: str = typer.Argument(..., help="Partner ID to stop."),
     ) -> None:
         """Stop a running partner."""
-        from deeptutor.services.partners import get_partner_manager
 
         mgr = get_partner_manager()
         stopped = asyncio.run(mgr.stop_partner(name))
@@ -81,9 +82,6 @@ def register(app: typer.Typer) -> None:
         model: str = typer.Option("", "--model", "-m", help="Model override."),
     ) -> None:
         """Create a new partner configuration and start it."""
-        from deeptutor.services.partners import get_partner_manager
-        from deeptutor.services.partners.manager import PartnerConfig
-        from deeptutor.services.partners.workspace import write_soul
 
         config = PartnerConfig(
             name=display_name or name,

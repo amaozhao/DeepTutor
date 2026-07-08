@@ -22,8 +22,15 @@ Decoupling notes:
 
 from __future__ import annotations
 
+import importlib
 import importlib.util
 import logging
+
+import numpy as np
+
+from deeptutor.services.config import load_lightrag_settings
+import deeptutor.services.embedding as embedding_service
+import deeptutor.services.llm as llm_service
 
 logger = logging.getLogger(__name__)
 
@@ -71,8 +78,6 @@ def query_kwargs_from_settings() -> dict:
     kwarg. Empty on any read error.
     """
     try:
-        from deeptutor.services.config import load_lightrag_settings
-
         settings = load_lightrag_settings()
         return {
             "top_k": int(settings.get("top_k", 60)),
@@ -87,9 +92,7 @@ def build_llm_model_func():
 
     Drops LightRAG's internal kwargs while preserving explicit ``messages``.
     """
-    from deeptutor.services.llm import get_llm_client
-
-    base = get_llm_client().get_model_func()
+    base = llm_service.get_llm_client().get_model_func()
 
     async def llm_model_func(
         prompt="",
@@ -110,9 +113,7 @@ def build_llm_model_func():
 
 def build_vision_model_func():
     """Wrap DeepTutor's vision-capable callable for RAG-Anything's image step."""
-    from deeptutor.services.llm import get_llm_client
-
-    base = get_llm_client().get_vision_model_func()
+    base = llm_service.get_llm_client().get_vision_model_func()
 
     async def vision_model_func(
         prompt="",
@@ -135,11 +136,12 @@ def build_vision_model_func():
 
 def build_embedding_func():
     """Wrap DeepTutor's embedding client in LightRAG's ``EmbeddingFunc``."""
-    from lightrag.utils import EmbeddingFunc
+    try:
+        embedding_func_type = importlib.import_module("lightrag.utils").EmbeddingFunc
+    except (ImportError, AttributeError) as exc:
+        raise LightRagNotAvailableError("LightRAG is not installed.")
 
-    from deeptutor.services.embedding import get_embedding_client, get_embedding_config
-
-    cfg = get_embedding_config()
+    cfg = embedding_service.get_embedding_config()
     dim = int(getattr(cfg, "dim", 0) or 0)
     if not dim:
         raise LightRagNotConfiguredError(
@@ -147,15 +149,13 @@ def build_embedding_func():
             "Settings → Catalog before using a LightRAG knowledge base."
         )
 
-    base_embedding_func = get_embedding_client().get_embedding_func()
+    base_embedding_func = embedding_service.get_embedding_client().get_embedding_func()
 
     async def embedding_func(texts):
-        import numpy as np
-
         vectors = await base_embedding_func(texts)
         return np.asarray(vectors, dtype=np.float32)
 
-    return EmbeddingFunc(
+    return embedding_func_type(
         embedding_dim=dim,
         max_token_size=int(getattr(cfg, "max_tokens", 0) or _DEFAULT_MAX_TOKEN_SIZE),
         func=embedding_func,

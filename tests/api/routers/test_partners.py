@@ -23,7 +23,7 @@ pytestmark = pytest.mark.skipif(
 
 @pytest.fixture
 def isolated_root(tmp_path, monkeypatch) -> Path:
-    from deeptutor.multi_user import paths
+    paths = __import__("deeptutor.multi_user", fromlist=["paths"]).paths
 
     project_root = tmp_path
     admin_root = (project_root / "data").resolve()
@@ -38,8 +38,10 @@ def isolated_root(tmp_path, monkeypatch) -> Path:
 
 @pytest.fixture
 def client(isolated_root, monkeypatch) -> TestClient:
-    import deeptutor.api.routers.partners as partners_router_mod
-    from deeptutor.services.partners.manager import PartnerManager
+    partners_router_mod = __import__("deeptutor.api.routers.partners", fromlist=["*"])
+    PartnerManager = __import__(
+        "deeptutor.services.partners.manager", fromlist=["PartnerManager"]
+    ).PartnerManager
 
     # Fresh manager per test so the module-level singleton can't leak
     # tmp-path state across tests.
@@ -352,7 +354,7 @@ class TestChatAttachments:
             res = client.post("/api/v1/partners/ada/chat", json={"content": "hello"})
 
         assert res.status_code == 409
-        from deeptutor.core.i18n import t
+        t = __import__("deeptutor.core.i18n", fromlist=["t"]).t
 
         assert res.json()["detail"] == t("api.partner_stopped_start_required")
 
@@ -365,10 +367,12 @@ class TestChatAttachments:
         assert data["auto_start"] is False
 
     def test_materialize_partner_attachment_writes_partner_media(self, isolated_root):
-        from deeptutor.api.routers.partners import (
-            ChatAttachmentRequest,
-            _materialize_partner_attachments,
-        )
+        ChatAttachmentRequest = __import__(
+            "deeptutor.api.routers.partners", fromlist=["ChatAttachmentRequest"]
+        ).ChatAttachmentRequest
+        _materialize_partner_attachments = __import__(
+            "deeptutor.api.routers.partners", fromlist=["_materialize_partner_attachments"]
+        )._materialize_partner_attachments
 
         paths = _materialize_partner_attachments(
             "ada",

@@ -30,12 +30,16 @@ def _seed_admin_and_user(seed_user) -> tuple[str, str]:
 
 
 def test_export_user_data_includes_workspace_grant_and_usage(seed_user):
-    from deeptutor.multi_user import paths
-    from deeptutor.multi_user.identity import (
-        record_terms_acceptance,
-        save_avatar_file,
-        set_disabled,
-    )
+    paths = __import__("deeptutor.multi_user", fromlist=["paths"]).paths
+    record_terms_acceptance = __import__(
+        "deeptutor.multi_user.identity", fromlist=["record_terms_acceptance"]
+    ).record_terms_acceptance
+    save_avatar_file = __import__(
+        "deeptutor.multi_user.identity", fromlist=["save_avatar_file"]
+    ).save_avatar_file
+    set_disabled = __import__(
+        "deeptutor.multi_user.identity", fromlist=["set_disabled"]
+    ).set_disabled
 
     username, user_id = _seed_admin_and_user(seed_user)
     set_disabled(username, True, reason="policy review")
@@ -81,8 +85,13 @@ def test_export_user_data_includes_workspace_grant_and_usage(seed_user):
 
 
 def test_delete_policy_archive_moves_workspace_and_grant(seed_user):
-    from deeptutor.multi_user import paths
-    from deeptutor.multi_user.identity import get_avatar_file, save_avatar_file
+    paths = __import__("deeptutor.multi_user", fromlist=["paths"]).paths
+    get_avatar_file = __import__(
+        "deeptutor.multi_user.identity", fromlist=["get_avatar_file"]
+    ).get_avatar_file
+    save_avatar_file = __import__(
+        "deeptutor.multi_user.identity", fromlist=["save_avatar_file"]
+    ).save_avatar_file
 
     _username, user_id = _seed_admin_and_user(seed_user)
     workspace = paths.ensure_user_workspace(user_id)
@@ -107,8 +116,13 @@ def test_delete_policy_archive_moves_workspace_and_grant(seed_user):
 
 
 def test_delete_policy_hard_delete_uses_grant_write_lock(seed_user):
-    from deeptutor.multi_user import paths
-    from deeptutor.multi_user.identity import get_avatar_file, save_avatar_file
+    paths = __import__("deeptutor.multi_user", fromlist=["paths"]).paths
+    get_avatar_file = __import__(
+        "deeptutor.multi_user.identity", fromlist=["get_avatar_file"]
+    ).get_avatar_file
+    save_avatar_file = __import__(
+        "deeptutor.multi_user.identity", fromlist=["save_avatar_file"]
+    ).save_avatar_file
 
     _username, user_id = _seed_admin_and_user(seed_user)
     save_avatar_file(user_id, b"\x89PNG\r\n\x1a\navatar", "png")
@@ -127,7 +141,7 @@ def test_delete_policy_hard_delete_uses_grant_write_lock(seed_user):
 
 
 def test_data_retention_policy_prunes_configured_files_and_archives(mu_isolated_root):
-    from deeptutor.multi_user import paths
+    paths = __import__("deeptutor.multi_user", fromlist=["paths"]).paths
 
     def days_ago(days: int) -> str:
         return (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
@@ -191,7 +205,7 @@ def test_data_retention_policy_prunes_configured_files_and_archives(mu_isolated_
 
 
 def test_data_retention_prune_uses_audit_write_lock(mu_isolated_root):
-    from deeptutor.multi_user import paths
+    paths = __import__("deeptutor.multi_user", fromlist=["paths"]).paths
 
     paths.ensure_system_dirs()
     audit_file = paths.SYSTEM_ROOT / "audit" / "usage.jsonl"
@@ -217,7 +231,7 @@ def test_data_retention_prune_uses_audit_write_lock(mu_isolated_root):
 
 
 def test_data_governance_settings_load_logs_corrupt_file(mu_isolated_root, caplog):
-    from deeptutor.multi_user import paths
+    paths = __import__("deeptutor.multi_user", fromlist=["paths"]).paths
 
     settings_file = paths.get_admin_path_service().get_settings_file("data_governance")
     settings_file.parent.mkdir(parents=True, exist_ok=True)
@@ -232,7 +246,7 @@ def test_data_governance_settings_load_logs_corrupt_file(mu_isolated_root, caplo
 
 
 def test_data_retention_logs_malformed_rows_and_unreadable_archives(mu_isolated_root, caplog):
-    from deeptutor.multi_user import paths
+    paths = __import__("deeptutor.multi_user", fromlist=["paths"]).paths
 
     paths.ensure_system_dirs()
     audit_file = paths.SYSTEM_ROOT / "audit" / "usage.jsonl"
@@ -254,7 +268,7 @@ def test_data_retention_logs_malformed_rows_and_unreadable_archives(mu_isolated_
 
 
 def test_multi_user_export_endpoint_returns_zip(seed_user):
-    from deeptutor.multi_user import router as multi_router
+    multi_router = __import__("deeptutor.multi_user", fromlist=["router"]).router
 
     username, user_id = _seed_admin_and_user(seed_user)
     app = FastAPI()
@@ -270,8 +284,8 @@ def test_multi_user_export_endpoint_returns_zip(seed_user):
 
 
 def _auth_client(monkeypatch) -> TestClient:
-    import deeptutor.api.routers.auth as auth_router
-    from deeptutor.services import auth as auth_service
+    auth_router = __import__("deeptutor.api.routers.auth", fromlist=["*"])
+    auth_service = __import__("deeptutor.services", fromlist=["auth"]).auth
 
     monkeypatch.setattr(auth_router, "AUTH_ENABLED", True)
     monkeypatch.setattr(auth_router, "POCKETBASE_ENABLED", False)
@@ -282,8 +296,8 @@ def _auth_client(monkeypatch) -> TestClient:
 
 
 def test_profile_export_endpoint_returns_current_user_zip(seed_user, monkeypatch):
-    from deeptutor.multi_user import paths
-    from deeptutor.services.auth import create_token
+    paths = __import__("deeptutor.multi_user", fromlist=["paths"]).paths
+    create_token = __import__("deeptutor.services.auth", fromlist=["create_token"]).create_token
 
     seed_user("admin", role="admin")
     user = seed_user("alice", password="password1234")
@@ -308,9 +322,16 @@ def test_profile_export_endpoint_returns_current_user_zip(seed_user, monkeypatch
 
 
 def test_profile_delete_requires_password_and_deletes_current_user_data(seed_user, monkeypatch):
-    from deeptutor.multi_user import paths
-    from deeptutor.multi_user.identity import get_avatar_file, get_user, save_avatar_file
-    from deeptutor.services.auth import create_token, decode_token
+    paths = __import__("deeptutor.multi_user", fromlist=["paths"]).paths
+    get_avatar_file = __import__(
+        "deeptutor.multi_user.identity", fromlist=["get_avatar_file"]
+    ).get_avatar_file
+    get_user = __import__("deeptutor.multi_user.identity", fromlist=["get_user"]).get_user
+    save_avatar_file = __import__(
+        "deeptutor.multi_user.identity", fromlist=["save_avatar_file"]
+    ).save_avatar_file
+    create_token = __import__("deeptutor.services.auth", fromlist=["create_token"]).create_token
+    decode_token = __import__("deeptutor.services.auth", fromlist=["decode_token"]).decode_token
 
     seed_user("admin", role="admin")
     user = seed_user("alice", password="password1234")
@@ -350,9 +371,15 @@ def test_profile_delete_requires_password_and_deletes_current_user_data(seed_use
 
 
 def test_profile_delete_keeps_user_when_data_policy_fails(seed_user, monkeypatch):
-    import deeptutor.api.routers.auth as auth_router
-    from deeptutor.multi_user.identity import get_avatar_file, get_user, save_avatar_file
-    from deeptutor.services.auth import create_token
+    auth_router = __import__("deeptutor.api.routers.auth", fromlist=["*"])
+    get_avatar_file = __import__(
+        "deeptutor.multi_user.identity", fromlist=["get_avatar_file"]
+    ).get_avatar_file
+    get_user = __import__("deeptutor.multi_user.identity", fromlist=["get_user"]).get_user
+    save_avatar_file = __import__(
+        "deeptutor.multi_user.identity", fromlist=["save_avatar_file"]
+    ).save_avatar_file
+    create_token = __import__("deeptutor.services.auth", fromlist=["create_token"]).create_token
 
     seed_user("admin", role="admin")
     user = seed_user("alice", password="password1234")
@@ -377,9 +404,9 @@ def test_profile_delete_keeps_user_when_data_policy_fails(seed_user, monkeypatch
 
 
 def test_admin_delete_keeps_user_when_data_policy_fails(seed_user, monkeypatch):
-    import deeptutor.api.routers.auth as auth_router
-    from deeptutor.multi_user.identity import get_user
-    from deeptutor.services.auth import create_token
+    auth_router = __import__("deeptutor.api.routers.auth", fromlist=["*"])
+    get_user = __import__("deeptutor.multi_user.identity", fromlist=["get_user"]).get_user
+    create_token = __import__("deeptutor.services.auth", fromlist=["create_token"]).create_token
 
     admin = seed_user("admin", role="admin")
     seed_user("alice")
@@ -410,7 +437,7 @@ def test_query_audit_events_filters_newest_first(mu_isolated_root):
 
 
 def test_audit_writes_use_local_file_lock(mu_isolated_root):
-    from deeptutor.multi_user import paths
+    paths = __import__("deeptutor.multi_user", fromlist=["paths"]).paths
 
     log_admin_action("user_create", target_user_id="u1", summary={"username": "alice"})
 
@@ -436,7 +463,7 @@ def test_audit_logs_when_file_lock_is_unavailable(mu_isolated_root, monkeypatch,
 
 
 def test_audit_queries_do_not_take_write_lock(mu_isolated_root):
-    from deeptutor.multi_user import paths
+    paths = __import__("deeptutor.multi_user", fromlist=["paths"]).paths
 
     log_admin_action("user_create", target_user_id="u1", summary={"username": "alice"})
     lock_file = paths.SYSTEM_ROOT / "audit" / "usage.lock"
@@ -447,7 +474,7 @@ def test_audit_queries_do_not_take_write_lock(mu_isolated_root):
 
 
 def test_audit_write_failure_logs_without_breaking_request(mu_isolated_root, monkeypatch, caplog):
-    import deeptutor.multi_user.audit as audit
+    audit = __import__("deeptutor.multi_user.audit", fromlist=["*"])
 
     def fail_lock():
         raise OSError("disk full")
@@ -461,7 +488,7 @@ def test_audit_write_failure_logs_without_breaking_request(mu_isolated_root, mon
 
 
 def test_audit_query_logs_malformed_lines_and_returns_valid_events(mu_isolated_root, caplog):
-    from deeptutor.multi_user import paths
+    paths = __import__("deeptutor.multi_user", fromlist=["paths"]).paths
 
     audit_file = paths.SYSTEM_ROOT / "audit" / "usage.jsonl"
     audit_file.parent.mkdir(parents=True, exist_ok=True)
@@ -483,7 +510,7 @@ def test_audit_query_logs_malformed_lines_and_returns_valid_events(mu_isolated_r
 
 
 def test_data_governance_settings_endpoint_normalizes_and_audits(mu_isolated_root):
-    from deeptutor.multi_user import router as multi_router
+    multi_router = __import__("deeptutor.multi_user", fromlist=["router"]).router
 
     app = FastAPI()
     app.dependency_overrides[multi_router.require_admin] = lambda: object()
@@ -530,7 +557,7 @@ def test_data_governance_settings_endpoint_normalizes_and_audits(mu_isolated_roo
 
 
 def test_data_governance_settings_write_is_atomic(mu_isolated_root):
-    from deeptutor.multi_user import paths
+    paths = __import__("deeptutor.multi_user", fromlist=["paths"]).paths
 
     saved = save_data_governance_settings({"audit_retention_days": 14})
 

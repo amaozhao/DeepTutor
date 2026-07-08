@@ -19,6 +19,9 @@ import json
 import logging
 import sqlite3
 
+import yaml
+
+from deeptutor.multi_user.paths import get_admin_path_service
 from deeptutor.services.memory.paths import Surface
 from deeptutor.services.memory.snapshot.entity import Entity
 from deeptutor.services.path_service import get_path_service
@@ -225,8 +228,6 @@ def _partner_display_name(partner_dir, partner_id: str) -> str:
     if not cfg.exists():
         return partner_id
     try:
-        import yaml
-
         data = yaml.safe_load(cfg.read_text(encoding="utf-8")) or {}
     except Exception:
         return partner_id
@@ -307,8 +308,6 @@ def read_partner_entities() -> list[Entity]:
     when the active scope IS the admin's own memory; a regular user's memory
     view must not see the admin's partner conversations.
     """
-    from deeptutor.multi_user.paths import get_admin_path_service
-
     admin_root = get_admin_path_service().workspace_root.resolve()
     if get_path_service().workspace_root.resolve() != admin_root:
         return []

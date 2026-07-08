@@ -26,7 +26,7 @@ from deeptutor.tools.builtin import (
 
 
 def test_builtin_package_keeps_public_tool_exports() -> None:
-    import deeptutor.tools.builtin as builtin
+    builtin = __import__("deeptutor.tools.builtin", fromlist=["*"])
 
     for name in builtin.__all__:
         if name.endswith("Tool") or name.endswith("ToolWrapper"):
@@ -83,8 +83,8 @@ async def test_exec_tool_reports_generated_public_artifacts(
             (work / "build_pdf.py").write_text("print('internal')", encoding="utf-8")
             return ExecResult(stdout="created report.pdf\n", exit_code=0)
 
-    import deeptutor.services.sandbox as sandbox_pkg
-    import deeptutor.services.sandbox.artifacts as sandbox_artifacts
+    sandbox_pkg = __import__("deeptutor.services.sandbox", fromlist=["*"])
+    sandbox_artifacts = __import__("deeptutor.services.sandbox.artifacts", fromlist=["*"])
 
     monkeypatch.setattr(sandbox_pkg, "get_sandbox_service", lambda: FakeSandboxService())
     monkeypatch.setattr(sandbox_artifacts, "get_path_service", lambda: path_service)
@@ -200,7 +200,7 @@ async def test_web_search_tool_wraps_sync_function(monkeypatch: pytest.MonkeyPat
 async def test_code_execution_tool_runs_python_via_sandbox(
     tmp_path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from pathlib import Path
+    Path = __import__("pathlib", fromlist=["Path"]).Path
 
     path_service = PathService(workspace_root=tmp_path / "data")
     workdir = path_service.get_task_workspace("chat", "turn_1") / "code_runs"
@@ -217,8 +217,8 @@ async def test_code_execution_tool_runs_python_via_sandbox(
             (run_dir / "result.txt").write_text("ok", encoding="utf-8")
             return ExecResult(stdout="4\n", exit_code=0)
 
-    import deeptutor.services.sandbox as sandbox_pkg
-    import deeptutor.services.sandbox.artifacts as sandbox_artifacts
+    sandbox_pkg = __import__("deeptutor.services.sandbox", fromlist=["*"])
+    sandbox_artifacts = __import__("deeptutor.services.sandbox.artifacts", fromlist=["*"])
 
     monkeypatch.setattr(sandbox_pkg, "get_sandbox_service", lambda: FakeSandboxService())
     monkeypatch.setattr(sandbox_artifacts, "get_path_service", lambda: path_service)
@@ -242,7 +242,7 @@ async def test_code_execution_tool_runs_python_via_sandbox(
 
 @pytest.mark.asyncio
 async def test_code_execution_tool_compiles_cpp(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
-    from pathlib import Path
+    Path = __import__("pathlib", fromlist=["Path"]).Path
 
     path_service = PathService(workspace_root=tmp_path / "data")
     workdir = path_service.get_task_workspace("chat", "turn_1") / "code_runs"
@@ -256,8 +256,8 @@ async def test_code_execution_tool_compiles_cpp(tmp_path, monkeypatch: pytest.Mo
             assert (run_dir / "main.cpp").exists()
             return ExecResult(stdout="hi\n", exit_code=0)
 
-    import deeptutor.services.sandbox as sandbox_pkg
-    import deeptutor.services.sandbox.artifacts as sandbox_artifacts
+    sandbox_pkg = __import__("deeptutor.services.sandbox", fromlist=["*"])
+    sandbox_artifacts = __import__("deeptutor.services.sandbox.artifacts", fromlist=["*"])
 
     monkeypatch.setattr(sandbox_pkg, "get_sandbox_service", lambda: FakeSandboxService())
     monkeypatch.setattr(sandbox_artifacts, "get_path_service", lambda: path_service)

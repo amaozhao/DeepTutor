@@ -44,7 +44,7 @@ def _require_env():
 
 def _get_client():
     try:
-        from pocketbase import PocketBase  # type: ignore[import]
+        PocketBase = __import__("pocketbase", fromlist=["PocketBase"]).PocketBase
     except ImportError:
         print("ERROR: pocketbase package not installed.")
         print("Run: pip install pocketbase")

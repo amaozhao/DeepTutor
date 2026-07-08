@@ -19,6 +19,7 @@ from deeptutor.learning.models import (
     LearningModule,
     LearningProgress,
     PendingQuestion,
+    QuizAttempt,
     RepetitionState,
     ReviewTask,
 )
@@ -71,8 +72,6 @@ def test_objective_status_new_learning_mastered():
     kp = _kp("kp1", KnowledgeType.MEMORY)
     progress = _progress(kp)
     assert policy.objective_status(progress, kp) == "new"
-    from deeptutor.learning.models import QuizAttempt
-
     progress.quiz_attempts.append(
         QuizAttempt(question_id="q", knowledge_point_id="kp1", is_correct=False)
     )
@@ -97,8 +96,6 @@ def test_next_objective_new_is_probe_then_practice_when_seen():
     kp = _kp("kp1", KnowledgeType.PROCEDURE)
     progress = _progress(kp)
     assert policy.next_objective(progress).action == "probe"
-    from deeptutor.learning.models import QuizAttempt
-
     progress.quiz_attempts.append(
         QuizAttempt(question_id="q", knowledge_point_id="kp1", is_correct=False)
     )

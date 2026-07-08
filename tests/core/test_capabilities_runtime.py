@@ -280,8 +280,9 @@ async def test_deep_research_capability_delegates_to_pipeline(
     in the capability module so we can assert what it was called with
     without spinning up real LLM I/O.
     """
-    import deeptutor.agents.research.capability as deep_research_mod
-    import deeptutor.agents.research.request_config  # noqa: F401
+    deep_research_mod = __import__("deeptutor.agents.research.capability", fromlist=["*"])
+    __import__("deeptutor.agents.research.request_config")
+    deeptutor = __import__("deeptutor")
 
     captured: dict[str, Any] = {}
 

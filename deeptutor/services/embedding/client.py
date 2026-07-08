@@ -2,9 +2,14 @@
 
 from __future__ import annotations
 
+import asyncio
+import concurrent.futures
 import logging
+import traceback
 from typing import Any, Dict, List, Optional
 
+from deeptutor.multi_user.context import get_current_user_or_none
+from deeptutor.multi_user.usage import enforce_current_user_quota, record_current_user_usage
 from deeptutor.services.config.provider_runtime import (
     EMBEDDING_PROVIDERS,
     embedding_endpoint_validation_error,
@@ -16,21 +21,15 @@ from .validation import validate_embedding_batch
 
 
 def _enforce_embedding_quota() -> None:
-    from deeptutor.multi_user.usage import enforce_current_user_quota
-
     enforce_current_user_quota()
 
 
 def _record_embedding_usage(config: EmbeddingConfig, count: int) -> None:
     if count <= 0:
         return
-    from deeptutor.multi_user.context import get_current_user_or_none
-
     if get_current_user_or_none() is None:
         return
     try:
-        from deeptutor.multi_user.usage import record_current_user_usage
-
         record_current_user_usage(
             session_id="",
             turn_id="",
@@ -96,8 +95,6 @@ class EmbeddingClient:
             return []
         _enforce_embedding_quota()
 
-        import asyncio
-
         # Clamp configured batch size against the provider's per-request item
         # cap. SiliconFlow Qwen3 family caps at 32; DashScope at 20; others
         # have generous defaults. Without this clamp, indexing a doc with many
@@ -127,8 +124,6 @@ class EmbeddingClient:
             except Exception as exc:
                 # Capture batch context so the task log stream / KB diagnostics
                 # show actionable info instead of a bare exception string.
-                import traceback
-
                 first_chunk_chars = len(batch[0]) if batch else 0
                 longest_chunk_chars = max((len(t) for t in batch), default=0)
                 self.logger.error(
@@ -212,8 +207,6 @@ class EmbeddingClient:
             )
         _enforce_embedding_quota()
 
-        import asyncio
-
         spec = EMBEDDING_PROVIDERS.get(self.config.binding)
         provider_max = spec.max_batch_items if spec else 256
         batch_size = max(1, min(self.config.batch_size, provider_max))
@@ -254,14 +247,10 @@ class EmbeddingClient:
         return all_embeddings
 
     def embed_sync(self, texts: List[str]) -> List[List[float]]:
-        import asyncio
-
         try:
             asyncio.get_running_loop()
         except RuntimeError:
             return asyncio.run(self.embed(texts))
-
-        import concurrent.futures
 
         with concurrent.futures.ThreadPoolExecutor() as executor:
             future = executor.submit(asyncio.run, self.embed(texts))

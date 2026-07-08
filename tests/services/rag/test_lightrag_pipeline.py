@@ -356,7 +356,9 @@ def _stub_engine(monkeypatch, answer: str = "ANSWER") -> list[dict]:
 
 
 def _stub_parse(monkeypatch, *, blocks=None, markdown: str = "# md") -> None:
-    from deeptutor.services.parsing.types import ParsedDocument
+    ParsedDocument = __import__(
+        "deeptutor.services.parsing.types", fromlist=["ParsedDocument"]
+    ).ParsedDocument
 
     class _Service:
         def parse(self, path, **_):

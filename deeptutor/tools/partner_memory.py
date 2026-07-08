@@ -21,6 +21,22 @@ from __future__ import annotations
 from typing import Any
 
 from deeptutor.core.tool_protocol import BaseTool, ToolDefinition, ToolParameter, ToolResult
+from deeptutor.multi_user.context import get_current_user_or_none
+from deeptutor.multi_user.paths import (
+    get_admin_path_service,
+    get_current_path_service,
+)
+from deeptutor.partners.config.paths import (
+    get_partner_sessions_dir,
+)
+from deeptutor.services.memory import (
+    get_memory_store,
+    memory_path_service_override,
+    paths,
+)
+from deeptutor.services.memory.trace import TraceEvent
+from deeptutor.services.partners.scope import PARTNER_USER_PREFIX
+from deeptutor.services.partners.sessions import PartnerSessionStore
 
 # Force-mounted on every partner turn (see ``compose_enabled_tools`` /
 # ``agentic_pipeline``). Single source of truth for the partner memory surface.
@@ -43,8 +59,6 @@ def _concat_l3() -> str:
     (not the chat placeholder) when nothing is stored, so the caller can label
     the empty layer cleanly.
     """
-    from deeptutor.services.memory import get_memory_store, paths
-
     store = get_memory_store()
     parts: list[str] = []
     for slot in paths.L3_SLOTS:
@@ -56,9 +70,6 @@ def _concat_l3() -> str:
 
 def _resolve_partner_id() -> str | None:
     """The active partner id, or ``None`` when not inside a partner scope."""
-    from deeptutor.multi_user.context import get_current_user_or_none
-    from deeptutor.services.partners.scope import PARTNER_USER_PREFIX
-
     user = get_current_user_or_none()
     user_id = user.scope.user_id if user and user.scope else ""
     if not user_id.startswith(PARTNER_USER_PREFIX):
@@ -102,12 +113,6 @@ class PartnerReadTool(BaseTool):
         )
 
     async def execute(self, **kwargs: Any) -> ToolResult:
-        from deeptutor.multi_user.paths import (
-            get_admin_path_service,
-            get_current_path_service,
-        )
-        from deeptutor.services.memory import memory_path_service_override
-
         with memory_path_service_override(get_admin_path_service()):
             shared = _concat_l3()
         with memory_path_service_override(get_current_path_service()):
@@ -168,10 +173,6 @@ class PartnerMemorizeTool(BaseTool):
         )
 
     async def execute(self, **kwargs: Any) -> ToolResult:
-        from deeptutor.multi_user.paths import get_current_path_service
-        from deeptutor.services.memory import get_memory_store, memory_path_service_override
-        from deeptutor.services.memory.trace import TraceEvent
-
         op = str(kwargs.get("op") or "").strip().lower()
         text = str(kwargs.get("text") or "").strip()
         target_id = kwargs.get("target_id")
@@ -245,9 +246,6 @@ class PartnerSearchTool(BaseTool):
         )
 
     async def execute(self, **kwargs: Any) -> ToolResult:
-        from deeptutor.partners.config.paths import get_partner_sessions_dir
-        from deeptutor.services.partners.sessions import PartnerSessionStore
-
         query = str(kwargs.get("query") or "").strip()
         if not query:
             return ToolResult(content="Error: query is required.", success=False)

@@ -22,6 +22,7 @@ from typing import Any
 
 from deeptutor.core.tool_protocol import BaseTool
 from deeptutor.runtime.registry.tool_registry import ToolRegistry
+from deeptutor.services.mcp.session_state import record_loaded_tools
 
 logger = logging.getLogger(__name__)
 
@@ -144,8 +145,6 @@ class DeferredToolLoader:
 
     def _persist(self) -> None:
         try:
-            from deeptutor.services.mcp.session_state import record_loaded_tools
-
             record_loaded_tools(self._session_id, self._loaded)
         except Exception:
             logger.warning("failed to persist deferred-tool state", exc_info=True)

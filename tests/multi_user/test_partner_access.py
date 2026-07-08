@@ -18,7 +18,7 @@ class _FakeManager:
 
 
 def _patch_manager(monkeypatch, partners: list[dict]) -> None:
-    import deeptutor.services.partners as pkg
+    pkg = __import__("deeptutor.services.partners", fromlist=["*"])
 
     monkeypatch.setattr(pkg, "get_partner_manager", lambda: _FakeManager(partners))
 
@@ -123,7 +123,7 @@ def test_non_admin_with_no_grant_sees_nothing(as_user, monkeypatch):
 
 
 def test_admin_partner_summary_is_identity_only(monkeypatch):
-    from deeptutor.multi_user import router
+    router = __import__("deeptutor.multi_user", fromlist=["router"]).router
 
     _patch_manager(
         monkeypatch,

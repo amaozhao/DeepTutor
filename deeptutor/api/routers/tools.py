@@ -17,14 +17,12 @@ from fastapi import APIRouter
 from pydantic import BaseModel
 
 from deeptutor.api.routers.settings import get_enabled_optional_tools
+from deeptutor.capabilities import capability_tool_owners
 from deeptutor.core.tool_protocol import BaseTool, ToolDefinition, ToolPromptHints
 from deeptutor.i18n.metadata_i18n import tool_description_i18n
-from deeptutor.tools.builtin import (
-    BUILTIN_TOOL_TYPES,
-    COMING_SOON_TOOL_TYPES,
-    TOOL_ALIASES,
-    USER_TOGGLEABLE_TOOL_NAMES,
-)
+from deeptutor.multi_user.tool_access import allowed_optional_tools
+from deeptutor.tools.builtin.names import TOOL_ALIASES, USER_TOGGLEABLE_TOOL_NAMES
+from deeptutor.tools.builtin.registry import BUILTIN_TOOL_TYPES, COMING_SOON_TOOL_TYPES
 
 logger = logging.getLogger(__name__)
 
@@ -170,7 +168,6 @@ def _build_tool_payload(
 async def list_builtin_tools() -> ToolsListResponse:
     """Return all built-in tools the chat agent can invoke, plus any
     coming-soon placeholders for the settings page."""
-    from deeptutor.capabilities import capability_tool_owners
 
     enabled_optional = set(get_enabled_optional_tools())
     owners = capability_tool_owners()
@@ -211,7 +208,6 @@ async def list_builtin_tools() -> ToolsListResponse:
     # Toggleable tools outside the user's admin grant don't exist for them:
     # hidden here so the settings page and composer match what turn_runtime
     # will actually allow.
-    from deeptutor.multi_user.tool_access import allowed_optional_tools
 
     allowed = allowed_optional_tools()
     if allowed is not None:

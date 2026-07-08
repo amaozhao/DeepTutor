@@ -10,11 +10,41 @@ import contextlib
 from contextvars import Token
 from dataclasses import dataclass, field
 import logging
+import threading
 from typing import TYPE_CHECKING, Any
 
+from deeptutor.agents.notebook import NotebookAnalysisAgent
+from deeptutor.api.routers.settings import get_enabled_optional_tools
+from deeptutor.book.context import build_book_context
+from deeptutor.core.context import UnifiedContext
 from deeptutor.core.stream import StreamEvent, StreamEventType
+from deeptutor.multi_user.context import get_current_user
+from deeptutor.multi_user.model_access import (
+    apply_allowed_llm_selection,
+    has_capability_access,
+    redacted_model_access,
+)
+from deeptutor.multi_user.paths import get_admin_path_service
+from deeptutor.multi_user.skill_access import assigned_skill_ids
+from deeptutor.multi_user.tool_access import allowed_optional_tools
+from deeptutor.multi_user.usage import enforce_current_user_quota, record_current_user_usage
+from deeptutor.runtime.orchestrator import ChatOrchestrator
+from deeptutor.runtime.request_contracts import validate_capability_config
+from deeptutor.services.config import get_model_catalog_service
+from deeptutor.services.llm import stream as llm_stream
 from deeptutor.services.llm.utils import clean_thinking_tags
+from deeptutor.services.memory import get_memory_store
+from deeptutor.services.model_selection import LLMSelection, apply_llm_selection_to_catalog
+from deeptutor.services.model_selection.runtime import (
+    activate_llm_selection,
+)
+from deeptutor.services.model_selection.runtime import (
+    reset_llm_selection as _reset_active_llm_selection,
+)
+from deeptutor.services.notebook import get_notebook_manager
+from deeptutor.services.persona import PersonaService, get_persona_service
 from deeptutor.services.session.attachments import prepare_attachments
+from deeptutor.services.session.context_builder import ContextBuilder
 from deeptutor.services.session.events import (
     artifact_attachments as _artifact_attachments,
 )
@@ -67,6 +97,15 @@ from deeptutor.services.session.payloads import (
     sanitize_session_title as _sanitize_session_title,
 )
 from deeptutor.services.session.protocol import SessionStoreProtocol
+from deeptutor.services.session.questions import format_question_bank_entry
+from deeptutor.services.session.source_inventory import (
+    build_inventory,
+    render_manifest,
+    serialize_referenced_transcript,
+)
+from deeptutor.services.session.store import get_session_store
+from deeptutor.services.skill import get_skill_service
+from deeptutor.services.skill.service import SkillService, render_skills_manifest
 
 if TYPE_CHECKING:
     from deeptutor.services.llm.config import LLMConfig
@@ -74,49 +113,6 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 _INTERRUPTED_TURN_ERROR = "Turn interrupted by server restart. Please retry your message."
-
-
-def _format_question_bank_entry(entry: dict[str, Any]) -> str:
-    """Render a single Question Bank entry as a structured Markdown block."""
-    lines: list[str] = []
-    title = str(entry.get("session_title", "") or "Untitled session")
-    difficulty = str(entry.get("difficulty", "") or "").strip()
-    qtype = str(entry.get("question_type", "") or "").strip()
-    is_correct = bool(entry.get("is_correct"))
-
-    badges: list[str] = []
-    if qtype:
-        badges.append(qtype)
-    if difficulty:
-        badges.append(difficulty)
-    badges.append("correct" if is_correct else "incorrect")
-    badge_text = " · ".join(badges)
-
-    lines.append(f"### Question (from {title}) [{badge_text}]")
-    lines.append(_clip_text(str(entry.get("question", "") or ""), limit=2000))
-
-    options = entry.get("options") or {}
-    if isinstance(options, dict) and options:
-        lines.append("")
-        lines.append("**Options:**")
-        for key in sorted(options.keys()):
-            lines.append(f"- {key}. {options[key]}")
-
-    user_answer = str(entry.get("user_answer", "") or "").strip()
-    correct_answer = str(entry.get("correct_answer", "") or "").strip()
-    if user_answer:
-        lines.append("")
-        lines.append(f"**User's Answer:** {_clip_text(user_answer, limit=1000)}")
-    if correct_answer:
-        lines.append(f"**Reference Answer:** {_clip_text(correct_answer, limit=1500)}")
-
-    explanation = str(entry.get("explanation", "") or "").strip()
-    if explanation:
-        lines.append("")
-        lines.append("**Explanation:**")
-        lines.append(_clip_text(explanation, limit=2000))
-
-    return "\n".join(lines)
 
 
 async def _count_branch_user_turns(
@@ -183,7 +179,7 @@ async def _build_question_bank_context(
             entry = None
         if not entry:
             continue
-        blocks.append(_format_question_bank_entry(entry))
+        blocks.append(format_question_bank_entry(entry))
     return "\n\n---\n\n".join(blocks)
 
 
@@ -209,8 +205,6 @@ class TurnRuntimeManager:
     """Run one turn in the background and multiplex persisted/live events."""
 
     def __init__(self, store: SessionStoreProtocol | None = None) -> None:
-        from deeptutor.services.session import get_session_store
-
         self.store = store or get_session_store()
         self._lock = asyncio.Lock()
         self._executions: dict[str, _TurnExecution] = {}
@@ -285,8 +279,6 @@ class TurnRuntimeManager:
             key: raw_config.pop(key) for key in runtime_only_keys if key in raw_config
         }
         try:
-            from deeptutor.runtime.request_contracts import validate_capability_config
-
             validated_public_config = validate_capability_config(capability, raw_config)
         except ValueError as exc:
             raise RuntimeError(str(exc)) from exc
@@ -316,8 +308,6 @@ class TurnRuntimeManager:
             raise RuntimeError(str(exc)) from exc
         if llm_selection:
             try:
-                from deeptutor.multi_user.model_access import apply_allowed_llm_selection
-
                 llm_selection = apply_allowed_llm_selection(llm_selection) or {}
             except PermissionError as exc:
                 raise RuntimeError(str(exc)) from exc
@@ -326,12 +316,6 @@ class TurnRuntimeManager:
             # never silently fall through to the global LLM client (which is
             # configured from admin runtime settings). Admin keeps the existing behavior
             # (None llm_selection → default config from admin scope).
-            from deeptutor.multi_user.context import get_current_user
-            from deeptutor.multi_user.model_access import (
-                has_capability_access,
-                redacted_model_access,
-            )
-
             current_user = get_current_user()
             if not current_user.is_admin:
                 # Single gate, shared with the frontend lock and any HTTP
@@ -352,12 +336,6 @@ class TurnRuntimeManager:
                     "model_id": assigned_llms[0].get("model_id"),
                 }
         if llm_selection:
-            from deeptutor.services.config import get_model_catalog_service
-            from deeptutor.services.model_selection import (
-                LLMSelection,
-                apply_llm_selection_to_catalog,
-            )
-
             try:
                 apply_llm_selection_to_catalog(
                     get_model_catalog_service().load(),
@@ -373,8 +351,6 @@ class TurnRuntimeManager:
         # an empty list) keep their value untouched.
         if payload.get("tools") is None:
             try:
-                from deeptutor.api.routers.settings import get_enabled_optional_tools
-
                 payload = {**payload, "tools": list(get_enabled_optional_tools())}
             except Exception as exc:
                 logger.warning("Failed to load enabled optional tools: %s", exc)
@@ -383,8 +359,6 @@ class TurnRuntimeManager:
         # back-fill so explicit caller lists and settings defaults pass the
         # same gate; this is the single enforcement point for every
         # capability's turn.
-        from deeptutor.multi_user.tool_access import allowed_optional_tools
-
         allowed_tools = allowed_optional_tools()
         if allowed_tools is not None:
             payload = {
@@ -738,7 +712,9 @@ class TurnRuntimeManager:
         seen_artifact_urls: set[str] = set()
         stream_done_sent = False
         llm_scope_token: Token[LLMConfig | None] | None = None
-        reset_active_llm_selection: Callable[[Token[LLMConfig | None] | None], None] | None = None
+        reset_active_llm_selection: Callable[[Token[LLMConfig | None] | None], None] | None = (
+            _reset_active_llm_selection
+        )
         # One queue per turn for ``ask_user`` style pause-resume.
         # Created here (BEFORE the orchestrator runs) so the pipeline can
         # await on the awaitable we publish into ``context.metadata``.
@@ -750,21 +726,6 @@ class TurnRuntimeManager:
             return await reply_queue.get()
 
         try:
-            from deeptutor.agents.notebook import NotebookAnalysisAgent
-            from deeptutor.book.context import build_book_context
-            from deeptutor.core.context import UnifiedContext
-            from deeptutor.runtime.orchestrator import ChatOrchestrator
-            from deeptutor.services.memory import get_memory_store
-            from deeptutor.services.model_selection.runtime import (
-                activate_llm_selection,
-            )
-            from deeptutor.services.model_selection.runtime import (
-                reset_llm_selection as reset_active_llm_selection,
-            )
-            from deeptutor.services.notebook import get_notebook_manager
-            from deeptutor.services.session.context_builder import ContextBuilder
-            from deeptutor.services.skill import get_skill_service
-
             request_config = dict(payload.get("config", {}) or {})
             followup_question_context = _extract_followup_question_context(request_config)
             persist_user_message = _extract_persist_user_message(request_config)
@@ -828,12 +789,6 @@ class TurnRuntimeManager:
                     )
 
             llm_config, llm_scope_token = activate_llm_selection(payload.get("llm_selection"))
-            from deeptutor.multi_user.context import get_current_user
-            from deeptutor.multi_user.paths import get_admin_path_service
-            from deeptutor.multi_user.skill_access import assigned_skill_ids
-            from deeptutor.multi_user.usage import enforce_current_user_quota
-            from deeptutor.services.persona import PersonaService, get_persona_service
-            from deeptutor.services.skill.service import SkillService, render_skills_manifest
 
             current_user = get_current_user()
             enforce_current_user_quota()
@@ -907,11 +862,6 @@ class TurnRuntimeManager:
             source_index: dict[str, str] = {}
 
             if is_chat_capability:
-                from deeptutor.services.session.source_inventory import (
-                    build_inventory,
-                    render_manifest,
-                )
-
                 resolved_notebook_records = (
                     get_notebook_manager().get_records_by_references(notebook_references)
                     if notebook_references
@@ -955,10 +905,6 @@ class TurnRuntimeManager:
                         )
 
                 if history_references:
-                    from deeptutor.services.session.source_inventory import (
-                        serialize_referenced_transcript,
-                    )
-
                     history_records: list[dict[str, Any]] = []
                     for session_ref in history_references:
                         history_session_id = str(session_ref or "").strip()
@@ -1210,8 +1156,6 @@ class TurnRuntimeManager:
                     attachments=generated_attachments or None,
                 )
             try:
-                from deeptutor.multi_user.usage import record_current_user_usage
-
                 record_current_user_usage(
                     session_id=session_id,
                     turn_id=turn_id,
@@ -1429,8 +1373,6 @@ class TurnRuntimeManager:
 
         title = ""
         try:
-            from deeptutor.services.llm import stream as llm_stream
-
             zh = str(ui_language or "").lower().startswith("zh")
             if zh:
                 sys_prompt = (
@@ -1517,15 +1459,11 @@ class TurnRuntimeManager:
         )
 
 
-import threading
-
 _runtime_lock = threading.Lock()
 _runtime_instances: dict[str, TurnRuntimeManager] = {}
 
 
 def get_turn_runtime_manager() -> TurnRuntimeManager:
-    from deeptutor.services.session import get_session_store
-
     store = get_session_store()
     key = str(getattr(store, "db_path", id(store)))
     with _runtime_lock:

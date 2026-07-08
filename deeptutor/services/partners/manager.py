@@ -20,11 +20,18 @@ from typing import Any, Awaitable, Callable
 
 import yaml
 
+from deeptutor.events.event_bus import Event, EventType, get_event_bus
+from deeptutor.partners.bus.events import InboundMessage
+from deeptutor.partners.bus.events import OutboundMessage as _OMsg
+from deeptutor.partners.bus.queue import MessageBus
+from deeptutor.partners.channels.manager import ChannelManager
 from deeptutor.partners.config.paths import (
     get_data_dir,
     get_partner_dir,
     get_partner_sessions_dir,
 )
+from deeptutor.partners.config.schema import ChannelsConfig
+from deeptutor.services.cron import get_cron_service
 from deeptutor.services.partners.runtime import PartnerRunner
 from deeptutor.services.partners.sessions import PartnerSessionStore
 from deeptutor.services.partners.workspace import (
@@ -479,8 +486,6 @@ class PartnerManager:
             config = PartnerConfig(name=partner_id)
             self.save_config(partner_id, config)
 
-        from deeptutor.partners.bus.queue import MessageBus
-
         bus = MessageBus()
         store = self.session_store(partner_id)
         runner = PartnerRunner(partner_id, config, bus, store, save_config=self.save_config)
@@ -524,9 +529,6 @@ class PartnerManager:
     async def _outbound_router(self, partner_id: str, bus: Any, instance: PartnerInstance) -> None:
         """Route outbound messages to channels, web notify_queue, and EventBus."""
         try:
-            from deeptutor.events.event_bus import Event, EventType, get_event_bus
-            from deeptutor.partners.bus.events import OutboundMessage as _OMsg
-
             event_bus = get_event_bus()
             while True:
                 msg: _OMsg = await bus.consume_outbound()
@@ -603,8 +605,6 @@ class PartnerManager:
         """Construct a ``ChannelManager`` from ``config.channels`` or ``None``."""
         if not config.channels:
             return None
-        from deeptutor.partners.channels.manager import ChannelManager
-        from deeptutor.partners.config.schema import ChannelsConfig
 
         channels_config = ChannelsConfig(**config.channels)
         manager = ChannelManager(channels_config, bus)
@@ -799,8 +799,6 @@ class PartnerManager:
         if not instance or not instance.running or not instance.runner:
             raise RuntimeError(f"Partner '{partner_id}' is not running")
 
-        from deeptutor.partners.bus.events import InboundMessage
-
         resolved_key = (
             str(session_key).strip()
             if session_key
@@ -945,8 +943,6 @@ class PartnerManager:
         await self.stop_partner(partner_id, preserve_auto_start=False)
         self._stores.pop(partner_id, None)
         try:
-            from deeptutor.services.cron import get_cron_service
-
             get_cron_service().remove_owner_jobs(f"partner:{partner_id}")
         except Exception:
             logger.warning("Failed to clear cron jobs for '%s'", partner_id, exc_info=True)

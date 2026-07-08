@@ -7,10 +7,12 @@ from fastapi.testclient import TestClient
 
 
 def _client(mu_isolated_root, monkeypatch) -> tuple[TestClient, str]:
-    import deeptutor.api.routers.auth as auth_router
-    from deeptutor.api.security import reset_security_state
-    from deeptutor.multi_user.identity import save_user
-    from deeptutor.services import auth as auth_service
+    auth_router = __import__("deeptutor.api.routers.auth", fromlist=["*"])
+    reset_security_state = __import__(
+        "deeptutor.api.security", fromlist=["reset_security_state"]
+    ).reset_security_state
+    save_user = __import__("deeptutor.multi_user.identity", fromlist=["save_user"]).save_user
+    auth_service = __import__("deeptutor.services", fromlist=["auth"]).auth
 
     reset_security_state()
     admin = save_user("admin", "$2b$12$placeholder", role="admin")
@@ -55,11 +57,13 @@ def test_admin_invite_router_stays_mounted_under_auth(mu_isolated_root, monkeypa
 
 
 def test_invite_router_rejects_non_admin(mu_isolated_root, monkeypatch):
-    import deeptutor.api.routers.auth as auth_router
-    from deeptutor.api.security import reset_security_state
-    from deeptutor.multi_user.identity import save_user
-    from deeptutor.services import auth as auth_service
-    from deeptutor.services.auth import TokenPayload
+    auth_router = __import__("deeptutor.api.routers.auth", fromlist=["*"])
+    reset_security_state = __import__(
+        "deeptutor.api.security", fromlist=["reset_security_state"]
+    ).reset_security_state
+    save_user = __import__("deeptutor.multi_user.identity", fromlist=["save_user"]).save_user
+    auth_service = __import__("deeptutor.services", fromlist=["auth"]).auth
+    TokenPayload = __import__("deeptutor.services.auth", fromlist=["TokenPayload"]).TokenPayload
 
     reset_security_state()
     user = save_user("learner@example.com", "$2b$12$placeholder", role="user")

@@ -25,6 +25,7 @@ from typing import Iterator
 from deeptutor.runtime.home import get_runtime_home
 from deeptutor.services.path_service import PathService
 
+from .current import get_current_user_or_none, reset_current_user, set_current_user
 from .models import LOCAL_ADMIN_ID, LOCAL_ADMIN_USERNAME, CurrentUser, UserScope
 
 logger = logging.getLogger(__name__)
@@ -141,7 +142,6 @@ def get_admin_path_service() -> PathService:
 
 
 def get_current_path_service() -> PathService:
-    from .context import get_current_user_or_none
 
     user = get_current_user_or_none()
     if user is None:
@@ -153,7 +153,6 @@ def get_current_path_service() -> PathService:
 
 @contextmanager
 def user_context(user: CurrentUser) -> Iterator[None]:
-    from .context import reset_current_user, set_current_user
 
     token = set_current_user(user)
     try:

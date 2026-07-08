@@ -12,12 +12,14 @@ from pathlib import Path
 import shutil
 from typing import Optional
 
+from deeptutor.knowledge.manager import KnowledgeBaseManager
 from deeptutor.knowledge.naming import validate_knowledge_base_name
 from deeptutor.knowledge.progress_tracker import ProgressStage, ProgressTracker
-from deeptutor.services.config import resolve_llm_runtime_config
+from deeptutor.services.config import get_kb_config_service, resolve_llm_runtime_config
 from deeptutor.services.file_io import atomic_write_json
 from deeptutor.services.rag.factory import normalize_provider_name
 from deeptutor.services.rag.file_routing import FileTypeRouter
+from deeptutor.services.rag.index_probe import inspect_kb_versions
 from deeptutor.services.rag.service import RAGService
 
 logger = logging.getLogger(__name__)
@@ -50,8 +52,6 @@ class KnowledgeBaseInitializer:
     def _register_to_config(self) -> None:
         """Register KB in kb_config.json with initializing state."""
         try:
-            from deeptutor.knowledge.manager import KnowledgeBaseManager
-
             manager = KnowledgeBaseManager(base_dir=str(self.base_dir))
             manager.config = manager._load_config()
             if self.kb_name in manager.config.get("knowledge_bases", {}):
@@ -98,8 +98,6 @@ class KnowledgeBaseInitializer:
         atomic_write_json(metadata_file, metadata)
 
         try:
-            from deeptutor.services.config import get_kb_config_service
-
             service = get_kb_config_service()
             service.set_rag_provider(self.kb_name, provider)
             service.set_kb_config(self.kb_name, {"needs_reindex": False})
@@ -229,8 +227,6 @@ class KnowledgeBaseInitializer:
     async def display_statistics_generic(self) -> None:
         """Display basic statistics."""
         raw_files = list(self.raw_dir.glob("*")) if self.raw_dir.exists() else []
-        from deeptutor.services.rag.index_probe import inspect_kb_versions
-
         index_versions = inspect_kb_versions(self.kb_dir, self.rag_provider)
 
         logger.info("=" * 50)
@@ -251,8 +247,6 @@ async def initialize_knowledge_base(
     rag_provider: Optional[str] = None,
 ) -> bool:
     """Convenience initializer used by CLI wrappers."""
-    from deeptutor.knowledge.manager import KnowledgeBaseManager
-
     manager = KnowledgeBaseManager(base_dir=base_dir)
     initializer = KnowledgeBaseInitializer(
         kb_name=kb_name,

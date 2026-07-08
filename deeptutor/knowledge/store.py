@@ -10,6 +10,8 @@ from pathlib import Path
 import sys
 
 from deeptutor.knowledge.kb_types import is_connected_kb
+from deeptutor.services.embedding import get_embedding_config
+from deeptutor.services.rag.embedding_signature import signature_from_embedding_config
 from deeptutor.services.rag.factory import (
     DEFAULT_PROVIDER,
     KNOWN_PROVIDERS,
@@ -18,6 +20,17 @@ from deeptutor.services.rag.factory import (
     provider_uses_embedding_versions,
 )
 from deeptutor.services.rag.index_probe import inspect_kb_versions, inspect_provider_version
+from deeptutor.services.rag.index_versioning import find_matching_version
+
+try:
+    import fcntl
+except ImportError:  # pragma: no cover - Windows
+    fcntl = None
+
+try:
+    import msvcrt
+except ImportError:  # pragma: no cover - non-Windows
+    msvcrt = None
 
 logger = logging.getLogger(__name__)
 
@@ -25,8 +38,6 @@ logger = logging.getLogger(__name__)
 @contextmanager
 def _file_lock_shared(file_handle):
     if sys.platform == "win32":
-        import msvcrt
-
         msvcrt.locking(file_handle.fileno(), msvcrt.LK_NBLCK, 1)
         try:
             yield
@@ -34,8 +45,6 @@ def _file_lock_shared(file_handle):
             file_handle.seek(0)
             msvcrt.locking(file_handle.fileno(), msvcrt.LK_UNLCK, 1)
     else:
-        import fcntl
-
         fcntl.flock(file_handle.fileno(), fcntl.LOCK_SH)
         try:
             yield
@@ -46,8 +55,6 @@ def _file_lock_shared(file_handle):
 @contextmanager
 def _file_lock_exclusive(file_handle):
     if sys.platform == "win32":
-        import msvcrt
-
         msvcrt.locking(file_handle.fileno(), msvcrt.LK_NBLCK, 1)
         try:
             yield
@@ -55,8 +62,6 @@ def _file_lock_exclusive(file_handle):
             file_handle.seek(0)
             msvcrt.locking(file_handle.fileno(), msvcrt.LK_UNLCK, 1)
     else:
-        import fcntl
-
         fcntl.flock(file_handle.fileno(), fcntl.LOCK_EX)
         try:
             yield
@@ -66,8 +71,6 @@ def _file_lock_exclusive(file_handle):
 
 def _get_embedding_fingerprint() -> tuple[str, int] | None:
     try:
-        from deeptutor.services.embedding import get_embedding_config
-
         cfg = get_embedding_config()
         return (cfg.model, cfg.dim)
     except Exception:
@@ -79,9 +82,6 @@ def _reconcile_embedding_flags(
     base_dir: Path | None = None,
     embedding_fingerprint=_get_embedding_fingerprint,
 ) -> bool:
-    from deeptutor.services.rag.embedding_signature import signature_from_embedding_config
-    from deeptutor.services.rag.index_versioning import find_matching_version
-
     fp = embedding_fingerprint()
     signature = signature_from_embedding_config()
     changed = False

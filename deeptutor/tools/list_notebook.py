@@ -22,6 +22,8 @@ import datetime as _dt
 import logging
 from typing import Any
 
+from deeptutor.services.notebook import get_notebook_manager
+
 logger = logging.getLogger(__name__)
 
 # Defensive ceilings so a freak case (user with thousands of notebooks
@@ -59,8 +61,6 @@ def list_notebooks_or_records(
     """
     manager = notebook_manager
     if manager is None:
-        from deeptutor.services.notebook import get_notebook_manager
-
         manager = get_notebook_manager()
 
     nid = (notebook_id or "").strip()

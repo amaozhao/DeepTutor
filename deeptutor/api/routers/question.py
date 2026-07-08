@@ -10,6 +10,10 @@ import traceback
 from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 
 from deeptutor.agents.question import AgentCoordinator
+
+# Setup module logger with unified logging system (from config)
+from deeptutor.api.routers.auth import ws_auth_failed, ws_require_auth
+from deeptutor.api.security import require_ws_turn_rate_limit
 from deeptutor.api.utils.task_id_manager import TaskIDManager
 from deeptutor.logging import (
     ProcessLogEvent,
@@ -17,6 +21,7 @@ from deeptutor.logging import (
     capture_process_logs,
     current_log_context,
 )
+from deeptutor.multi_user.context import get_current_user, reset_current_user
 from deeptutor.services.config import PROJECT_ROOT, load_config_with_main
 from deeptutor.services.llm.config import get_llm_config
 from deeptutor.services.path_service import get_path_service
@@ -25,7 +30,6 @@ from deeptutor.tools.question import mimic_exam_questions
 from deeptutor.utils.document_validator import DocumentValidator
 from deeptutor.utils.error_utils import format_exception_message
 
-# Setup module logger with unified logging system (from config)
 config = load_config_with_main("main.yaml", PROJECT_ROOT)
 log_dir = config.get("paths", {}).get("user_log_dir") or config.get("logging", {}).get("log_dir")
 logger = logging.getLogger(__name__)
@@ -66,9 +70,6 @@ async def websocket_mimic_generate(websocket: WebSocket):
         "max_questions": 5  // optional
     }
     """
-    from deeptutor.api.routers.auth import ws_auth_failed, ws_require_auth
-    from deeptutor.api.security import require_ws_turn_rate_limit
-    from deeptutor.multi_user.context import get_current_user, reset_current_user
 
     user_token = await ws_require_auth(websocket)
     if user_token is ws_auth_failed:
@@ -358,9 +359,6 @@ async def websocket_mimic_generate(websocket: WebSocket):
 
 @router.websocket("/generate")
 async def websocket_question_generate(websocket: WebSocket):
-    from deeptutor.api.routers.auth import ws_auth_failed, ws_require_auth
-    from deeptutor.api.security import require_ws_turn_rate_limit
-    from deeptutor.multi_user.context import get_current_user, reset_current_user
 
     user_token = await ws_require_auth(websocket)
     if user_token is ws_auth_failed:

@@ -14,6 +14,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from pathlib import Path
+import shutil
 import traceback
 from typing import Any, Dict, List, Optional
 
@@ -290,8 +291,6 @@ class PageIndexPipeline:
     # ----- lifecycle ------------------------------------------------------
 
     async def delete(self, kb_name: str, **_kwargs) -> bool:
-        import shutil
-
         kb_dir = resolve_kb_dir(self.kb_base_dir, kb_name)
         # Best-effort: drop hosted documents so they don't linger on the account.
         try:
@@ -317,8 +316,6 @@ class PageIndexPipeline:
             if storage_dir.is_dir() and not any(
                 child.name != storage.META_FILENAME for child in storage_dir.iterdir()
             ):
-                import shutil
-
                 shutil.rmtree(storage_dir)
         except Exception as exc:  # pragma: no cover - best-effort
             self.logger.warning("Could not clean up failed version dir %s: %s", storage_dir, exc)

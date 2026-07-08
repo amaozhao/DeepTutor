@@ -7,6 +7,7 @@ image providers are configured through the same Settings catalog UI.
 
 from __future__ import annotations
 
+import importlib
 from typing import Any
 
 from deeptutor.services.generation_http import GenerationProviderError
@@ -28,12 +29,12 @@ async def generate_image(
     Returns a list of ``(image_bytes, content_type)``. ``size`` / ``quality`` /
     ``style`` override the catalog defaults for this call.
     """
-    from deeptutor.services.config.provider_runtime import resolve_imagegen_runtime_config
-
     prompt = (prompt or "").strip()
     if not prompt:
         raise GenerationProviderError("Cannot generate an image from an empty prompt.")
-    config = resolve_imagegen_runtime_config(catalog=catalog)
+    config = importlib.import_module(
+        "deeptutor.services.config.provider_runtime"
+    ).resolve_imagegen_runtime_config(catalog=catalog)
     if size:
         config.size = size
     if quality:

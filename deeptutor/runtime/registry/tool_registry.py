@@ -12,7 +12,8 @@ import logging
 from typing import Any
 
 from deeptutor.core.tool_protocol import BaseTool, ToolDefinition, ToolPromptHints
-from deeptutor.tools.builtin import BUILTIN_TOOL_TYPES, TOOL_ALIASES
+from deeptutor.tools.builtin.names import TOOL_ALIASES
+from deeptutor.tools.builtin.registry import BUILTIN_TOOL_TYPES
 from deeptutor.tools.prompting import ToolPromptComposer
 
 logger = logging.getLogger(__name__)

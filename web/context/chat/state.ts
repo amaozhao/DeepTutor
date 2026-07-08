@@ -1,12 +1,12 @@
-import { readStoredLanguage } from "../app-shell-storage";
-import type { BookReferencePayload } from "../../lib/book-references";
+import { readStoredLanguage } from "@/context/app-shell-storage";
+import type { BookReferencePayload } from "@/lib/book-references";
 import {
   isNarrationMarker,
   recomputeAnswerContent,
   shouldAppendEventContent,
-} from "../../lib/stream";
-import { reconcileTurnIds } from "../../lib/turn-reconcile";
-import type { LLMSelection, StreamEvent } from "../../lib/unified-ws";
+} from "@/lib/stream";
+import { reconcileTurnIds } from "@/lib/turn-reconcile";
+import type { LLMSelection, StreamEvent } from "@/lib/unified-ws";
 
 export type SessionRuntimeStatus =
   | "idle"

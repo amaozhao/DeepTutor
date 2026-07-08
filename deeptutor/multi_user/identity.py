@@ -13,8 +13,16 @@ import threading
 from typing import Any
 from uuid import uuid4
 
+try:
+    import fcntl as fcntl_module
+except ImportError:  # pragma: no cover - Windows
+    fcntl_module = None
+
+from . import shared_state
 from .models import Role
 from .paths import PROJECT_ROOT, SYSTEM_ROOT, migrate_legacy_multi_user_tree
+from .shared_state import load_or_create_auth_secret as _postgres_secret
+from .shared_state import postgres_enabled, update_users
 
 logger = logging.getLogger(__name__)
 
@@ -105,15 +113,11 @@ def auth_store_write_lock() -> Iterator[None]:
     lock_path = USERS_FILE.parent / "users.lock"
     with _USERS_WRITE_LOCK:
         with lock_path.open("a+", encoding="utf-8") as handle:
-            fcntl_module = None
             locked = False
             try:
-                import fcntl as fcntl_module
-
-                fcntl_module.flock(handle.fileno(), fcntl_module.LOCK_EX)
-                locked = True
-            except ImportError:
-                pass
+                if fcntl_module is not None:
+                    fcntl_module.flock(handle.fileno(), fcntl_module.LOCK_EX)
+                    locked = True
             except OSError as exc:
                 logger.warning("Auth store write lock unavailable for %s: %s", lock_path, exc)
             try:
@@ -247,7 +251,6 @@ def _load_users_unlocked(
 
 
 def _postgres_enabled() -> bool:
-    from .shared_state import postgres_enabled
 
     return postgres_enabled()
 
@@ -256,7 +259,6 @@ def _postgres_load_users(
     env_username: str = "",
     env_password_hash: str = "",
 ) -> dict[str, dict[str, Any]]:
-    from . import shared_state
 
     users = shared_state.load_users()
     if not users and USERS_FILE.exists():
@@ -300,14 +302,12 @@ def _postgres_load_users(
 
 
 def _postgres_save_users(users: dict[str, dict[str, Any]]) -> None:
-    from . import shared_state
 
     shared_state.save_users(users)
 
 
 def save_user(username: str, hashed_password: str, role: Role = "user") -> dict[str, Any]:
     if _postgres_enabled():
-        from .shared_state import update_users
 
         def mutate(users: dict[str, dict[str, Any]]) -> dict[str, Any]:
             effective_role: Role = "admin" if not users else role
@@ -359,7 +359,6 @@ def save_user(username: str, hashed_password: str, role: Role = "user") -> dict[
 def create_user(username: str, hashed_password: str, role: Role = "user") -> dict[str, Any] | None:
     """Create a user only when the username is still free."""
     if _postgres_enabled():
-        from .shared_state import update_users
 
         def mutate(users: dict[str, dict[str, Any]]) -> dict[str, Any] | None:
             if username in users:
@@ -415,7 +414,6 @@ def record_terms_acceptance(
     privacy_version: str = "",
 ) -> bool:
     if _postgres_enabled():
-        from .shared_state import update_users
 
         def mutate(users: dict[str, dict[str, Any]]) -> bool:
             if username not in users:
@@ -472,7 +470,6 @@ def get_user_by_id(user_id: str) -> tuple[str, dict[str, Any]] | None:
 
 def delete_user(username: str) -> bool:
     if _postgres_enabled():
-        from .shared_state import update_users
 
         def mutate(users: dict[str, dict[str, Any]]) -> bool:
             if username not in users:
@@ -499,7 +496,6 @@ def _bump_token_version(record: dict[str, Any]) -> None:
 def update_password(username: str, hashed_password: str) -> bool:
     """Replace a user's password hash and invalidate existing JWTs."""
     if _postgres_enabled():
-        from .shared_state import update_users
 
         def mutate(users: dict[str, dict[str, Any]]) -> bool:
             if username not in users:
@@ -524,7 +520,6 @@ def update_password(username: str, hashed_password: str) -> bool:
 def set_disabled(username: str, disabled: bool, reason: str = "") -> bool:
     """Enable or disable a user and invalidate existing JWTs."""
     if _postgres_enabled():
-        from .shared_state import update_users
 
         def mutate(users: dict[str, dict[str, Any]]) -> bool:
             if username not in users:
@@ -560,7 +555,6 @@ def set_disabled(username: str, disabled: bool, reason: str = "") -> bool:
 def revoke_sessions(username: str) -> bool:
     """Invalidate existing JWTs without changing account fields."""
     if _postgres_enabled():
-        from .shared_state import update_users
 
         def mutate(users: dict[str, dict[str, Any]]) -> bool:
             if username not in users:
@@ -583,7 +577,6 @@ def revoke_sessions(username: str) -> bool:
 def set_avatar(username: str, avatar: str) -> bool:
     """Update the avatar marker for an existing user. Returns True on success."""
     if _postgres_enabled():
-        from .shared_state import update_users
 
         def mutate(users: dict[str, dict[str, Any]]) -> bool:
             if username not in users:
@@ -652,7 +645,6 @@ def set_role(username: str, role: Role) -> bool:
     if role not in {"admin", "user"}:
         raise ValueError("role must be 'admin' or 'user'")
     if _postgres_enabled():
-        from .shared_state import update_users
 
         def mutate(users: dict[str, dict[str, Any]]) -> bool:
             if username not in users:
@@ -676,8 +668,6 @@ def set_role(username: str, role: Role) -> bool:
 
 def load_or_create_auth_secret() -> str:
     if _postgres_enabled():
-        from .shared_state import load_or_create_auth_secret as _postgres_secret
-
         seed = ""
         try:
             if SECRET_FILE.exists():

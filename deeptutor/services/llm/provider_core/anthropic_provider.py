@@ -16,6 +16,12 @@ from typing import Any
 import json_repair
 
 from deeptutor.services.llm.provider_core.base import LLMProvider, LLMResponse, ToolCallRequest
+from deeptutor.services.llm.utils import sanitize_url
+
+try:
+    from anthropic import AsyncAnthropic
+except ModuleNotFoundError:  # pragma: no cover - optional dependency
+    AsyncAnthropic = None
 
 _ALNUM = string.ascii_letters + string.digits
 
@@ -59,10 +65,8 @@ class AnthropicProvider(LLMProvider):
         self.default_model = default_model
         self.extra_headers = extra_headers or {}
         self._supports_prompt_caching = supports_prompt_caching
-
-        from anthropic import AsyncAnthropic
-
-        from deeptutor.services.llm.utils import sanitize_url
+        if AsyncAnthropic is None:
+            raise ModuleNotFoundError("anthropic")
 
         client_kw: dict[str, Any] = {"max_retries": 0}
         if api_key:

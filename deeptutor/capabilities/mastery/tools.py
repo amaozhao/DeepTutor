@@ -50,6 +50,10 @@ from deeptutor.learning.policy import (
     map_summary,
     next_objective,
 )
+from deeptutor.learning.scheduler import SpacedRepetitionScheduler
+from deeptutor.learning.service import LearningService
+from deeptutor.learning.storage import LearningStore
+from deeptutor.services.session.sqlite_store import get_sqlite_session_store
 
 if TYPE_CHECKING:
     from deeptutor.learning.service import LearningService
@@ -70,9 +74,6 @@ logger = logging.getLogger(__name__)
 
 
 def _new_service() -> LearningService:
-    from deeptutor.learning.service import LearningService
-    from deeptutor.learning.storage import LearningStore
-
     return LearningService(LearningStore())
 
 
@@ -110,8 +111,6 @@ async def _resolve_pending_choice(
     options = parse_options(list(pending.options or []))
     if not has_option_bodies(options):
         try:
-            from deeptutor.services.session import get_sqlite_session_store
-
             options = await recover_options_from_turn(
                 get_sqlite_session_store(), turn_id, pending.prompt
             )
@@ -146,8 +145,6 @@ async def _sync_mastery_attempt_to_question_bank(
         "is_correct": is_correct,
     }
     try:
-        from deeptutor.services.session import get_sqlite_session_store
-
         await get_sqlite_session_store().upsert_notebook_entries(session_id, [item])
     except Exception:
         logger.warning(
@@ -375,7 +372,6 @@ class MasteryGradeTool(BaseTool):
         path_id = _resolve_path_id(kwargs)
         if not path_id:
             return _no_path_result()
-        from deeptutor.learning.scheduler import SpacedRepetitionScheduler
 
         answer = str(kwargs.get("answer") or "")
         service = _new_service()

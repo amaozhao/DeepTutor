@@ -29,6 +29,7 @@ import zipfile
 from defusedxml import ElementTree as DefusedElementTree
 from defusedxml.common import DefusedXmlException
 
+from deeptutor.services.config.runtime_settings import get_chat_attachment_limits
 from deeptutor.services.rag.file_routing import FileTypeRouter
 
 try:
@@ -85,8 +86,6 @@ def _current_limits() -> tuple[int, int, int, int]:
     (e.g. unit tests running without a data directory).
     """
     try:
-        from deeptutor.services.config.runtime_settings import get_chat_attachment_limits
-
         limits = get_chat_attachment_limits()
         return (
             limits.max_file_bytes,

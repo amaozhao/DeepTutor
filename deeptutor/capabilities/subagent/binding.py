@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from deeptutor.core.context import UnifiedContext
 from deeptutor.knowledge.kb_types import SUBAGENT_KB_TYPE
+from deeptutor.multi_user.knowledge_access import resolve_kb_metadata
 
 # Cached on context.metadata: a {"name", "kind", "cwd", "partner_id"} dict, or ""
 # once we've looked and found none. Absence of the key means "not resolved yet".
@@ -31,8 +32,6 @@ def connection_for_turn(context: UnifiedContext) -> dict[str, str] | None:
 
 
 def _resolve(context: UnifiedContext) -> dict[str, str] | None:
-    from deeptutor.multi_user.knowledge_access import resolve_kb_metadata
-
     for ref in context.knowledge_bases or []:
         ref = str(ref).strip()
         if not ref:
@@ -59,8 +58,6 @@ def subagent_refs(context: UnifiedContext) -> set[str]:
     index — exclude these refs from the rag surface so a co-selected real KB
     stays reachable (issue #650) and the agent ref never appears as a rag choice.
     """
-    from deeptutor.multi_user.knowledge_access import resolve_kb_metadata
-
     refs: set[str] = set()
     for ref in context.knowledge_bases or []:
         ref = str(ref).strip()

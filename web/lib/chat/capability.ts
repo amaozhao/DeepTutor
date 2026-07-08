@@ -1,5 +1,5 @@
-import type { CapabilityDef, ToolName } from "../capabilities";
-import type { LLMSelection } from "../unified-ws";
+import type { CapabilityDef, ToolName } from "@/lib/capabilities";
+import type { LLMSelection } from "@/lib/unified-ws";
 
 type CapabilityConfigMap = Record<
   string,

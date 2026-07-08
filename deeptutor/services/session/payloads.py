@@ -6,6 +6,7 @@ from collections.abc import Sequence
 from typing import Any, Literal
 
 from deeptutor.services.llm.utils import clean_thinking_tags
+from deeptutor.services.model_selection import LLMSelection
 
 MemoryReference = Literal["recent", "profile", "scope", "preferences", "summary"]
 
@@ -82,8 +83,6 @@ def string_list(value: Any) -> list[str]:
 
 
 def llm_selection_dict(value: Any) -> dict[str, str] | None:
-    from deeptutor.services.model_selection import LLMSelection
-
     selection = LLMSelection.from_payload(value)
     return selection.to_dict() if selection else None
 

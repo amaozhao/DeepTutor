@@ -13,6 +13,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, ValidationError, field_validator
 
+from deeptutor.agents.research.mode_strategy import get_strategy
+
 ResearchMode = Literal["notes", "report", "comparison", "learning_path"]
 ResearchDepth = Literal["quick", "standard", "deep", "manual"]
 
@@ -232,8 +234,6 @@ def _build_depth_policy(
 
 
 def _build_mode_policy(mode: ResearchMode, depth: ResearchDepth) -> dict[str, Any]:
-    from deeptutor.agents.research.mode_strategy import get_strategy
-
     strategy = get_strategy(mode)
     return dict(strategy.build_policy(depth))
 

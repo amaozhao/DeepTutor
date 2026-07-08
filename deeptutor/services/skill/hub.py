@@ -43,6 +43,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
+import io
 import json
 import logging
 from pathlib import Path
@@ -55,6 +56,7 @@ from typing import Any, Protocol
 import zipfile
 
 import httpx
+import yaml
 
 from deeptutor.services.path_service import get_path_service
 
@@ -861,8 +863,6 @@ def _read_frontmatter(skill_md: Path) -> dict[str, Any]:
     if not match:
         return {}
     try:
-        import yaml
-
         data = yaml.safe_load(match.group(1))
     except Exception:
         return {}
@@ -899,7 +899,6 @@ def resolve_publish_identity(
 
 def _zip_dir(root: Path) -> bytes:
     """Zip a skill directory (skip dotfiles and __MACOSX), paths relative to root."""
-    import io
 
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as archive:

@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from deeptutor.core.tool_protocol import BaseTool, ToolDefinition, ToolParameter, ToolResult
+from deeptutor.tools.ask_user import build_ask_user_payload
 from deeptutor.tools.builtin.common import _PromptHintsMixin
 
 
@@ -127,8 +128,6 @@ class AskUserTool(_PromptHintsMixin, BaseTool):
         )
 
     async def execute(self, **kwargs: Any) -> ToolResult:
-        from deeptutor.tools.ask_user import build_ask_user_payload
-
         payload, err = build_ask_user_payload(
             questions=kwargs.get("questions"),
             intro=kwargs.get("intro"),

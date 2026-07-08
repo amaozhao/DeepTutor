@@ -61,7 +61,9 @@ def test_openai_client_kwargs_rejects_production(monkeypatch: pytest.MonkeyPatch
 
 
 def test_provider_core_passes_disable_ssl_http_client(monkeypatch: pytest.MonkeyPatch) -> None:
-    from deeptutor.services.llm.provider_core import openai_compat_provider as provider_mod
+    provider_mod = __import__(
+        "deeptutor.services.llm.provider_core", fromlist=["openai_compat_provider"]
+    ).openai_compat_provider
 
     clients = _enable_ssl_override(monkeypatch)
     captured = _capture_async_openai(monkeypatch, provider_mod)
@@ -73,8 +75,12 @@ def test_provider_core_passes_disable_ssl_http_client(monkeypatch: pytest.Monkey
 
 
 def test_provider_core_does_not_write_provider_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    from deeptutor.services.llm.provider_core import openai_compat_provider as provider_mod
-    from deeptutor.services.provider_registry import find_by_name
+    provider_mod = __import__(
+        "deeptutor.services.llm.provider_core", fromlist=["openai_compat_provider"]
+    ).openai_compat_provider
+    find_by_name = __import__(
+        "deeptutor.services.provider_registry", fromlist=["find_by_name"]
+    ).find_by_name
 
     monkeypatch.delenv("MINIMAX_API_KEY", raising=False)
     monkeypatch.setenv("OPENAI_API_KEY", "external-openai-key")
@@ -91,7 +97,9 @@ def test_provider_core_does_not_write_provider_env(monkeypatch: pytest.MonkeyPat
 
 
 def test_azure_provider_passes_disable_ssl_http_client(monkeypatch: pytest.MonkeyPatch) -> None:
-    from deeptutor.services.llm.provider_core import azure_openai_provider as azure_mod
+    azure_mod = __import__(
+        "deeptutor.services.llm.provider_core", fromlist=["azure_openai_provider"]
+    ).azure_openai_provider
 
     clients = _enable_ssl_override(monkeypatch)
     captured = _capture_async_openai(monkeypatch, azure_mod)
@@ -107,7 +115,7 @@ def test_azure_provider_passes_disable_ssl_http_client(monkeypatch: pytest.Monke
 
 
 def test_agentic_client_passes_disable_ssl_http_client(monkeypatch: pytest.MonkeyPatch) -> None:
-    from deeptutor.core.agentic import client as agentic_client
+    agentic_client = __import__("deeptutor.core.agentic", fromlist=["client"]).client
 
     clients = _enable_ssl_override(monkeypatch)
     captured = _capture_async_openai(monkeypatch, agentic_client)
@@ -128,8 +136,10 @@ def test_agentic_client_passes_disable_ssl_http_client(monkeypatch: pytest.Monke
 def test_legacy_openai_provider_rejects_disable_ssl_in_production(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from deeptutor.services.llm.config import LLMConfig
-    from deeptutor.services.llm.providers.open_ai import OpenAIProvider
+    LLMConfig = __import__("deeptutor.services.llm.config", fromlist=["LLMConfig"]).LLMConfig
+    OpenAIProvider = __import__(
+        "deeptutor.services.llm.providers.open_ai", fromlist=["OpenAIProvider"]
+    ).OpenAIProvider
 
     monkeypatch.setenv("DISABLE_SSL_VERIFY", "true")
     monkeypatch.setenv("ENVIRONMENT", "production")
@@ -142,7 +152,7 @@ def test_legacy_openai_provider_rejects_disable_ssl_in_production(
 async def test_sdk_complete_passes_disable_ssl_http_client(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from deeptutor.services.llm import executors
+    executors = __import__("deeptutor.services.llm", fromlist=["executors"]).executors
 
     clients = _enable_ssl_override(monkeypatch)
     captured = _capture_async_openai(monkeypatch, executors)
@@ -172,7 +182,7 @@ async def test_sdk_complete_passes_disable_ssl_http_client(
 async def test_sdk_complete_does_not_write_provider_env(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from deeptutor.services.llm import executors
+    executors = __import__("deeptutor.services.llm", fromlist=["executors"]).executors
 
     monkeypatch.delenv("MINIMAX_API_KEY", raising=False)
     monkeypatch.setenv("OPENAI_API_KEY", "external-openai-key")
@@ -205,7 +215,7 @@ async def test_sdk_complete_does_not_write_provider_env(
 async def test_sdk_stream_passes_disable_ssl_http_client(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from deeptutor.services.llm import executors
+    executors = __import__("deeptutor.services.llm", fromlist=["executors"]).executors
 
     clients = _enable_ssl_override(monkeypatch)
     captured = _capture_async_openai(monkeypatch, executors)
@@ -251,7 +261,9 @@ async def test_sdk_stream_passes_disable_ssl_http_client(
 def test_embedding_sdk_passes_disable_ssl_http_client(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from deeptutor.services.embedding.adapters import openai_sdk as embedding_mod
+    embedding_mod = __import__(
+        "deeptutor.services.embedding.adapters", fromlist=["openai_sdk"]
+    ).openai_sdk
 
     clients = _enable_ssl_override(monkeypatch)
     captured = _capture_async_openai(monkeypatch, embedding_mod)

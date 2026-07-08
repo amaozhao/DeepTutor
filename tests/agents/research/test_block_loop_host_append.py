@@ -109,7 +109,7 @@ async def _drain_bus(bus: StreamBus) -> list:
         async for event in bus.subscribe():
             events.append(event)
 
-    import asyncio
+    asyncio = __import__("asyncio")
 
     task = asyncio.create_task(_consume())
     await asyncio.sleep(0)

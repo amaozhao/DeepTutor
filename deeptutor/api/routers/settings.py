@@ -17,17 +17,23 @@ from fastapi import APIRouter, HTTPException, Request, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
-logger = logging.getLogger(__name__)
-
 from deeptutor.multi_user.audit import log_admin_action
 from deeptutor.multi_user.context import get_current_user
 from deeptutor.multi_user.model_access import allowed_llm_options
+from deeptutor.multi_user.tool_access import allowed_optional_tools
 from deeptutor.services.config import (
     get_config_test_runner,
     get_model_catalog_service,
     get_runtime_settings_service,
 )
 from deeptutor.services.config.origins import normalize_origins
+from deeptutor.services.config.provider_runtime import (
+    EMBEDDING_PROVIDERS,
+    IMAGEGEN_PROVIDERS,
+    STT_PROVIDERS,
+    TTS_PROVIDERS,
+    VIDEOGEN_PROVIDERS,
+)
 from deeptutor.services.config.runtime_settings import (
     CHAT_ATTACHMENT_CHARS_RANGE,
     CHAT_ATTACHMENT_MAX_FILE_MB_RANGE,
@@ -35,11 +41,21 @@ from deeptutor.services.config.runtime_settings import (
     compute_ws_max_size,
 )
 from deeptutor.services.embedding.client import reset_embedding_client
+from deeptutor.services.llm import factory as llm_factory
 from deeptutor.services.llm.client import reset_llm_client
 from deeptutor.services.llm.config import clear_llm_config_cache
 from deeptutor.services.model_selection import list_llm_options
+from deeptutor.services.parsing.engines import _install as parsing_install
+from deeptutor.services.parsing.engines import factory as parsing_factory
+from deeptutor.services.parsing.engines.mineru import backend as mineru_backend
+from deeptutor.services.parsing.engines.mineru import cloud as mineru_cloud
+from deeptutor.services.parsing.engines.mineru import models as mineru_models
+from deeptutor.services.parsing.engines.mineru.config import MinerUConfig, MinerUError
 from deeptutor.services.path_service import get_path_service
-from deeptutor.tools.builtin import USER_TOGGLEABLE_TOOL_NAMES
+from deeptutor.services.provider_registry import PROVIDERS
+from deeptutor.tools.builtin.names import USER_TOGGLEABLE_TOOL_NAMES
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -308,8 +324,6 @@ def get_enabled_optional_tools() -> list[str]:
     explicit ``tools`` list. Intersected with the admin grant whitelist so
     a restricted user's saved toggles can't resurrect a revoked tool.
     """
-    from deeptutor.multi_user.tool_access import allowed_optional_tools
-
     enabled = _sanitize_enabled_tools(load_ui_settings().get("enabled_optional_tools"))
     allowed = allowed_optional_tools()
     if allowed is not None:
@@ -351,15 +365,6 @@ def _catalog_audit_summary(catalog: dict[str, Any]) -> dict[str, Any]:
 
 def _provider_choices() -> dict[str, list[dict[str, str]]]:
     """Build dropdown options for provider selection, keyed by service type."""
-    from deeptutor.services.config.provider_runtime import (
-        EMBEDDING_PROVIDERS,
-        IMAGEGEN_PROVIDERS,
-        STT_PROVIDERS,
-        TTS_PROVIDERS,
-        VIDEOGEN_PROVIDERS,
-    )
-    from deeptutor.services.provider_registry import PROVIDERS
-
     llm = sorted(
         [
             {
@@ -618,15 +623,13 @@ def _mineru_settings_payload() -> dict[str, Any]:
     install status at config time instead of failing at parse time; the
     definitive ``--version`` check runs behind the explicit Test button.
     """
-    from deeptutor.services.parsing.engines.mineru.backend import local_cli_probe
-
     service = get_runtime_settings_service()
     settings = service.load_mineru(include_process_overrides=True)
     public = {key: value for key, value in settings.items() if key != "api_token"}
     return {
         "settings": public,
         "api_token_set": bool(settings.get("api_token")),
-        "local_cli": local_cli_probe(str(settings.get("local_cli_path") or "")),
+        "local_cli": mineru_backend.local_cli_probe(str(settings.get("local_cli_path") or "")),
     }
 
 
@@ -634,16 +637,6 @@ def _document_parsing_payload() -> dict[str, Any]:
     """State for the Document Parsing settings page: active engine, all engine
     slices (MinerU token redacted), engine availability, and per-engine
     readiness (so the UI can surface the "models not downloaded" gate)."""
-    from deeptutor.services.parsing.engines._install import (
-        installable_engines,
-        model_downloadable_engines,
-    )
-    from deeptutor.services.parsing.engines.factory import (
-        get_parser,
-        list_engines,
-    )
-    from deeptutor.services.parsing.engines.mineru.backend import local_cli_probe
-
     service = get_runtime_settings_service()
     full = service.load_document_parsing(include_process_overrides=True)
     engines = full.get("engines", {})
@@ -655,12 +648,12 @@ def _document_parsing_payload() -> dict[str, Any]:
         redacted[name] = clean
 
     readiness: dict[str, Any] = {}
-    available = list_engines()
+    available = parsing_factory.list_engines()
     for entry in available:
         if not entry["available"]:
             continue
         try:
-            parser = get_parser(entry["id"])
+            parser = parsing_factory.get_parser(entry["id"])
             report = parser.is_ready(parser.resolve_config())
             readiness[entry["id"]] = {
                 "ready": report.ready,
@@ -677,12 +670,14 @@ def _document_parsing_payload() -> dict[str, Any]:
         "available_engines": available,
         "readiness": readiness,
         # Engine ids that support one-click pip install / model download here.
-        "installable": sorted(installable_engines()),
-        "model_downloadable": sorted(model_downloadable_engines()),
+        "installable": sorted(parsing_install.installable_engines()),
+        "model_downloadable": sorted(parsing_install.model_downloadable_engines()),
         # MinerU-specific UI state (token presence + CLI probe).
         "mineru": {
             "api_token_set": bool(mineru_slice.get("api_token")),
-            "local_cli": local_cli_probe(str(mineru_slice.get("local_cli_path") or "")),
+            "local_cli": mineru_backend.local_cli_probe(
+                str(mineru_slice.get("local_cli_path") or "")
+            ),
         },
     }
 
@@ -754,14 +749,13 @@ async def test_document_parsing(payload: DocumentParsingTest):
     token / CLI ``--version``) the UI uses ``/mineru/test``; this generic test
     covers engine availability + model readiness for all engines."""
     _require_settings_admin()
-    from deeptutor.services.parsing.engines.factory import get_parser, is_engine_available
 
     service = get_runtime_settings_service()
     engine = payload.engine or service.load_document_parsing().get("engine") or ""
-    if not is_engine_available(engine):
+    if not parsing_factory.is_engine_available(engine):
         return {"ok": False, "message": f"The '{engine}' parsing engine isn't installed."}
     try:
-        parser = get_parser(engine)
+        parser = parsing_factory.get_parser(engine)
         report = parser.is_ready(parser.resolve_config())
     except Exception as exc:  # noqa: BLE001 - surface as a test result
         return {"ok": False, "message": str(exc)}
@@ -783,16 +777,12 @@ async def start_document_parsing_install(payload: DocumentParsingInstall):
     status endpoint. Only one job runs at a time (process-wide singleton). The
     engine must be in the install allow-list (``ENGINE_PIP_SPECS``)."""
     _require_settings_admin()
-    from deeptutor.services.parsing.engines._install import (
-        ENGINE_PIP_SPECS,
-        get_background_job_manager,
-    )
 
     engine = _normalize_engine_name(payload.engine)
-    specs = ENGINE_PIP_SPECS.get(engine)
+    specs = parsing_install.ENGINE_PIP_SPECS.get(engine)
     if not specs:
         return {"ok": False, "message": f"No installable package for engine '{engine}'."}
-    return get_background_job_manager().start_install(engine=engine, specs=specs)
+    return parsing_install.get_background_job_manager().start_install(engine=engine, specs=specs)
 
 
 @router.post("/document-parsing/models/download")
@@ -804,16 +794,11 @@ async def start_document_parsing_model_download(payload: DocumentParsingInstall)
     status endpoint. The engine must be in ``ENGINE_MODEL_DOWNLOADERS`` and its
     script reachable next to the server's python or on PATH."""
     _require_settings_admin()
-    from deeptutor.services.parsing.engines._install import (
-        get_background_job_manager,
-        model_downloadable_engines,
-        resolve_model_downloader,
-    )
 
     engine = _normalize_engine_name(payload.engine)
-    if engine not in model_downloadable_engines():
+    if engine not in parsing_install.model_downloadable_engines():
         return {"ok": False, "message": f"No model download for engine '{engine}'."}
-    cmd = resolve_model_downloader(engine)
+    cmd = parsing_install.resolve_model_downloader(engine)
     if not cmd:
         return {
             "ok": False,
@@ -822,23 +807,19 @@ async def start_document_parsing_model_download(payload: DocumentParsingInstall)
                 f"(pip install deeptutor[parse-{engine}]) so its CLI is on PATH."
             ),
         }
-    return get_background_job_manager().start_model_download(engine=engine, cmd=cmd)
+    return parsing_install.get_background_job_manager().start_model_download(engine=engine, cmd=cmd)
 
 
 @router.get("/document-parsing/job/status")
 async def document_parsing_job_status(cursor: int = 0):
     _require_settings_admin()
-    from deeptutor.services.parsing.engines._install import get_background_job_manager
-
-    return get_background_job_manager().status(cursor)
+    return parsing_install.get_background_job_manager().status(cursor)
 
 
 @router.post("/document-parsing/job/cancel")
 async def cancel_document_parsing_job():
     _require_settings_admin()
-    from deeptutor.services.parsing.engines._install import get_background_job_manager
-
-    return get_background_job_manager().cancel()
+    return parsing_install.get_background_job_manager().cancel()
 
 
 @router.post("/mineru/models/download")
@@ -849,12 +830,8 @@ async def start_mineru_models_download(payload: MinerUModelDownloadPayload):
     endpoint. Only one download runs at a time (process-wide singleton).
     """
     _require_settings_admin()
-    from deeptutor.services.parsing.engines.mineru.models import (
-        get_model_download_manager,
-        resolve_models_downloader,
-    )
 
-    resolved = resolve_models_downloader(payload.local_cli_path)
+    resolved = mineru_models.resolve_models_downloader(payload.local_cli_path)
     if not resolved["found"]:
         if resolved["path"]:
             message = (
@@ -869,7 +846,7 @@ async def start_mineru_models_download(payload: MinerUModelDownloadPayload):
             )
         return {"ok": False, "message": message}
 
-    return get_model_download_manager().start(
+    return mineru_models.get_model_download_manager().start(
         downloader=resolved["path"],
         model_type=payload.model_type,
         source=payload.source,
@@ -880,17 +857,13 @@ async def start_mineru_models_download(payload: MinerUModelDownloadPayload):
 @router.get("/mineru/models/download/status")
 async def mineru_models_download_status(cursor: int = 0):
     _require_settings_admin()
-    from deeptutor.services.parsing.engines.mineru.models import get_model_download_manager
-
-    return get_model_download_manager().status(cursor)
+    return mineru_models.get_model_download_manager().status(cursor)
 
 
 @router.post("/mineru/models/download/cancel")
 async def cancel_mineru_models_download():
     _require_settings_admin()
-    from deeptutor.services.parsing.engines.mineru.models import get_model_download_manager
-
-    return get_model_download_manager().cancel()
+    return mineru_models.get_model_download_manager().cancel()
 
 
 @router.post("/mineru/test")
@@ -901,16 +874,9 @@ async def test_mineru_connection(payload: MinerUSettingsUpdate):
     the user can verify before saving; falls back to the stored token when the
     secret field is untouched."""
     _require_settings_admin()
-    from deeptutor.services.parsing.engines.mineru.cloud import verify_credentials
-    from deeptutor.services.parsing.engines.mineru.config import MinerUConfig, MinerUError
 
     if payload.mode == "local":
-        from deeptutor.services.parsing.engines.mineru.backend import (
-            local_cli_probe,
-            local_cli_version,
-        )
-
-        probe = local_cli_probe(payload.local_cli_path)
+        probe = mineru_backend.local_cli_probe(payload.local_cli_path)
         if not probe["found"]:
             if probe.get("source") == "configured":
                 return {
@@ -933,7 +899,7 @@ async def test_mineru_connection(payload: MinerUSettingsUpdate):
         version_target = (
             probe["path"] if probe.get("source") == "configured" else str(probe["command"])
         )
-        version = await asyncio.to_thread(local_cli_version, version_target)
+        version = await asyncio.to_thread(mineru_backend.local_cli_version, version_target)
         detail = version or f"at {probe['path']}"
         return {
             "ok": True,
@@ -954,7 +920,7 @@ async def test_mineru_connection(payload: MinerUSettingsUpdate):
         is_ocr=payload.is_ocr,
     )
     try:
-        await asyncio.to_thread(verify_credentials, config)
+        await asyncio.to_thread(mineru_cloud.verify_credentials, config)
     except MinerUError as exc:
         return {"ok": False, "message": str(exc)}
     except Exception as exc:  # noqa: BLE001 — report any provider error to the UI
@@ -1002,7 +968,6 @@ async def fetch_models_from_provider(payload: FetchModelsPayload):
     the user type model IDs by hand.
     """
     _require_settings_admin()
-    from deeptutor.services.llm.factory import fetch_models as fetch_llm_models
 
     base_url = (payload.base_url or "").strip()
     binding = (payload.binding or "").strip().lower() or "openai"
@@ -1013,7 +978,7 @@ async def fetch_models_from_provider(payload: FetchModelsPayload):
         )
 
     try:
-        model_ids = await fetch_llm_models(binding, base_url, payload.api_key)
+        model_ids = await llm_factory.fetch_models(binding, base_url, payload.api_key)
     except Exception as exc:  # noqa: BLE001 — surface any provider error as 502
         logger.exception("Failed to fetch models from %s", base_url)
         raise HTTPException(

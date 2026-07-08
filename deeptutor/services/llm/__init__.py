@@ -49,6 +49,8 @@ Usage:
 
 # Note: cloud_provider and local_provider are lazy-loaded via __getattr__
 # to avoid importing optional heavy dependencies at module load time
+from importlib import import_module
+
 from .capabilities import (
     DEFAULT_CAPABILITIES,
     MODEL_OVERRIDES,
@@ -166,7 +168,6 @@ __all__ = [
 
 def __getattr__(name: str):
     """Lazy import for provider modules that depend on heavy libraries."""
-    from importlib import import_module
 
     if name == "cloud_provider":
         return import_module("deeptutor.services.llm.cloud_provider")

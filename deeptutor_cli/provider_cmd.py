@@ -6,6 +6,17 @@ import typer
 
 from .common import maybe_run
 
+try:
+    from oauth_cli_kit import get_token, login_oauth_interactive
+except ImportError:  # pragma: no cover - optional CLI auth helper
+    get_token = None
+    login_oauth_interactive = None
+
+try:
+    from openai import AsyncOpenAI
+except ImportError:  # pragma: no cover - optional provider SDK
+    AsyncOpenAI = None
+
 
 def register(app: typer.Typer) -> None:
     @app.command("login")
@@ -29,9 +40,7 @@ def register(app: typer.Typer) -> None:
 
 
 def _login_openai_codex() -> None:
-    try:
-        from oauth_cli_kit import get_token, login_oauth_interactive
-    except ImportError:
+    if get_token is None or login_oauth_interactive is None:
         typer.echo(
             "oauth_cli_kit is not installed. Install CLI deps from a local checkout: "
             "python -m pip install -e ./packaging/deeptutor-cli"
@@ -56,9 +65,7 @@ def _login_openai_codex() -> None:
 
 async def _login_github_copilot() -> None:
     """Validate an existing GitHub Copilot auth session via a lightweight request."""
-    try:
-        from openai import AsyncOpenAI
-    except ImportError:
+    if AsyncOpenAI is None:
         typer.echo(
             "openai is not installed. Install CLI deps from a local checkout: "
             "python -m pip install -e ./packaging/deeptutor-cli"

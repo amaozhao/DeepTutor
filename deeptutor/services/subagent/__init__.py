@@ -12,6 +12,8 @@ through the consult tool and the API.
 
 from __future__ import annotations
 
+import importlib
+
 from deeptutor.services.subagent.base import OnEvent, SubagentBackend
 from deeptutor.services.subagent.config import (
     CONSULT_BUDGET_MAX,
@@ -24,8 +26,6 @@ from deeptutor.services.subagent.config import (
     save_subagent_settings,
     settings_from_dict,
 )
-from deeptutor.services.subagent.partner import PARTNER_BACKEND_KIND
-from deeptutor.services.subagent.registry import detect_all, get_backend, list_backend_kinds
 from deeptutor.services.subagent.types import (
     ConsultResult,
     DetectResult,
@@ -52,3 +52,12 @@ __all__ = [
     "DetectResult",
     "SubagentEvent",
 ]
+
+
+def __getattr__(name: str):
+    if name == "PARTNER_BACKEND_KIND":
+        return importlib.import_module(f"{__name__}.partner").PARTNER_BACKEND_KIND
+    if name in {"detect_all", "get_backend", "list_backend_kinds"}:
+        module = importlib.import_module(f"{__name__}.registry")
+        return getattr(module, name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

@@ -13,6 +13,7 @@ Uses the unified LLM Factory for all LLM calls, supporting:
 
 import argparse
 import asyncio
+import concurrent.futures
 from datetime import datetime
 import json
 from pathlib import Path
@@ -241,8 +242,6 @@ Please analyze the above exam paper content, extract all question information, a
             )
         )
     else:
-        import concurrent.futures
-
         with concurrent.futures.ThreadPoolExecutor() as executor:
             future = executor.submit(
                 asyncio.run,

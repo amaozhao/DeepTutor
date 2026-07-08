@@ -30,7 +30,9 @@ path executes them.
 from __future__ import annotations
 
 import asyncio
+from contextlib import AsyncExitStack
 from dataclasses import dataclass, field
+import importlib
 import logging
 import re
 from typing import Any
@@ -55,6 +57,38 @@ _TRANSIENT_ERRORS = (
     BrokenPipeError,
     ConnectionResetError,
 )
+
+
+def _mcp_attr(module_name: str, attr: str):
+    return getattr(importlib.import_module(module_name), attr)
+
+
+def _mcp_types():
+    return _mcp_attr("mcp", "types")
+
+
+def _mcp_client_session():
+    return _mcp_attr("mcp", "ClientSession")
+
+
+def _mcp_stdio_server_parameters():
+    return _mcp_attr("mcp", "StdioServerParameters")
+
+
+def _mcp_sse_client():
+    return _mcp_attr("mcp.client.sse", "sse_client")
+
+
+def _mcp_stdio_client():
+    return _mcp_attr("mcp.client.stdio", "stdio_client")
+
+
+def _mcp_streamable_http_client():
+    return _mcp_attr("mcp.client.streamable_http", "streamable_http_client")
+
+
+def _tool_registry():
+    return importlib.import_module("deeptutor.runtime.registry.tool_registry").get_tool_registry()
 
 
 def wrapped_tool_name(server: str, tool: str) -> str:
@@ -236,8 +270,7 @@ class MCPConnectionManager:
         arguments: dict[str, Any],
         timeout: int,
     ) -> str:
-        from mcp import types
-
+        types = _mcp_types()
         result = await asyncio.wait_for(
             conn.session.call_tool(tool_name, arguments=arguments),
             timeout=timeout,
@@ -297,14 +330,10 @@ class MCPConnectionManager:
 
     async def _run_server(self, conn: _ServerConnection, ready: asyncio.Future) -> None:
         """Connection task: owns the AsyncExitStack for one server."""
-        from contextlib import AsyncExitStack
-
-        from mcp import ClientSession
-
         try:
             async with AsyncExitStack() as stack:
                 read, write = await self._open_transport(stack, conn.config)
-                session = await stack.enter_async_context(ClientSession(read, write))
+                session = await stack.enter_async_context(_mcp_client_session()(read, write))
                 await session.initialize()
                 listing = await session.list_tools()
                 adapters = [
@@ -339,20 +368,15 @@ class MCPConnectionManager:
     @staticmethod
     async def _open_transport(stack: Any, cfg: MCPServerConfig) -> tuple[Any, Any]:
         """Enter the configured transport on *stack*; return (read, write)."""
-        from mcp import StdioServerParameters
-        from mcp.client.sse import sse_client
-        from mcp.client.stdio import stdio_client
-        from mcp.client.streamable_http import streamable_http_client
-
         transport = cfg.resolved_type()
         if transport == "stdio":
-            params = StdioServerParameters(
+            params = _mcp_stdio_server_parameters()(
                 command=cfg.command,
                 args=list(cfg.args),
                 env=dict(cfg.env) or None,
                 cwd=cfg.cwd or None,
             )
-            read, write = await stack.enter_async_context(stdio_client(params))
+            read, write = await stack.enter_async_context(_mcp_stdio_client()(params))
             return read, write
         if transport == "sse":
 
@@ -370,7 +394,7 @@ class MCPConnectionManager:
                 )
 
             read, write = await stack.enter_async_context(
-                sse_client(cfg.url, httpx_client_factory=httpx_client_factory)
+                _mcp_sse_client()(cfg.url, httpx_client_factory=httpx_client_factory)
             )
             return read, write
         if transport == "streamableHttp":
@@ -384,7 +408,7 @@ class MCPConnectionManager:
                 )
             )
             read, write, _ = await stack.enter_async_context(
-                streamable_http_client(cfg.url, http_client=http_client)
+                _mcp_streamable_http_client()(cfg.url, http_client=http_client)
             )
             return read, write
         raise ValueError(f"MCP server has no usable transport (type={cfg.type!r})")
@@ -404,9 +428,7 @@ class MCPConnectionManager:
 
     @staticmethod
     def _registry():
-        from deeptutor.runtime.registry.tool_registry import get_tool_registry
-
-        return get_tool_registry()
+        return _tool_registry()
 
     def _register_adapters(self, conn: _ServerConnection) -> None:
         registry = self._registry()
@@ -426,14 +448,11 @@ async def probe_server(
 
     Opens and closes its own connection; never touches the live manager.
     """
-    from contextlib import AsyncExitStack
-
-    from mcp import ClientSession
 
     async def _probe() -> list[dict[str, str]]:
         async with AsyncExitStack() as stack:
             read, write = await MCPConnectionManager._open_transport(stack, cfg)
-            session = await stack.enter_async_context(ClientSession(read, write))
+            session = await stack.enter_async_context(_mcp_client_session()(read, write))
             await session.initialize()
             listing = await session.list_tools()
             return [{"name": t.name, "description": t.description or ""} for t in listing.tools]

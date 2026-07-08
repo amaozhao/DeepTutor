@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import importlib
 import logging
 from typing import Any
 
@@ -69,14 +70,72 @@ CHAT_OPTIONAL_TOOLS = default_optional_tools(excluded=CHAT_EXCLUDED_TOOLS)
 _GENERATION_TOOL_SERVICES: dict[str, str] = {"imagegen": "imagegen", "videogen": "videogen"}
 
 
+def _get_model_catalog_service():
+    return importlib.import_module(
+        "deeptutor.services.config.model_catalog"
+    ).get_model_catalog_service()
+
+
+def _get_mcp_module():
+    return importlib.import_module("deeptutor.services.mcp")
+
+
+def _get_pageindex_server_name() -> str:
+    return importlib.import_module("deeptutor.services.mcp.pageindex_server").PAGEINDEX_SERVER_NAME
+
+
+def _get_tool_access_module():
+    return importlib.import_module("deeptutor.multi_user.tool_access")
+
+
+def _get_sandbox_module():
+    return importlib.import_module("deeptutor.services.sandbox")
+
+
+def _get_current_user():
+    return importlib.import_module("deeptutor.multi_user.context").get_current_user()
+
+
+def _get_notebook_manager():
+    return importlib.import_module("deeptutor.services.notebook").get_notebook_manager()
+
+
+def _execute_tool_call_fn():
+    return importlib.import_module("deeptutor.core.agentic").execute_tool_call
+
+
+def _get_path_service():
+    return importlib.import_module("deeptutor.services.path_service").get_path_service()
+
+
+def _get_knowledge_access_module():
+    return importlib.import_module("deeptutor.multi_user.knowledge_access")
+
+
+def _get_rag_factory_module():
+    return importlib.import_module("deeptutor.services.rag.factory")
+
+
+def _get_pageindex_pipeline_class():
+    return importlib.import_module(
+        "deeptutor.services.rag.pipelines.pageindex.pipeline"
+    ).PageIndexPipeline
+
+
+def _get_provider_binding_module():
+    return importlib.import_module("deeptutor.services.rag.provider_binding")
+
+
+def _count_tokens(text: str) -> int:
+    return importlib.import_module("deeptutor.services.session.context_builder").count_tokens(text)
+
+
 def _drop_unconfigured_generation_tools(tools: list[str]) -> list[str]:
     present = [name for name in tools if name in _GENERATION_TOOL_SERVICES]
     if not present:
         return tools
     try:
-        from deeptutor.services.config.model_catalog import get_model_catalog_service
-
-        service = get_model_catalog_service()
+        service = _get_model_catalog_service()
         catalog = service.load()
         configured = {
             name
@@ -444,23 +503,23 @@ class AgenticChatPipeline:
     async def _prepare_deferred_tools(self, context: UnifiedContext) -> None:
         self._pageindex_docs = {}
         try:
-            from deeptutor.services.mcp import get_mcp_manager, load_loaded_tools
-
-            await get_mcp_manager().ensure_started()
+            mcp = _get_mcp_module()
+            await mcp.get_mcp_manager().ensure_started()
             # Caller-scoped whitelist (e.g. a partner's configured MCP tools)
             # intersected with the current user's grant. ``None`` means
             # unrestricted; a set narrows the deferred tools. Real non-admin
             # users fail closed when no MCP grant is present, while partner
             # turns defer to their owner-scoped metadata whitelist as the
             # authority (see ``_is_partner_turn``).
-            from deeptutor.multi_user.tool_access import allowed_mcp_tools, combine_whitelists
-
+            tool_access = _get_tool_access_module()
             raw_filter = context.metadata.get("mcp_tools_filter")
             caller_allowed = (
                 {str(name) for name in raw_filter} if isinstance(raw_filter, list) else None
             )
-            user_allowed = None if self._is_partner_turn(context) else allowed_mcp_tools()
-            allowed: set[str] | None = combine_whitelists(caller_allowed, user_allowed)
+            user_allowed = (
+                None if self._is_partner_turn(context) else tool_access.allowed_mcp_tools()
+            )
+            allowed: set[str] | None = tool_access.combine_whitelists(caller_allowed, user_allowed)
 
             # Narrowed implicit grant: a turn with a PageIndex KB
             # attached is authorized to use the built-in pageindex MCP
@@ -471,12 +530,11 @@ class AgenticChatPipeline:
             pool = self.registry.deferred_tools()
             pageindex_tools: set[str] = set()
             if self._pageindex_docs:
-                from deeptutor.services.mcp.pageindex_server import PAGEINDEX_SERVER_NAME
-
+                pageindex_server_name = _get_pageindex_server_name()
                 pageindex_tools = {
                     t.get_definition().name
                     for t in pool
-                    if getattr(t, "server_name", "") == PAGEINDEX_SERVER_NAME
+                    if getattr(t, "server_name", "") == pageindex_server_name
                 }
                 if allowed is not None:
                     allowed = allowed | pageindex_tools
@@ -490,7 +548,7 @@ class AgenticChatPipeline:
             self._deferred_loader = DeferredToolLoader(
                 registry=self.registry,
                 session_id=context.session_id,
-                loaded=load_loaded_tools(context.session_id) | pageindex_tools,
+                loaded=mcp.load_loaded_tools(context.session_id) | pageindex_tools,
                 allowed=allowed,
             )
         except Exception:
@@ -502,16 +560,16 @@ class AgenticChatPipeline:
         out: dict[str, dict[str, str]] = {}
         for kb in self._selected_kbs(context):
             try:
-                from deeptutor.multi_user.knowledge_access import resolve_kb
-                from deeptutor.services.rag.factory import PAGEINDEX_PROVIDER
-                from deeptutor.services.rag.pipelines.pageindex.pipeline import PageIndexPipeline
-                from deeptutor.services.rag.provider_binding import resolve_bound_provider
-
-                resource = resolve_kb(kb, require_write=False)
+                resource = _get_knowledge_access_module().resolve_kb(kb, require_write=False)
                 base_dir = str(resource.base_dir)
-                if resolve_bound_provider(base_dir, resource.name) != PAGEINDEX_PROVIDER:
+                if (
+                    _get_provider_binding_module().resolve_bound_provider(base_dir, resource.name)
+                    != _get_rag_factory_module().PAGEINDEX_PROVIDER
+                ):
                     continue
-                out[kb] = PageIndexPipeline(kb_base_dir=base_dir).document_map(resource.name)
+                out[kb] = _get_pageindex_pipeline_class()(kb_base_dir=base_dir).document_map(
+                    resource.name
+                )
             except Exception:
                 logger.debug("pageindex doc-map resolution failed for %r", kb, exc_info=True)
         return out
@@ -526,28 +584,23 @@ class AgenticChatPipeline:
 
     async def _exec_allowed(self, context: UnifiedContext) -> bool:
         try:
-            from deeptutor.services.sandbox import IsolationLevel, get_sandbox_service
-
+            sandbox = _get_sandbox_module()
             # A partner turn runs as a synthetic non-admin user but IS the admin
             # owner's extension (partners are anchored to the admin workspace), so
             # exec follows the owner's authority — not the partner's "user" role.
             # The owner still gates exec per-partner via the builtin-tool whitelist.
             is_partner = self._is_partner_turn(context)
 
-            level = await get_sandbox_service().isolation_level()
-            if level is IsolationLevel.SYSTEM:
+            level = await sandbox.get_sandbox_service().isolation_level()
+            if level is sandbox.IsolationLevel.SYSTEM:
                 # Admin can switch exec off per user (grant v2). ``None``
                 # follows the policy: SYSTEM isolation serves everyone.
-                from deeptutor.multi_user.tool_access import exec_override
-
-                return exec_override() is not False
-            if level is IsolationLevel.APPLICATION:
+                return _get_tool_access_module().exec_override() is not False
+            if level is sandbox.IsolationLevel.APPLICATION:
                 if is_partner:
                     return True
                 try:
-                    from deeptutor.multi_user.context import get_current_user
-
-                    return bool(get_current_user().is_admin)
+                    return bool(_get_current_user().is_admin)
                 except Exception:
                     # Single-user local runtime: APPLICATION isolation is the
                     # same explicit opt-in posture TutorBot uses for local dev.
@@ -733,9 +786,7 @@ class AgenticChatPipeline:
     @staticmethod
     def _notebook_choices_full() -> list[dict[str, Any]]:
         try:
-            from deeptutor.services.notebook import get_notebook_manager
-
-            notebooks = get_notebook_manager().list_notebooks() or []
+            notebooks = _get_notebook_manager().list_notebooks() or []
         except Exception:
             return []
         rows: list[dict[str, Any]] = []
@@ -768,10 +819,8 @@ class AgenticChatPipeline:
         stream: StreamBus | None = None,
         retrieve_meta: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        from deeptutor.core.agentic import execute_tool_call
-
         stream = stream or StreamBus()
-        return await execute_tool_call(
+        return await _execute_tool_call_fn()(
             registry=self.registry,
             tool_name=tool_name,
             tool_args=tool_args,
@@ -893,13 +942,11 @@ class AgenticChatPipeline:
         args: dict[str, Any],
         context: UnifiedContext,
     ) -> dict[str, Any]:
-        from deeptutor.services.path_service import get_path_service
-
         kwargs = dict(args)
         turn_id = str(context.metadata.get("turn_id", "") or "").strip()
         workspace_key = self._workspace_key(context)
         task_dir = (
-            get_path_service().get_task_workspace("chat", workspace_key) if workspace_key else None
+            _get_path_service().get_task_workspace("chat", workspace_key) if workspace_key else None
         )
         exec_dir = task_dir / "exec" if task_dir is not None else None
         if tool_name == "rag":
@@ -907,8 +954,7 @@ class AgenticChatPipeline:
         elif tool_name == "load_tools":
             kwargs["_tool_loader"] = self._deferred_loader
         elif tool_name == "exec":
-            from deeptutor.services.sandbox import Mount
-
+            Mount = _get_sandbox_module().Mount
             kwargs["_sandbox_user_id"] = self._current_user_id()
             if exec_dir is not None:
                 exec_dir.mkdir(parents=True, exist_ok=True)
@@ -917,8 +963,7 @@ class AgenticChatPipeline:
                     Mount(host_path=str(exec_dir), sandbox_path=str(exec_dir), read_only=False),
                 )
         elif tool_name == "code_execution":
-            from deeptutor.services.sandbox import Mount
-
+            Mount = _get_sandbox_module().Mount
             kwargs["_sandbox_user_id"] = self._current_user_id()
             code_dir = task_dir / "code_runs" if task_dir is not None else None
             if code_dir is not None:
@@ -955,9 +1000,7 @@ class AgenticChatPipeline:
                     "language": context.language or "en",
                 }
             else:
-                from deeptutor.multi_user.context import get_current_user
-
-                user = get_current_user()
+                user = _get_current_user()
                 kwargs["_cron_owner"] = {
                     "kind": "chat",
                     "user_id": user.id,
@@ -1221,17 +1264,15 @@ class AgenticChatPipeline:
 
     @staticmethod
     def _estimate_messages_tokens(messages: list[dict[str, Any]]) -> int:
-        from deeptutor.services.session.context_builder import count_tokens
-
         total = 0
         for msg in messages:
             content = msg.get("content")
             if isinstance(content, str):
-                total += count_tokens(content)
+                total += _count_tokens(content)
             elif isinstance(content, list):
                 for part in content:
                     if isinstance(part, dict) and part.get("type") == "text":
-                        total += count_tokens(str(part.get("text") or ""))
+                        total += _count_tokens(str(part.get("text") or ""))
         return total
 
     # ---- LLM client ------------------------------------------------------
@@ -1256,9 +1297,7 @@ class AgenticChatPipeline:
     @staticmethod
     def _current_user_id() -> str:
         try:
-            from deeptutor.multi_user.context import get_current_user
-
-            return str(get_current_user().id or "anonymous")
+            return str(_get_current_user().id or "anonymous")
         except Exception:
             return "anonymous"
 
@@ -1363,10 +1402,8 @@ class AgenticChatPipeline:
         if not getattr(self, "_exec_enabled", False):
             return ""
         try:
-            from deeptutor.services.path_service import get_path_service
-
             exec_dir = (
-                get_path_service().get_task_workspace(
+                _get_path_service().get_task_workspace(
                     "chat",
                     self._workspace_key(context),
                 )

@@ -126,7 +126,7 @@ def test_sandbox_requirement_gating(tmp_path: Path, monkeypatch) -> None:
     )
     svc = SkillService(root=root, builtin_root=None)
 
-    import deeptutor.services.skill.service as svc_mod
+    svc_mod = __import__("deeptutor.services.skill.service", fromlist=["*"])
 
     monkeypatch.setattr(svc_mod, "_sandbox_available", lambda kind: False)
     entry = next(e for e in svc.summary_entries() if e.name == "runner-skill")

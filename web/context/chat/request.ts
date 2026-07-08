@@ -1,5 +1,5 @@
-import type { BookReferencePayload } from "../../lib/book-references";
-import type { ChatMessage } from "../../lib/unified-ws";
+import type { BookReferencePayload } from "@/lib/book-references";
+import type { ChatMessage } from "@/lib/unified-ws";
 import type {
   HistoryReferencePayload,
   MemoryReferencePayload,
@@ -10,7 +10,7 @@ import type {
   SendMessageOptions,
   SessionEntry,
   Action,
-} from "./state";
+} from "@/context/chat/state";
 
 type RequestInput = {
   content: string;

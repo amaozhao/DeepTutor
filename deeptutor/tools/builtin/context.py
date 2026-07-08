@@ -6,6 +6,7 @@ from typing import Any
 
 from deeptutor.core.tool_protocol import BaseTool, ToolDefinition, ToolParameter, ToolResult
 from deeptutor.tools.builtin.common import _PromptHintsMixin
+from deeptutor.tools.rag_tool import rag_search
 
 
 class RAGTool(_PromptHintsMixin, BaseTool):
@@ -28,8 +29,6 @@ class RAGTool(_PromptHintsMixin, BaseTool):
         )
 
     async def execute(self, **kwargs: Any) -> ToolResult:
-        from deeptutor.tools.rag_tool import rag_search
-
         query = str(kwargs.get("query") or "").strip()
         if not query:
             raise ValueError("RAG query must be a non-empty string.")

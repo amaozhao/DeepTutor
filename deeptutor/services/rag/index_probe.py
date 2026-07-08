@@ -21,6 +21,10 @@ from deeptutor.services.rag.factory import (
     normalize_provider_name,
     version_matches_provider,
 )
+from deeptutor.services.rag.index_versioning import list_kb_versions
+from deeptutor.services.rag.pipelines.graphrag import storage as graphrag_storage
+from deeptutor.services.rag.pipelines.lightrag import storage as lightrag_storage
+from deeptutor.services.rag.pipelines.pageindex import storage as pageindex_storage
 
 
 @dataclass(frozen=True)
@@ -74,8 +78,6 @@ def inspect_provider_version(entry: dict[str, Any], provider: str | None) -> Pro
 
 def inspect_kb_versions(kb_dir: str | Path, provider: str | None) -> list[dict[str, Any]]:
     """Return version entries annotated with provider-probe readiness."""
-    from deeptutor.services.rag.index_versioning import list_kb_versions
-
     versions: list[dict[str, Any]] = []
     for entry in list_kb_versions(Path(kb_dir)):
         adjusted = dict(entry)
@@ -166,10 +168,8 @@ def _inspect_llamaindex(storage_dir: Path) -> ProviderIndexProbe:
 
 
 def _inspect_pageindex(storage_dir: Path) -> ProviderIndexProbe:
-    from deeptutor.services.rag.pipelines.pageindex import storage
-
-    manifest = storage.read_manifest(storage_dir)
-    ids = storage.doc_ids(manifest)
+    manifest = pageindex_storage.read_manifest(storage_dir)
+    ids = pageindex_storage.doc_ids(manifest)
     if not ids:
         return ProviderIndexProbe(
             PAGEINDEX_PROVIDER,
@@ -183,16 +183,14 @@ def _inspect_pageindex(storage_dir: Path) -> ProviderIndexProbe:
         str(storage_dir),
         True,
         doc_count=len(ids),
-        diagnostics={"manifest": str(storage.manifest_path(storage_dir))},
+        diagnostics={"manifest": str(pageindex_storage.manifest_path(storage_dir))},
     )
 
 
 def _inspect_graphrag(storage_dir: Path) -> ProviderIndexProbe:
-    from deeptutor.services.rag.pipelines.graphrag import storage
-
-    out = storage.output_dir(storage_dir)
-    tables = [name for name in storage.OUTPUT_TABLES if (out / f"{name}.parquet").exists()]
-    if not storage.has_output(storage_dir):
+    out = graphrag_storage.output_dir(storage_dir)
+    tables = [name for name in graphrag_storage.OUTPUT_TABLES if (out / f"{name}.parquet").exists()]
+    if not graphrag_storage.has_output(storage_dir):
         return ProviderIndexProbe(
             GRAPHRAG_PROVIDER,
             str(storage_dir),
@@ -209,10 +207,8 @@ def _inspect_graphrag(storage_dir: Path) -> ProviderIndexProbe:
 
 
 def _inspect_lightrag(storage_dir: Path) -> ProviderIndexProbe:
-    from deeptutor.services.rag.pipelines.lightrag import storage
-
-    failure = storage.failure_summary(storage_dir)
-    ready = storage.has_output(storage_dir)
+    failure = lightrag_storage.failure_summary(storage_dir)
+    ready = lightrag_storage.has_output(storage_dir)
     return ProviderIndexProbe(
         LIGHTRAG_PROVIDER,
         str(storage_dir),

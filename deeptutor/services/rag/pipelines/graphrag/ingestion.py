@@ -17,6 +17,7 @@ import logging
 from pathlib import Path
 from typing import Iterable
 
+from deeptutor.services.parsing import ParserError, get_parse_service
 from deeptutor.services.rag.file_routing import FileTypeRouter
 
 from . import storage
@@ -37,8 +38,6 @@ def _unique_txt_path(target_dir: Path, source: Path, used: set[str]) -> Path:
 
 
 def _extract_parser_text(path: Path) -> str:
-    from deeptutor.services.parsing import ParserError, get_parse_service
-
     try:
         parsed = get_parse_service().parse(path)
     except ParserError as exc:

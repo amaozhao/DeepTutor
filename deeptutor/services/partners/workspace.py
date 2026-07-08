@@ -32,13 +32,17 @@ from pathlib import Path
 import shutil
 from typing import Any
 
+from deeptutor.multi_user.context import get_current_user
+from deeptutor.multi_user.knowledge_access import resolve_kb
 from deeptutor.multi_user.paths import (
     ensure_scope_workspace,
     get_admin_path_service,
     get_path_service_for_scope,
 )
+from deeptutor.multi_user.skill_access import assigned_skill_ids
 from deeptutor.services.partners.scope import partner_scope
 from deeptutor.services.path_service import PathService
+from deeptutor.services.skill.service import BUILTIN_SKILLS_ROOT
 
 logger = logging.getLogger(__name__)
 
@@ -51,8 +55,6 @@ def _requester_path_service() -> PathService:
     the process-default instance when no user contextvar is set, bypassing
     scope resolution entirely.
     """
-    from deeptutor.multi_user.context import get_current_user
-
     return get_path_service_for_scope(get_current_user().scope)
 
 
@@ -162,8 +164,6 @@ def _err(exc: Exception) -> str:
 
 
 def _copy_knowledge_base(kb_ref: str, partner_root: Path) -> str:
-    from deeptutor.multi_user.knowledge_access import resolve_kb
-
     resource = resolve_kb(kb_ref)
     src = Path(resource.base_dir) / resource.name
     if not src.is_dir():
@@ -183,9 +183,6 @@ def _skill_source_dir(skill_name: str) -> Path:
     admin-assigned skills. (Builtins are visible to every partner anyway —
     copying one just pins a workspace-local snapshot.)
     """
-    from deeptutor.multi_user.context import get_current_user
-    from deeptutor.services.skill.service import BUILTIN_SKILLS_ROOT
-
     own = _requester_path_service().get_workspace_dir() / "skills" / skill_name
     if (own / "SKILL.md").exists():
         return own
@@ -196,8 +193,6 @@ def _skill_source_dir(skill_name: str) -> Path:
 
     user = get_current_user()
     if not user.is_admin:
-        from deeptutor.multi_user.skill_access import assigned_skill_ids
-
         if skill_name in assigned_skill_ids(user.id):
             assigned = get_admin_path_service().get_workspace_dir() / "skills" / skill_name
             if (assigned / "SKILL.md").exists():

@@ -14,6 +14,8 @@ from pathlib import Path
 import shutil
 from typing import List, Optional
 
+from deeptutor.knowledge.manager import KnowledgeBaseManager
+from deeptutor.knowledge.progress_tracker import ProgressStage
 from deeptutor.services.config import resolve_llm_runtime_config
 from deeptutor.services.file_io import atomic_write_json
 from deeptutor.services.rag.factory import (
@@ -268,8 +270,6 @@ class DocumentAdder:
         for idx, doc_file in enumerate(new_files, 1):
             try:
                 if self.progress_tracker is not None:
-                    from deeptutor.knowledge.progress_tracker import ProgressStage
-
                     self.progress_tracker.update(
                         ProgressStage.PROCESSING_FILE,
                         f"Indexing {doc_file.name}",
@@ -341,8 +341,6 @@ async def add_documents(
     allow_duplicates: bool = False,
 ) -> int:
     """Convenience function used by CLI wrappers."""
-    from deeptutor.knowledge.manager import KnowledgeBaseManager
-
     manager = KnowledgeBaseManager(base_dir=base_dir)
     try:
         manager.update_kb_status(

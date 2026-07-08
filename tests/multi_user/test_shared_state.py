@@ -64,8 +64,8 @@ class _FakeSharedState:
 
 
 def test_postgres_shared_state_drives_auth_secret_users_and_token_version(monkeypatch):
-    from deeptutor.multi_user import identity
-    from deeptutor.services import auth as auth_service
+    identity = __import__("deeptutor.multi_user", fromlist=["identity"]).identity
+    auth_service = __import__("deeptutor.services", fromlist=["auth"]).auth
 
     fake = _FakeSharedState()
     monkeypatch.setattr(identity, "_postgres_enabled", fake.postgres_enabled)
@@ -84,7 +84,7 @@ def test_postgres_shared_state_drives_auth_secret_users_and_token_version(monkey
 
 
 def test_postgres_shared_state_create_user_does_not_overwrite(monkeypatch):
-    from deeptutor.multi_user import identity
+    identity = __import__("deeptutor.multi_user", fromlist=["identity"]).identity
 
     fake = _FakeSharedState()
     monkeypatch.setattr(identity, "_postgres_enabled", fake.postgres_enabled)
@@ -99,7 +99,7 @@ def test_postgres_shared_state_create_user_does_not_overwrite(monkeypatch):
 
 
 def test_postgres_shared_state_imports_file_users_and_secret(mu_isolated_root, monkeypatch):
-    from deeptutor.multi_user import identity
+    identity = __import__("deeptutor.multi_user", fromlist=["identity"]).identity
 
     identity.save_user("alice", "hash", role="admin")
     identity.SECRET_FILE.parent.mkdir(parents=True, exist_ok=True)
@@ -132,7 +132,7 @@ def test_postgres_shared_state_imports_file_users_and_secret(mu_isolated_root, m
 def test_postgres_shared_state_logs_unreadable_auth_secret_seed(
     mu_isolated_root, monkeypatch, caplog
 ):
-    from deeptutor.multi_user import identity
+    identity = __import__("deeptutor.multi_user", fromlist=["identity"]).identity
 
     class _UnreadableSecret:
         def exists(self):
@@ -164,8 +164,11 @@ def test_postgres_shared_state_logs_unreadable_auth_secret_seed(
 
 
 def test_postgres_shared_state_drives_grants_and_usage_quota(seed_user, as_user, monkeypatch):
-    from deeptutor.multi_user import grants, usage
-    from deeptutor.multi_user.usage import UsageQuotaExceeded
+    grants = __import__("deeptutor.multi_user", fromlist=["grants"]).grants
+    usage = __import__("deeptutor.multi_user", fromlist=["usage"]).usage
+    UsageQuotaExceeded = __import__(
+        "deeptutor.multi_user.usage", fromlist=["UsageQuotaExceeded"]
+    ).UsageQuotaExceeded
 
     fake = _FakeSharedState()
     monkeypatch.setattr(grants, "_postgres_enabled", fake.postgres_enabled)
@@ -203,7 +206,7 @@ def test_postgres_shared_state_drives_grants_and_usage_quota(seed_user, as_user,
 
 
 def test_postgres_shared_state_drives_rate_limiter(monkeypatch):
-    from deeptutor.api import security
+    security = __import__("deeptutor.api", fromlist=["security"]).security
 
     fake = _FakeSharedState()
     monkeypatch.setattr(security, "_postgres_shared_state_enabled", fake.postgres_enabled)
@@ -219,7 +222,7 @@ def test_postgres_shared_state_drives_rate_limiter(monkeypatch):
 
 
 def test_postgres_shared_state_drives_invites(monkeypatch):
-    from deeptutor.multi_user import invites
+    invites = __import__("deeptutor.multi_user", fromlist=["invites"]).invites
 
     fake = _FakeSharedState()
     monkeypatch.setattr(invites, "_postgres_enabled", fake.postgres_enabled)
@@ -240,11 +243,17 @@ def test_postgres_shared_state_drives_invites(monkeypatch):
 
 
 def test_postgres_shared_state_export_and_delete_policy(seed_user, monkeypatch):
-    import json
-    import zipfile
+    json = __import__("json")
+    zipfile = __import__("zipfile")
 
-    from deeptutor.multi_user import grants, usage
-    from deeptutor.multi_user.data_governance import apply_user_delete_policy, export_user_data
+    grants = __import__("deeptutor.multi_user", fromlist=["grants"]).grants
+    usage = __import__("deeptutor.multi_user", fromlist=["usage"]).usage
+    apply_user_delete_policy = __import__(
+        "deeptutor.multi_user.data_governance", fromlist=["apply_user_delete_policy"]
+    ).apply_user_delete_policy
+    export_user_data = __import__(
+        "deeptutor.multi_user.data_governance", fromlist=["export_user_data"]
+    ).export_user_data
 
     fake = _FakeSharedState()
     monkeypatch.setattr(grants, "_postgres_enabled", fake.postgres_enabled)

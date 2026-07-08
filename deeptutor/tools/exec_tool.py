@@ -18,6 +18,15 @@ from typing import Any
 
 from deeptutor.core.i18n import t
 from deeptutor.core.tool_protocol import BaseTool, ToolDefinition, ToolParameter, ToolResult
+from deeptutor.services.sandbox import (
+    ExecRequest,
+    ResourceLimits,
+    get_sandbox_service,
+)
+from deeptutor.services.sandbox.artifacts import (
+    collect_public_artifacts,
+    render_artifacts_for_tool,
+)
 from deeptutor.tools.prompting import load_prompt_hints
 
 # NOTE: ``deeptutor.services.sandbox`` is imported lazily inside ``execute``
@@ -90,12 +99,6 @@ class ExecTool(BaseTool):
                     success=False,
                 )
 
-        from deeptutor.services.sandbox import (
-            ExecRequest,
-            ResourceLimits,
-            get_sandbox_service,
-        )
-
         # ``_sandbox_*`` kwargs are injected server-side by the pipeline; the
         # LLM never supplies them.
         user_id = str(kwargs.get("_sandbox_user_id") or "anonymous")
@@ -119,11 +122,6 @@ class ExecTool(BaseTool):
         artifacts = []
         artifact_rows: list[dict[str, object]] = []
         if workdir:
-            from deeptutor.services.sandbox.artifacts import (
-                collect_public_artifacts,
-                render_artifacts_for_tool,
-            )
-
             artifacts = collect_public_artifacts(workdir)
             artifact_rows = [artifact.to_dict() for artifact in artifacts]
         content_parts = [result.render(limits.max_output_chars)]

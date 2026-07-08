@@ -105,17 +105,17 @@ class TestToolLayerExports:
         assert get_available_providers() == RAGService.list_providers()
 
     def test_rag_search_requires_kb_name(self) -> None:
-        import asyncio
+        asyncio = __import__("asyncio")
 
-        from deeptutor.tools.rag_tool import rag_search
+        rag_search = __import__("deeptutor.tools.rag_tool", fromlist=["rag_search"]).rag_search
 
         with pytest.raises(ValueError, match="kb_name"):
             asyncio.run(rag_search(query="hi", kb_name=""))
 
     def test_rag_search_requires_query(self) -> None:
-        import asyncio
+        asyncio = __import__("asyncio")
 
-        from deeptutor.tools.rag_tool import rag_search
+        rag_search = __import__("deeptutor.tools.rag_tool", fromlist=["rag_search"]).rag_search
 
         with pytest.raises(ValueError, match="non-empty"):
             asyncio.run(rag_search(query="", kb_name="any"))

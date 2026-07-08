@@ -7,6 +7,7 @@ Provides both complete() and stream() methods.
 """
 
 from collections.abc import AsyncGenerator, Mapping
+import json
 import logging
 from typing import cast
 
@@ -433,7 +434,6 @@ async def _openai_stream(
     **kwargs: object,
 ) -> AsyncGenerator[str, None]:
     """OpenAI-compatible streaming."""
-    import json
 
     # Sanitize URL
     if base_url:
@@ -705,7 +705,6 @@ async def _anthropic_stream(
     temperature: float | None = None,
 ) -> AsyncGenerator[str, None]:
     """Anthropic (Claude) API streaming."""
-    import json
 
     if not api_key:
         raise LLMAuthenticationError(

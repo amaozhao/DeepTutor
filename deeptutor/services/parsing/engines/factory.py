@@ -21,34 +21,59 @@ from deeptutor.services.config.runtime_settings import (
 from ..base import Parser
 from ..types import ParserError
 
+try:
+    from .mineru.engine import MinerUParser
+except ModuleNotFoundError:  # pragma: no cover - optional engine deps
+    MinerUParser = None
+
+try:
+    from .text_only.engine import TextOnlyParser
+except ModuleNotFoundError:  # pragma: no cover - optional engine deps
+    TextOnlyParser = None
+
+try:
+    from .docling.engine import DoclingParser
+except ModuleNotFoundError:  # pragma: no cover - optional engine deps
+    DoclingParser = None
+
+try:
+    from .markitdown.engine import MarkItDownParser
+except ModuleNotFoundError:  # pragma: no cover - optional engine deps
+    MarkItDownParser = None
+
+try:
+    from .pymupdf4llm.engine import PyMuPDF4LLMParser
+except ModuleNotFoundError:  # pragma: no cover - optional engine deps
+    PyMuPDF4LLMParser = None
+
 
 def _mineru_class():
-    from .mineru.engine import MinerUParser
-
+    if MinerUParser is None:
+        raise ModuleNotFoundError("MinerU parser engine is unavailable")
     return MinerUParser
 
 
 def _text_only_class():
-    from .text_only.engine import TextOnlyParser
-
+    if TextOnlyParser is None:
+        raise ModuleNotFoundError("TextOnly parser engine is unavailable")
     return TextOnlyParser
 
 
 def _docling_class():
-    from .docling.engine import DoclingParser
-
+    if DoclingParser is None:
+        raise ModuleNotFoundError("Docling parser engine is unavailable")
     return DoclingParser
 
 
 def _markitdown_class():
-    from .markitdown.engine import MarkItDownParser
-
+    if MarkItDownParser is None:
+        raise ModuleNotFoundError("MarkItDown parser engine is unavailable")
     return MarkItDownParser
 
 
 def _pymupdf4llm_class():
-    from .pymupdf4llm.engine import PyMuPDF4LLMParser
-
+    if PyMuPDF4LLMParser is None:
+        raise ModuleNotFoundError("PyMuPDF4LLM parser engine is unavailable")
     return PyMuPDF4LLMParser
 
 

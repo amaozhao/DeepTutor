@@ -21,7 +21,7 @@ def _patch_event_bus():
     mock_bus.publish = AsyncMock()
     with patch("deeptutor.runtime.orchestrator.get_event_bus", return_value=mock_bus):
         yield
-    from deeptutor.events.event_bus import EventBus
+    EventBus = __import__("deeptutor.events.event_bus", fromlist=["EventBus"]).EventBus
 
     EventBus.reset()
 

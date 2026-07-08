@@ -5,6 +5,8 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from deeptutor.agents.question.coordinator import AgentCoordinator
+
 from ..models import BlockType, SourceAnchor
 from .base import BlockContext, BlockGenerator, GenerationFailure
 
@@ -34,8 +36,6 @@ class QuizGenerator(BlockGenerator):
         question_types = [question_type] if question_type else []
 
         try:
-            from deeptutor.agents.question.coordinator import AgentCoordinator
-
             coordinator = AgentCoordinator(
                 kb_name=ctx.primary_kb,
                 language=ctx.language,

@@ -17,11 +17,14 @@ import shutil
 import subprocess
 from typing import Any
 
+from .cloud import parse_cloud
 from .config import (
     MinerUConfig,
     MinerUError,
     resolve_mineru_config,
 )
+from .local import parse_pdf_with_mineru
+from .models import model_env_overrides
 
 logger = logging.getLogger(__name__)
 
@@ -52,8 +55,6 @@ def parse_pdf_to_workdir(
     output_base.mkdir(parents=True, exist_ok=True)
 
     if cfg.is_cloud:
-        from .cloud import parse_cloud
-
         logger.info("Parsing %s via MinerU cloud API", pdf_path.name)
         return parse_cloud(pdf_path, output_base, cfg, on_progress=on_output)
 
@@ -123,9 +124,6 @@ def _parse_local(
 ) -> Path:
     """Local-CLI branch: delegate to the existing subprocess parser and return
     the deterministic output directory it writes to (``<base>/<stem>``)."""
-    from .local import parse_pdf_with_mineru
-    from .models import model_env_overrides
-
     cli_command = None
     if (config.local_cli_path or "").strip():
         probe = local_cli_probe(config.local_cli_path)

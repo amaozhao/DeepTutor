@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from deeptutor.services.embedding import get_embedding_config
 from deeptutor.services.rag.index_versioning import EmbeddingSignature
 
 logger = logging.getLogger(__name__)
@@ -25,11 +26,6 @@ def signature_from_config(config: Any) -> EmbeddingSignature:
 
 def signature_from_embedding_config() -> EmbeddingSignature | None:
     """Compute the signature for the currently-active embedding config."""
-    try:
-        from deeptutor.services.embedding import get_embedding_config
-    except Exception:  # pragma: no cover - import error
-        return None
-
     try:
         return signature_from_config(get_embedding_config())
     except Exception as exc:

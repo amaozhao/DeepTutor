@@ -18,6 +18,7 @@ from openai import AsyncAzureOpenAI, AsyncOpenAI
 
 from deeptutor.services.llm import get_token_limit_kwargs, supports_tools
 from deeptutor.services.llm.openai_http_client import openai_client_kwargs
+import deeptutor.services.llm.provider_core as provider_core
 from deeptutor.services.llm.reasoning_params import (
     build_openai_compatible_reasoning_kwargs,
 )
@@ -79,9 +80,7 @@ def build_openai_client(config: LLMClientConfig) -> Any:
 
 
 def _build_anthropic_adapter(config: LLMClientConfig, spec: Any) -> Any:
-    from deeptutor.services.llm.provider_core import AnthropicProvider
-
-    anthropic_provider = AnthropicProvider(
+    anthropic_provider = provider_core.AnthropicProvider(
         api_key=config.api_key,
         api_base=config.base_url or spec.default_api_base or None,
         default_model=config.model or "claude-sonnet-4-20250514",
@@ -92,18 +91,14 @@ def _build_anthropic_adapter(config: LLMClientConfig, spec: Any) -> Any:
 
 
 def _build_codex_adapter(config: LLMClientConfig, spec: Any) -> Any:
-    from deeptutor.services.llm.provider_core import OpenAICodexProvider
-
-    oauth_provider = OpenAICodexProvider(
+    oauth_provider = provider_core.OpenAICodexProvider(
         default_model=config.model or "openai-codex/gpt-5.1-codex",
     )
     return _ProviderOpenAIAdapter(oauth_provider)
 
 
 def _build_copilot_adapter(config: LLMClientConfig, spec: Any) -> Any:
-    from deeptutor.services.llm.provider_core import GitHubCopilotProvider
-
-    copilot_provider = GitHubCopilotProvider(
+    copilot_provider = provider_core.GitHubCopilotProvider(
         default_model=config.model or "github-copilot/gpt-4.1",
     )
     return _ProviderOpenAIAdapter(copilot_provider)

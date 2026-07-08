@@ -1,6 +1,6 @@
-import type { StreamEvent, UnifiedWSClient } from "../../lib/unified-ws";
-import { hasPendingAskUserInMessages } from "../../lib/ask-user-state";
-import type { Action, MessageItem, SessionRuntimeStatus } from "./state";
+import type { StreamEvent, UnifiedWSClient } from "@/lib/unified-ws";
+import { hasPendingAskUserInMessages } from "@/lib/ask-user-state";
+import type { Action, MessageItem, SessionRuntimeStatus } from "@/context/chat/state";
 
 type RunnerClient = Pick<
   UnifiedWSClient,

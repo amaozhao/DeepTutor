@@ -11,6 +11,9 @@ import logging
 from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 
 from deeptutor.agents.chat import ChatAgent, SessionManager
+from deeptutor.api.routers.auth import ws_auth_failed, ws_require_auth
+from deeptutor.api.security import require_ws_turn_rate_limit
+from deeptutor.multi_user.context import get_current_user, reset_current_user
 from deeptutor.services.config import PROJECT_ROOT, load_config_with_main
 from deeptutor.services.llm.config import get_llm_config
 from deeptutor.services.settings.interface_settings import get_ui_language
@@ -58,9 +61,6 @@ async def delete_session(session_id: str):
 
 @router.websocket("/chat")
 async def websocket_chat(websocket: WebSocket):
-    from deeptutor.api.routers.auth import ws_auth_failed, ws_require_auth
-    from deeptutor.api.security import require_ws_turn_rate_limit
-    from deeptutor.multi_user.context import get_current_user, reset_current_user
 
     user_token = await ws_require_auth(websocket)
     if user_token is ws_auth_failed:

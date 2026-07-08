@@ -10,12 +10,24 @@ intentionally thin so the order of steps is easy to read top-to-bottom.
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from rich.console import Console
 import typer
 
+from deeptutor.runtime.banner import labels_for, print_banner, resolve_language
 from deeptutor.runtime.home import DEEPTUTOR_HOME_ENV, get_runtime_home
+from deeptutor.services.config import get_model_catalog_service, get_runtime_settings_service
+from deeptutor.services.config.embedding_endpoint import (
+    EMBEDDING_PROVIDER_LABELS,
+    normalize_embedding_endpoint_for_display,
+)
+from deeptutor.services.config.model_catalog import ModelCatalogService
+from deeptutor.services.config.provider_runtime import EMBEDDING_PROVIDERS
+from deeptutor.services.config.runtime_settings import RuntimeSettingsService
+from deeptutor.services.path_service import PathService
+from deeptutor.services.setup import init_user_directories
 
 from . import init_wizard as wiz
 
@@ -28,20 +40,14 @@ def _reset_runtime_singletons() -> None:
     write to the wrong place if not cleared.
     """
     try:
-        from deeptutor.services.path_service import PathService
-
         PathService.reset_instance()
     except Exception:
         pass
     try:
-        from deeptutor.services.config.runtime_settings import RuntimeSettingsService
-
         RuntimeSettingsService._instances.clear()
     except Exception:
         pass
     try:
-        from deeptutor.services.config.model_catalog import ModelCatalogService
-
         ModelCatalogService._instances.clear()
     except Exception:
         pass
@@ -194,12 +200,6 @@ def _embedding_step(
     llm_api_key: str,
 ) -> wiz.EmbeddingChoice | None:
     """Returns ``None`` when the user picks ``[s] Skip``."""
-
-    from deeptutor.services.config.embedding_endpoint import (
-        EMBEDDING_PROVIDER_LABELS,
-        normalize_embedding_endpoint_for_display,
-    )
-    from deeptutor.services.config.provider_runtime import EMBEDDING_PROVIDERS
 
     current_profile = (catalog.get("services", {}).get("embedding", {}).get("profiles") or [{}])[
         0
@@ -380,14 +380,9 @@ def _ensure_search_service(catalog: dict, profile_id: str) -> dict:
 def run_init(*, cli_only: bool = False, home: str | Path | None = None) -> None:
     runtime_home = get_runtime_home(home)
     runtime_home.mkdir(parents=True, exist_ok=True)
-    import os
 
     os.environ[DEEPTUTOR_HOME_ENV] = str(runtime_home)
     _reset_runtime_singletons()
-
-    from deeptutor.runtime.banner import labels_for, print_banner, resolve_language
-    from deeptutor.services.config import get_model_catalog_service, get_runtime_settings_service
-    from deeptutor.services.setup import init_user_directories
 
     init_user_directories(runtime_home)
 

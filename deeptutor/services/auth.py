@@ -28,7 +28,36 @@ from datetime import datetime, timedelta, timezone
 import logging
 from typing import Any
 
+import bcrypt
+from jose import JWTError, jwt
+
+from deeptutor.multi_user.identity import (
+    create_user,
+    list_user_info,
+    load_or_create_auth_secret,
+    load_users,
+    new_user_id,
+)
+from deeptutor.multi_user.identity import (
+    delete_user as _delete_user,
+)
+from deeptutor.multi_user.identity import (
+    revoke_sessions as _revoke_sessions,
+)
+from deeptutor.multi_user.identity import (
+    set_avatar as _set_avatar,
+)
+from deeptutor.multi_user.identity import (
+    set_disabled as _set_disabled,
+)
+from deeptutor.multi_user.identity import (
+    set_role as _set_role,
+)
+from deeptutor.multi_user.identity import (
+    update_password as _update_password,
+)
 from deeptutor.services.config import load_auth_settings, load_integrations_settings
+from deeptutor.services.pocketbase_client import get_pb_client, validate_pb_token
 
 logger = logging.getLogger(__name__)
 
@@ -55,8 +84,6 @@ _ALGORITHM = "HS256"
 
 
 if AUTH_ENABLED and not POCKETBASE_ENABLED and not AUTH_SECRET:
-    from deeptutor.multi_user.identity import load_or_create_auth_secret
-
     AUTH_SECRET = load_or_create_auth_secret()
 
 
@@ -82,15 +109,11 @@ class TokenPayload:
 
 def hash_password(plain: str) -> str:
     """Hash a plaintext password. Use this to generate password hashes."""
-    import bcrypt
-
     return bcrypt.hashpw(plain.encode(), bcrypt.gensalt()).decode()
 
 
 def verify_password(plain: str, hashed: str) -> bool:
     """Verify a plaintext password against a stored bcrypt hash."""
-    import bcrypt
-
     try:
         return bcrypt.checkpw(plain.encode(), hashed.encode())
     except Exception:
@@ -104,7 +127,6 @@ def verify_password(plain: str, hashed: str) -> bool:
 
 def _make_user_record(hashed: str, role: str = "user", created_at: str = "") -> dict[str, Any]:
     """Build a canonical user record dict for legacy callers/tests."""
-    from deeptutor.multi_user.identity import new_user_id
 
     return {
         "id": new_user_id(),
@@ -128,8 +150,6 @@ def _load_users() -> dict[str, dict]:
     Old format: {"alice": "$2b$12$..."}
     New format: {"alice": {"hash": "...", "role": "admin", "created_at": "..."}}
     """
-    from deeptutor.multi_user.identity import load_users
-
     return load_users(AUTH_USERNAME, AUTH_PASSWORD_HASH)
 
 
@@ -148,8 +168,6 @@ def add_user(username: str, plain_password: str, role: str = "user") -> dict[str
 
     Creates the file (and parent directories) if they don't exist.
     """
-    from deeptutor.multi_user.identity import create_user
-
     record = create_user(username, hash_password(plain_password), role=role)  # type: ignore[arg-type]
     if record is None:
         return None
@@ -159,8 +177,6 @@ def add_user(username: str, plain_password: str, role: str = "user") -> dict[str
 
 def update_password(username: str, plain_password: str) -> bool:
     """Update a user's password and invalidate existing JWTs."""
-    from deeptutor.multi_user.identity import update_password as _update_password
-
     if not _update_password(username, hash_password(plain_password)):
         return False
     logger.info("User '%s' password updated", username)
@@ -169,8 +185,6 @@ def update_password(username: str, plain_password: str) -> bool:
 
 def list_users() -> list[dict]:
     """Return a list of user info dicts (username, role, created_at) — no hashes."""
-    from deeptutor.multi_user.identity import list_user_info
-
     return list_user_info(AUTH_USERNAME, AUTH_PASSWORD_HASH)
 
 
@@ -179,8 +193,6 @@ def delete_user(username: str) -> bool:
     Remove a user from the store. Returns True if the user existed.
 
     """
-    from deeptutor.multi_user.identity import delete_user as _delete_user
-
     if not _delete_user(username):
         return False
     logger.info("User '%s' deleted", username)
@@ -196,8 +208,6 @@ def set_role(username: str, role: str) -> bool:
     if role not in ("admin", "user"):
         raise ValueError(f"Invalid role: {role!r}. Must be 'admin' or 'user'.")
 
-    from deeptutor.multi_user.identity import set_role as _set_role
-
     if not _set_role(username, role):  # type: ignore[arg-type]
         return False
     logger.info(f"User '{username}' role updated to {role!r}")
@@ -206,8 +216,6 @@ def set_role(username: str, role: str) -> bool:
 
 def set_disabled(username: str, disabled: bool, reason: str = "") -> bool:
     """Enable/disable a user and invalidate existing JWTs."""
-    from deeptutor.multi_user.identity import set_disabled as _set_disabled
-
     if not _set_disabled(username, disabled, reason=reason):
         return False
     logger.info("User '%s' disabled=%s", username, disabled)
@@ -216,8 +224,6 @@ def set_disabled(username: str, disabled: bool, reason: str = "") -> bool:
 
 def revoke_sessions(username: str) -> bool:
     """Invalidate a user's existing JWTs without changing their account."""
-    from deeptutor.multi_user.identity import revoke_sessions as _revoke_sessions
-
     if not _revoke_sessions(username):
         return False
     logger.info("User '%s' sessions revoked", username)
@@ -231,8 +237,6 @@ def set_avatar(username: str, avatar: str) -> bool:
     The marker is either '' (deterministic fallback), 'icon:<name>:<color>',
     or 'img:<version>' (managed by the avatar upload endpoint).
     """
-    from deeptutor.multi_user.identity import set_avatar as _set_avatar
-
     if not _set_avatar(username, avatar):
         return False
     logger.info("User '%s' avatar updated", username)
@@ -254,8 +258,6 @@ def get_user_info(username: str) -> dict | None:
 
 def create_token(username: str, role: str = "user", user_id: str | None = None) -> str:
     """Create a signed JWT for the given username and role."""
-    from jose import jwt
-
     record = _load_users().get(username) or {}
     if not user_id:
         user_id = str(record.get("id") or "")
@@ -285,8 +287,6 @@ def decode_token(token: str) -> TokenPayload | None:
         return None
 
     if POCKETBASE_ENABLED:
-        from deeptutor.services.pocketbase_client import validate_pb_token
-
         payload = validate_pb_token(token)
         if payload is None:
             return None
@@ -297,8 +297,6 @@ def decode_token(token: str) -> TokenPayload | None:
         )
 
     # Standard JWT + bcrypt mode
-    from jose import JWTError, jwt
-
     if not AUTH_SECRET:
         return None
 
@@ -345,8 +343,6 @@ def authenticate_pb(username: str, password: str) -> tuple[TokenPayload, str] | 
     <username>@deeptutor.local to match the email used at registration.
     """
     try:
-        from deeptutor.services.pocketbase_client import get_pb_client
-
         pb = get_pb_client()
         result = pb.collection("users").auth_with_password(username, password)
         token: str = result.token
@@ -373,8 +369,6 @@ def register_pb(username: str, email: str, password: str) -> dict | None:
     Returns the created user record dict or None on failure.
     """
     try:
-        from deeptutor.services.pocketbase_client import get_pb_client
-
         pb = get_pb_client()
         record = pb.collection("users").create(
             {

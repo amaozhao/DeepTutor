@@ -10,6 +10,11 @@ from typing import Any
 
 import httpx
 
+try:
+    from oauth_cli_kit import get_token as get_codex_token
+except ModuleNotFoundError:  # pragma: no cover - optional dependency
+    get_codex_token = None
+
 from deeptutor.services.llm.openai_http_client import disable_ssl_verify_enabled
 from deeptutor.services.llm.provider_core.base import LLMProvider, LLMResponse, ToolCallRequest
 from deeptutor.services.llm.provider_core.openai_responses import (
@@ -30,12 +35,10 @@ class OpenAICodexProvider(LLMProvider):
         self.default_model = default_model
 
     async def _load_token(self) -> Any:
-        try:
-            from oauth_cli_kit import get_token as get_codex_token
-        except ImportError as exc:  # pragma: no cover - optional dependency
+        if get_codex_token is None:  # pragma: no cover - optional dependency
             raise RuntimeError(
                 "oauth_cli_kit is not installed. Install CLI deps or switch provider."
-            ) from exc
+            )
         return await asyncio.to_thread(get_codex_token)
 
     async def _call_codex(

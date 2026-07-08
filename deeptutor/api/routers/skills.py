@@ -10,6 +10,8 @@ Mounted at ``/api/v1/skills``.
 
 from __future__ import annotations
 
+import asyncio
+
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
@@ -20,6 +22,12 @@ from deeptutor.multi_user.skill_access import (
     assigned_skill_infos,
 )
 from deeptutor.services.skill import get_skill_service
+from deeptutor.services.skill.hub import (
+    ClawHubProvider,
+    HubError,
+    get_hub_provider,
+    install_from_hub,
+)
 from deeptutor.services.skill.service import (
     InvalidSkillNameError,
     InvalidTagError,
@@ -149,9 +157,6 @@ async def hub_catalog(hub: str = "eduhub", q: str = "", limit: int = 50) -> dict
     one-click download skills. Returns ``web_url`` (the hub's site origin) so
     the panel can offer a "view on EduHub" link out.
     """
-    import asyncio
-
-    from deeptutor.services.skill.hub import ClawHubProvider, HubError, get_hub_provider
 
     try:
         provider = get_hub_provider(hub)
@@ -169,9 +174,6 @@ async def hub_catalog(hub: str = "eduhub", q: str = "", limit: int = 50) -> dict
 @router.get("/hub/detail")
 async def hub_detail(slug: str, hub: str = "eduhub") -> dict[str, object]:
     """Full metadata + SKILL.md body for one hub skill (browser detail view)."""
-    import asyncio
-
-    from deeptutor.services.skill.hub import ClawHubProvider, HubError, get_hub_provider
 
     try:
         provider = get_hub_provider(hub)
@@ -239,9 +241,6 @@ async def install_skill(payload: InstallSkillRequest) -> dict[str, object]:
     (``suspicious`` verdict abort, safe extraction, ``always`` stripping)
     lives in :func:`deeptutor.services.skill.hub.install_from_hub`.
     """
-    import asyncio
-
-    from deeptutor.services.skill.hub import HubError, install_from_hub
 
     service = get_skill_service()
     try:

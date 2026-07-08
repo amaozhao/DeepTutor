@@ -102,7 +102,7 @@ class _CapturingTransport(httpx.AsyncBaseTransport):
         self._dim = dim
 
     async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
-        import json as _json
+        _json = __import__("json")
 
         self.captured_payloads.append(_json.loads(request.content.decode("utf-8")))
         body = {

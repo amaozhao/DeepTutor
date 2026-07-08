@@ -32,9 +32,23 @@ from pathlib import Path
 from typing import Any, Iterable, Optional
 
 from fsspec.implementations.local import LocalFileSystem
-from llama_index.core import StorageContext, load_index_from_storage
-from llama_index.core.vector_stores.simple import DEFAULT_VECTOR_STORE, NAMESPACE_SEP
 import numpy as np
+
+try:
+    import faiss
+    from llama_index.vector_stores.faiss import FaissVectorStore
+except Exception:  # pragma: no cover - optional dependency
+    faiss = None
+    FaissVectorStore = None
+
+try:
+    from llama_index.core import StorageContext, load_index_from_storage
+    from llama_index.core.vector_stores.simple import DEFAULT_VECTOR_STORE, NAMESPACE_SEP
+except Exception:  # pragma: no cover - optional dependency
+    StorageContext = None
+    load_index_from_storage = None
+    DEFAULT_VECTOR_STORE = "default"
+    NAMESPACE_SEP = "__"
 
 logger = logging.getLogger(__name__)
 
@@ -51,10 +65,7 @@ _COSINE_FAISS_CLS: Optional[type] = None
 
 def _faiss_modules() -> tuple[Any, Any]:
     """Return ``(faiss, FaissVectorStore)`` or ``(None, None)`` when unavailable."""
-    try:
-        import faiss
-        from llama_index.vector_stores.faiss import FaissVectorStore
-    except Exception:  # pragma: no cover - exercised only without faiss installed
+    if faiss is None or FaissVectorStore is None:
         return None, None
     return faiss, FaissVectorStore
 
@@ -86,8 +97,6 @@ def faiss_write_index(index: Any, persist_path: str) -> None:
     API on Windows, so Unicode paths work. The byte payload is identical to
     ``write_index`` output, so indexes stay cross-readable with stock FAISS.
     """
-    import faiss
-
     payload = faiss.serialize_index(index)
     with open(persist_path, "wb") as handle:
         handle.write(payload.tobytes())
@@ -101,8 +110,6 @@ def faiss_read_index(persist_path: str) -> Any:
     Python ``open`` keeps the load path Unicode-safe on Windows, mirroring
     :func:`faiss_write_index`.
     """
-    import faiss
-
     with open(persist_path, "rb") as handle:
         buffer = np.frombuffer(handle.read(), dtype="uint8")
     return faiss.deserialize_index(buffer)
@@ -190,7 +197,7 @@ def new_faiss_storage_context(dimension: int) -> Optional[StorageContext]:
     """
     faiss, _ = _faiss_modules()
     cosine_cls = _cosine_faiss_cls()
-    if faiss is None or cosine_cls is None or dimension <= 0:
+    if faiss is None or cosine_cls is None or StorageContext is None or dimension <= 0:
         return None
     store = cosine_cls(faiss_index=faiss.IndexFlatIP(dimension))
     return StorageContext.from_defaults(vector_store=store)
@@ -233,6 +240,8 @@ def load_index(storage_dir: Path) -> Any:
     storage_dir = Path(storage_dir)
 
     if detect_backend(storage_dir) == BACKEND_FAISS:
+        if StorageContext is None or load_index_from_storage is None:
+            raise RuntimeError("LlamaIndex is not installed.")
         cosine_cls = _cosine_faiss_cls()
         if cosine_cls is None:
             raise RuntimeError(

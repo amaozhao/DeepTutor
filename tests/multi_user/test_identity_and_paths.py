@@ -113,7 +113,7 @@ def test_existing_auth_secret_read_does_not_take_write_lock(mu_isolated_root):
 
 
 def test_invite_writes_reuse_auth_store_write_lock(mu_isolated_root, monkeypatch):
-    from deeptutor.multi_user import invites
+    invites = __import__("deeptutor.multi_user", fromlist=["invites"]).invites
 
     calls = 0
 

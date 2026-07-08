@@ -13,16 +13,15 @@ changes the connection signature).
 from __future__ import annotations
 
 from deeptutor.services.mcp.config import MCPConfig, MCPServerConfig
+import deeptutor.services.rag.pipelines.pageindex.config as pageindex_config
 
 PAGEINDEX_SERVER_NAME = "pageindex"
 
 
 def builtin_pageindex_server() -> MCPServerConfig | None:
     """The injected server entry, or ``None`` when no API key is configured."""
-    from deeptutor.services.rag.pipelines.pageindex.config import get_pageindex_config
-
     try:
-        cfg = get_pageindex_config()
+        cfg = pageindex_config.get_pageindex_config()
     except Exception:
         return None
     return MCPServerConfig(

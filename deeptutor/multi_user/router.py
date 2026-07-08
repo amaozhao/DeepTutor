@@ -10,9 +10,17 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from deeptutor.api.routers.auth import require_admin
+from deeptutor.api.utils.tool_options import build_tool_options
 from deeptutor.knowledge.manager import KnowledgeBaseManager
 from deeptutor.services.config.model_catalog import ModelCatalogService
-from deeptutor.services.skill.service import SkillService
+from deeptutor.services.partners import get_partner_manager
+from deeptutor.services.skill.hub import HubError, install_from_hub
+from deeptutor.services.skill.service import (
+    InvalidSkillNameError,
+    SkillExistsError,
+    SkillImportError,
+    SkillService,
+)
 
 from .audit import log_admin_action, query_audit_events
 from .data_governance import (
@@ -25,7 +33,8 @@ from .grants import load_grant, save_grant
 from .identity import get_user_by_id, list_user_info
 from .knowledge_access import admin_kb_base_dir
 from .paths import get_admin_path_service
-from .usage import empty_quota, normalize_quota, usage_summary
+from .quota import empty_quota, normalize_quota
+from .usage import usage_summary
 
 router = APIRouter()
 
@@ -98,7 +107,6 @@ def _admin_partner_summary() -> list[dict[str, Any]]:
     """The partners an admin can assign. Partners are process-wide resources
     anchored at the admin workspace, so this lists them all (identity only — no
     channel wiring or model selection leaks into the assignable summary)."""
-    from deeptutor.services.partners import get_partner_manager
 
     return [
         {
@@ -128,7 +136,6 @@ def _require_assignable_user(user_id: str) -> tuple[str, dict[str, Any]]:
 async def admin_resources(_: object = Depends(require_admin)) -> dict[str, Any]:
     """Everything an admin can assign to a user: models, KBs, skills, and
     the tool surface (system tools + MCP tools, same pool partners use)."""
-    from deeptutor.api.utils.tool_options import build_tool_options
 
     tool_options = await build_tool_options()
     return {
@@ -251,13 +258,6 @@ async def admin_install_skill(
     lives in :func:`deeptutor.services.skill.hub.install_from_hub`; this
     endpoint only chooses the target root and audits the action.
     """
-    from deeptutor.services.skill.hub import HubError, install_from_hub
-    from deeptutor.services.skill.service import (
-        InvalidSkillNameError,
-        SkillExistsError,
-        SkillImportError,
-    )
-
     service = SkillService(root=get_admin_path_service().get_workspace_dir() / "skills")
     try:
         outcome = await asyncio.to_thread(

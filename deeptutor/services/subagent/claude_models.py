@@ -15,17 +15,25 @@ empty list so the caller falls back to the curated catalog.
 
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime, timezone
 import json
 import logging
 import os
+import pty
 import re
 import select
+import shutil
 import signal
 import tempfile
 import time
 
 from deeptutor.services.path_service import get_path_service
+
+try:
+    import pyte
+except Exception:  # pragma: no cover - optional dependency
+    pyte = None
 
 logger = logging.getLogger(__name__)
 
@@ -72,7 +80,6 @@ async def sync_claude_models() -> tuple[list[dict[str, str]], str]:
     Runs the blocking pty capture off the event loop. On any failure returns
     ``([], "")`` and leaves the existing cache untouched.
     """
-    import asyncio
 
     try:
         screen = await asyncio.to_thread(_capture_model_screen)
@@ -147,11 +154,7 @@ def _capture_model_screen() -> str | None:
     """
     if os.name != "posix":
         return None
-    try:
-        import pty
-
-        import pyte
-    except Exception:
+    if pyte is None:
         return None
 
     screen = pyte.Screen(_COLS, _ROWS)
@@ -230,7 +233,6 @@ def _capture_model_screen() -> str | None:
 
 
 def _cleanup_dir(path: str) -> None:
-    import shutil
 
     shutil.rmtree(path, ignore_errors=True)
 

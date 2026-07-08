@@ -11,6 +11,7 @@ used — DeepTutor runs fine without the optional dependency installed.
 
 from __future__ import annotations
 
+import importlib
 import logging
 from pathlib import Path
 from typing import Any
@@ -41,9 +42,9 @@ _OUTPUTS_BY_MODE: dict[str, tuple[list[str], list[str]]] = {
 
 
 def _load_config(root_dir: Path):
-    from graphrag.config.load_config import load_config
-
-    return load_config(root_dir=Path(root_dir))
+    return importlib.import_module("graphrag.config.load_config").load_config(
+        root_dir=Path(root_dir)
+    )
 
 
 async def build(root_dir: Path, *, is_update: bool = False) -> None:
@@ -52,9 +53,8 @@ async def build(root_dir: Path, *, is_update: bool = False) -> None:
     Raises on any failed workflow so the caller can surface an error and clean
     up the (incomplete) version directory.
     """
-    from graphrag.api import build_index
-    from graphrag.config.enums import IndexingMethod
-
+    build_index = importlib.import_module("graphrag.api").build_index
+    IndexingMethod = importlib.import_module("graphrag.config.enums").IndexingMethod
     config = _load_config(root_dir)
     logger.info("GraphRAG: building index at %s (update=%s)", root_dir, is_update)
     results = await build_index(
@@ -70,10 +70,11 @@ async def build(root_dir: Path, *, is_update: bool = False) -> None:
 
 async def _resolve_outputs(config, names: list[str], optional: list[str]) -> dict[str, Any]:
     """Load the requested output parquet tables as DataFrames (mirrors the CLI)."""
-    from graphrag.data_model.data_reader import DataReader
-    from graphrag_storage import create_storage
-    from graphrag_storage.tables.table_provider_factory import create_table_provider
-
+    DataReader = importlib.import_module("graphrag.data_model.data_reader").DataReader
+    create_storage = importlib.import_module("graphrag_storage").create_storage
+    create_table_provider = importlib.import_module(
+        "graphrag_storage.tables.table_provider_factory"
+    ).create_table_provider
     storage_obj = create_storage(config.output_storage)
     table_provider = create_table_provider(config.table_provider, storage=storage_obj)
     reader = DataReader(table_provider)
@@ -92,9 +93,8 @@ async def search(root_dir: Path, query: str, mode: str | None = None) -> tuple[s
     ``context_data`` is normalised to a dict of record lists
     (reports/entities/relationships/claims/sources) via GraphRAG's own helper.
     """
-    import graphrag.api as api
-    from graphrag.utils.api import reformat_context_data
-
+    api = importlib.import_module("graphrag.api")
+    reformat_context_data = importlib.import_module("graphrag.utils.api").reformat_context_data
     resolved_mode = normalize_mode(mode)
     cfg = query_config_from_settings()
     config = _load_config(root_dir)

@@ -30,16 +30,31 @@ from pathlib import Path
 from typing import Any, Awaitable, Callable
 import uuid
 
+from deeptutor.agents._shared.tool_composition import default_optional_tools
 from deeptutor.core.context import Attachment, UnifiedContext
 from deeptutor.core.stream import StreamEvent, StreamEventType
+from deeptutor.knowledge.manager import KnowledgeBaseManager
 from deeptutor.multi_user.paths import user_context
 from deeptutor.partners.bus.events import InboundMessage, OutboundMessage
 from deeptutor.partners.bus.queue import MessageBus
 from deeptutor.partners.helpers import detect_image_mime
+from deeptutor.runtime.orchestrator import ChatOrchestrator
+from deeptutor.services.model_selection.runtime import (
+    activate_llm_selection,
+    reset_llm_selection,
+)
 from deeptutor.services.partners.commands import PartnerCommandHandler
 from deeptutor.services.partners.scope import partner_user
 from deeptutor.services.partners.sessions import PartnerSessionStore
 from deeptutor.services.partners.workspace import ensure_partner_workspace, read_soul
+from deeptutor.services.path_service import get_path_service
+from deeptutor.services.session.sources import (
+    SourceEntry,
+    SourceInventory,
+    render_manifest,
+)
+from deeptutor.services.skill.service import get_skill_service, render_skills_manifest
+from deeptutor.utils.document_extractor import extract_documents_from_records
 
 logger = logging.getLogger(__name__)
 
@@ -235,12 +250,6 @@ class PartnerRunner:
         becomes the reply (the final outbound is then marked ``_streamed``
         so the channel doesn't send it twice).
         """
-        from deeptutor.runtime.orchestrator import ChatOrchestrator
-        from deeptutor.services.model_selection.runtime import (
-            activate_llm_selection,
-            reset_llm_selection,
-        )
-
         final_text = ""
         terminator_text = ""
         turn_id = ""
@@ -442,8 +451,6 @@ class PartnerRunner:
         """
         configured = getattr(self.config, "enabled_tools", None)
         if configured is None:
-            from deeptutor.agents._shared.tool_composition import default_optional_tools
-
             return default_optional_tools()
         return [str(name) for name in configured]
 
@@ -463,11 +470,6 @@ class PartnerRunner:
 
     def _build_skills_manifest(self) -> str:
         try:
-            from deeptutor.services.skill.service import (
-                get_skill_service,
-                render_skills_manifest,
-            )
-
             service = get_skill_service()
             entries = service.summary_entries()
             always_block = service.load_always_for_context()
@@ -482,9 +484,6 @@ class PartnerRunner:
 
     def _list_kb_names(self) -> list[str]:
         try:
-            from deeptutor.knowledge.manager import KnowledgeBaseManager
-            from deeptutor.services.path_service import get_path_service
-
             kb_root = get_path_service().get_knowledge_bases_root()
             if not kb_root.is_dir():
                 return []
@@ -573,8 +572,6 @@ class PartnerRunner:
 
         if document_records:
             try:
-                from deeptutor.utils.document_extractor import extract_documents_from_records
-
                 _document_texts, updated_records = extract_documents_from_records(document_records)
             except Exception:
                 logger.warning(
@@ -608,16 +605,6 @@ class PartnerRunner:
         *,
         fresh_records: list[dict[str, Any]],
     ) -> tuple[str, dict[str, str]]:
-        try:
-            from deeptutor.services.session.source_inventory import (
-                SourceEntry,
-                SourceInventory,
-                render_manifest,
-            )
-        except Exception:
-            logger.warning("Failed to import source inventory helpers", exc_info=True)
-            return "", {}
-
         inv = SourceInventory()
         turn_ordinal = 1
         historical_messages = self.store.messages(session_key, limit=200)

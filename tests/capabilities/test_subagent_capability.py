@@ -248,7 +248,7 @@ async def test_session_id_persists_across_turns(monkeypatch, tmp_path) -> None:
     # A backend session id captured in one turn is remembered (keyed by chat
     # session + connection) and resumed by the next turn's augment_kwargs — so
     # the local agent keeps context across DeepTutor's separate messages.
-    from deeptutor.services.subagent import sessions as sess
+    sess = __import__("deeptutor.services.subagent", fromlist=["sessions"]).sessions
 
     monkeypatch.setattr(sess, "_path", lambda: tmp_path / "subagent_sessions.json")
     _bind(monkeypatch)  # "myagent" → claude_code

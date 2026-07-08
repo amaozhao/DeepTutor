@@ -16,6 +16,16 @@ from pathlib import Path
 import re
 from typing import Callable, Optional
 
+try:
+    from pymupdf4llm.helpers.pymupdf_rag import to_markdown as _pymupdf4llm_to_markdown
+except Exception:  # pragma: no cover - optional dependency / version fallback
+    _pymupdf4llm_to_markdown = None
+
+try:
+    import pymupdf4llm
+except Exception:  # pragma: no cover - optional dependency
+    pymupdf4llm = None
+
 from ...base import ReadinessReport
 from ...signature import ParserSignature
 from ...types import ParserError
@@ -119,14 +129,11 @@ class PyMuPDF4LLMParser:
         the engine stays Pi-friendly regardless of the installed version. (Our
         extra pins ``<1.0`` so onnxruntime is never even pulled.)
         """
-        try:
-            from pymupdf4llm.helpers.pymupdf_rag import to_markdown
-
-            return to_markdown
-        except Exception:  # noqa: BLE001 - fall back to the public entry point
-            import pymupdf4llm
-
-            return pymupdf4llm.to_markdown
+        if _pymupdf4llm_to_markdown is not None:
+            return _pymupdf4llm_to_markdown
+        if pymupdf4llm is None:
+            raise RuntimeError("pymupdf4llm is not installed")
+        return pymupdf4llm.to_markdown
 
     @staticmethod
     def _portable_image_links(markdown: str, images_dir: Path) -> str:

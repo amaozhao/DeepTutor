@@ -9,7 +9,9 @@ from llama_index.core.schema import TextNode
 
 
 def test_documents_do_not_bypass_chunking_pipeline(monkeypatch) -> None:
-    from deeptutor.services.rag.pipelines.llamaindex import ingestion
+    ingestion = __import__(
+        "deeptutor.services.rag.pipelines.llamaindex", fromlist=["ingestion"]
+    ).ingestion
 
     captured: dict[str, object] = {}
 

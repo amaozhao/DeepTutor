@@ -22,8 +22,8 @@ def _proof_for_registration(auth_router, email: str) -> str:
 
 
 def test_disabled_user_cannot_authenticate(mu_isolated_root, seed_user, monkeypatch):
-    from deeptutor.services import auth as auth_service
-    from deeptutor.services.auth import set_disabled
+    auth_service = __import__("deeptutor.services", fromlist=["auth"]).auth
+    set_disabled = __import__("deeptutor.services.auth", fromlist=["set_disabled"]).set_disabled
 
     monkeypatch.setattr(auth_service, "AUTH_ENABLED", True)
     seed_user("bob", password="password1234")
@@ -34,8 +34,10 @@ def test_disabled_user_cannot_authenticate(mu_isolated_root, seed_user, monkeypa
 
 
 def test_role_change_invalidates_existing_token(mu_isolated_root, seed_user, monkeypatch):
-    from deeptutor.services import auth as auth_service
-    from deeptutor.services.auth import create_token, decode_token, set_role
+    auth_service = __import__("deeptutor.services", fromlist=["auth"]).auth
+    create_token = __import__("deeptutor.services.auth", fromlist=["create_token"]).create_token
+    decode_token = __import__("deeptutor.services.auth", fromlist=["decode_token"]).decode_token
+    set_role = __import__("deeptutor.services.auth", fromlist=["set_role"]).set_role
 
     monkeypatch.setattr(auth_service, "AUTH_ENABLED", True)
     monkeypatch.setattr(auth_service, "AUTH_SECRET", "test-secret")
@@ -51,8 +53,12 @@ def test_role_change_invalidates_existing_token(mu_isolated_root, seed_user, mon
 def test_password_update_invalidates_existing_token_and_old_password(
     mu_isolated_root, seed_user, monkeypatch
 ):
-    from deeptutor.services import auth as auth_service
-    from deeptutor.services.auth import create_token, decode_token, update_password
+    auth_service = __import__("deeptutor.services", fromlist=["auth"]).auth
+    create_token = __import__("deeptutor.services.auth", fromlist=["create_token"]).create_token
+    decode_token = __import__("deeptutor.services.auth", fromlist=["decode_token"]).decode_token
+    update_password = __import__(
+        "deeptutor.services.auth", fromlist=["update_password"]
+    ).update_password
 
     monkeypatch.setattr(auth_service, "AUTH_ENABLED", True)
     monkeypatch.setattr(auth_service, "AUTH_SECRET", "test-secret")
@@ -70,10 +76,13 @@ def test_password_update_invalidates_existing_token_and_old_password(
 def test_profile_password_change_audits_and_invalidates_token(
     mu_isolated_root, seed_user, monkeypatch
 ):
-    import deeptutor.api.routers.auth as auth_router
-    from deeptutor.multi_user.audit import query_audit_events
-    from deeptutor.services import auth as auth_service
-    from deeptutor.services.auth import create_token, decode_token
+    auth_router = __import__("deeptutor.api.routers.auth", fromlist=["*"])
+    query_audit_events = __import__(
+        "deeptutor.multi_user.audit", fromlist=["query_audit_events"]
+    ).query_audit_events
+    auth_service = __import__("deeptutor.services", fromlist=["auth"]).auth
+    create_token = __import__("deeptutor.services.auth", fromlist=["create_token"]).create_token
+    decode_token = __import__("deeptutor.services.auth", fromlist=["decode_token"]).decode_token
 
     monkeypatch.setattr(auth_router, "AUTH_ENABLED", True)
     monkeypatch.setattr(auth_router, "POCKETBASE_ENABLED", False)
@@ -98,8 +107,12 @@ def test_profile_password_change_audits_and_invalidates_token(
 
 
 def test_revoke_sessions_invalidates_existing_token(mu_isolated_root, seed_user, monkeypatch):
-    from deeptutor.services import auth as auth_service
-    from deeptutor.services.auth import create_token, decode_token, revoke_sessions
+    auth_service = __import__("deeptutor.services", fromlist=["auth"]).auth
+    create_token = __import__("deeptutor.services.auth", fromlist=["create_token"]).create_token
+    decode_token = __import__("deeptutor.services.auth", fromlist=["decode_token"]).decode_token
+    revoke_sessions = __import__(
+        "deeptutor.services.auth", fromlist=["revoke_sessions"]
+    ).revoke_sessions
 
     monkeypatch.setattr(auth_service, "AUTH_ENABLED", True)
     monkeypatch.setattr(auth_service, "AUTH_SECRET", "test-secret")
@@ -115,9 +128,10 @@ def test_revoke_sessions_invalidates_existing_token(mu_isolated_root, seed_user,
 def test_profile_revoke_sessions_invalidates_current_token(
     mu_isolated_root, seed_user, monkeypatch
 ):
-    import deeptutor.api.routers.auth as auth_router
-    from deeptutor.services import auth as auth_service
-    from deeptutor.services.auth import create_token, decode_token
+    auth_router = __import__("deeptutor.api.routers.auth", fromlist=["*"])
+    auth_service = __import__("deeptutor.services", fromlist=["auth"]).auth
+    create_token = __import__("deeptutor.services.auth", fromlist=["create_token"]).create_token
+    decode_token = __import__("deeptutor.services.auth", fromlist=["decode_token"]).decode_token
 
     monkeypatch.setattr(auth_router, "AUTH_ENABLED", True)
     monkeypatch.setattr(auth_router, "POCKETBASE_ENABLED", False)
@@ -138,9 +152,11 @@ def test_profile_revoke_sessions_invalidates_current_token(
 
 @pytest.fixture
 def registration_client(mu_isolated_root, monkeypatch):
-    import deeptutor.api.routers.auth as auth_router
-    from deeptutor.api.security import reset_security_state
-    from deeptutor.multi_user.identity import save_user
+    auth_router = __import__("deeptutor.api.routers.auth", fromlist=["*"])
+    reset_security_state = __import__(
+        "deeptutor.api.security", fromlist=["reset_security_state"]
+    ).reset_security_state
+    save_user = __import__("deeptutor.multi_user.identity", fromlist=["save_user"]).save_user
 
     reset_security_state()
     save_user("admin", "$2b$12$placeholder", role="admin")
@@ -163,8 +179,8 @@ def registration_client(mu_isolated_root, monkeypatch):
 
 
 def test_public_registration_creates_regular_email_user(registration_client):
-    import deeptutor.api.routers.auth as auth_router
-    from deeptutor.multi_user.identity import get_user
+    auth_router = __import__("deeptutor.api.routers.auth", fromlist=["*"])
+    get_user = __import__("deeptutor.multi_user.identity", fromlist=["get_user"]).get_user
 
     response = registration_client.post(
         "/api/v1/auth/register",
@@ -191,7 +207,7 @@ def test_public_registration_creates_regular_email_user(registration_client):
 
 
 def test_first_admin_registration_requires_challenge(mu_isolated_root, monkeypatch):
-    import deeptutor.api.routers.auth as auth_router
+    auth_router = __import__("deeptutor.api.routers.auth", fromlist=["*"])
 
     monkeypatch.setattr(auth_router, "AUTH_ENABLED", True)
     monkeypatch.setattr(auth_router, "POCKETBASE_ENABLED", False)
@@ -233,7 +249,7 @@ def test_public_registration_requires_challenge(registration_client):
 
 
 def test_registration_challenge_uses_email_and_accepts_valid_proof(registration_client):
-    from deeptutor.multi_user.identity import get_user
+    get_user = __import__("deeptutor.multi_user.identity", fromlist=["get_user"]).get_user
 
     challenge = registration_client.get(
         "/api/v1/auth/register/challenge",
@@ -263,10 +279,10 @@ def test_registration_challenge_uses_email_and_accepts_valid_proof(registration_
 
 
 def test_public_registration_review_creates_disabled_user(registration_client, monkeypatch):
-    import deeptutor.api.routers.auth as auth_router
-    from deeptutor.multi_user.identity import get_user
-    from deeptutor.services import auth as auth_service
-    from deeptutor.services.auth import authenticate
+    auth_router = __import__("deeptutor.api.routers.auth", fromlist=["*"])
+    get_user = __import__("deeptutor.multi_user.identity", fromlist=["get_user"]).get_user
+    auth_service = __import__("deeptutor.services", fromlist=["auth"]).auth
+    authenticate = __import__("deeptutor.services.auth", fromlist=["authenticate"]).authenticate
 
     monkeypatch.setattr(auth_service, "AUTH_ENABLED", True)
     monkeypatch.setattr(
@@ -317,8 +333,8 @@ def test_public_registration_requires_email_and_terms(registration_client):
 
 
 def test_public_registration_does_not_invent_terms_acceptance(registration_client, monkeypatch):
-    import deeptutor.api.routers.auth as auth_router
-    from deeptutor.multi_user.identity import get_user
+    auth_router = __import__("deeptutor.api.routers.auth", fromlist=["*"])
+    get_user = __import__("deeptutor.multi_user.identity", fromlist=["get_user"]).get_user
 
     monkeypatch.setattr(
         auth_router,
@@ -348,8 +364,8 @@ def test_public_registration_does_not_invent_terms_acceptance(registration_clien
 
 
 def test_public_registration_respects_max_users(registration_client, monkeypatch):
-    import deeptutor.api.routers.auth as auth_router
-    from deeptutor.multi_user.identity import get_user
+    auth_router = __import__("deeptutor.api.routers.auth", fromlist=["*"])
+    get_user = __import__("deeptutor.multi_user.identity", fromlist=["get_user"]).get_user
 
     monkeypatch.setattr(
         auth_router,
@@ -378,10 +394,12 @@ def test_public_registration_respects_max_users(registration_client, monkeypatch
 
 @pytest.fixture
 def invite_registration_client(mu_isolated_root, monkeypatch):
-    import deeptutor.api.routers.auth as auth_router
-    from deeptutor.api.security import reset_security_state
-    from deeptutor.multi_user.identity import save_user
-    from deeptutor.services import auth as auth_service
+    auth_router = __import__("deeptutor.api.routers.auth", fromlist=["*"])
+    reset_security_state = __import__(
+        "deeptutor.api.security", fromlist=["reset_security_state"]
+    ).reset_security_state
+    save_user = __import__("deeptutor.multi_user.identity", fromlist=["save_user"]).save_user
+    auth_service = __import__("deeptutor.services", fromlist=["auth"]).auth
 
     reset_security_state()
     admin = save_user("admin", "$2b$12$placeholder", role="admin")
@@ -403,7 +421,8 @@ def invite_registration_client(mu_isolated_root, monkeypatch):
 
 
 def test_admin_disable_user_records_and_clears_reason(invite_registration_client):
-    from deeptutor.multi_user.identity import get_user, save_user
+    get_user = __import__("deeptutor.multi_user.identity", fromlist=["get_user"]).get_user
+    save_user = __import__("deeptutor.multi_user.identity", fromlist=["save_user"]).save_user
 
     client, token = invite_registration_client
     save_user("bob@example.com", "$2b$12$placeholder", role="user")
@@ -434,8 +453,8 @@ def test_admin_disable_user_records_and_clears_reason(invite_registration_client
 
 
 def test_admin_exports_users_csv_without_password_data(invite_registration_client):
-    from deeptutor.multi_user.identity import save_user
-    from deeptutor.services.auth import set_disabled
+    save_user = __import__("deeptutor.multi_user.identity", fromlist=["save_user"]).save_user
+    set_disabled = __import__("deeptutor.services.auth", fromlist=["set_disabled"]).set_disabled
 
     client, token = invite_registration_client
     save_user("learner@example.com", "$2b$12$placeholder", role="user")
@@ -458,7 +477,7 @@ def test_admin_exports_users_csv_without_password_data(invite_registration_clien
 
 
 def test_admin_imports_email_password_csv_as_regular_users(invite_registration_client):
-    from deeptutor.multi_user.identity import get_user
+    get_user = __import__("deeptutor.multi_user.identity", fromlist=["get_user"]).get_user
 
     client, token = invite_registration_client
     csv_body = (
@@ -486,7 +505,7 @@ def test_admin_imports_email_password_csv_as_regular_users(invite_registration_c
 def test_admin_import_rejects_non_email_accounts_without_partial_create(
     invite_registration_client,
 ):
-    from deeptutor.multi_user.identity import get_user
+    get_user = __import__("deeptutor.multi_user.identity", fromlist=["get_user"]).get_user
 
     client, token = invite_registration_client
     csv_body = "email,password\nvalid@example.com,password1234\n15555550123,password1234\n"
@@ -507,8 +526,8 @@ def test_admin_import_respects_remaining_seats_without_partial_create(
     invite_registration_client,
     monkeypatch,
 ):
-    import deeptutor.api.routers.auth as auth_router
-    from deeptutor.multi_user.identity import get_user
+    auth_router = __import__("deeptutor.api.routers.auth", fromlist=["*"])
+    get_user = __import__("deeptutor.multi_user.identity", fromlist=["get_user"]).get_user
 
     monkeypatch.setattr(
         auth_router,
@@ -535,8 +554,10 @@ def test_admin_import_respects_remaining_seats_without_partial_create(
 
 
 def test_closed_registration_accepts_one_use_email_invite(invite_registration_client):
-    from deeptutor.multi_user.identity import get_user
-    from deeptutor.multi_user.invites import list_invites
+    get_user = __import__("deeptutor.multi_user.identity", fromlist=["get_user"]).get_user
+    list_invites = __import__(
+        "deeptutor.multi_user.invites", fromlist=["list_invites"]
+    ).list_invites
 
     client, token = invite_registration_client
     headers = {"Authorization": f"Bearer {token}"}
@@ -607,8 +628,10 @@ def test_invite_email_binding_is_enforced(invite_registration_client):
 
 
 def test_invite_is_restored_when_registration_write_fails(invite_registration_client, monkeypatch):
-    import deeptutor.api.routers.auth as auth_router
-    from deeptutor.multi_user.invites import list_invites
+    auth_router = __import__("deeptutor.api.routers.auth", fromlist=["*"])
+    list_invites = __import__(
+        "deeptutor.multi_user.invites", fromlist=["list_invites"]
+    ).list_invites
 
     client, token = invite_registration_client
     created = client.post(
@@ -640,8 +663,10 @@ def test_invite_is_restored_when_registration_write_fails(invite_registration_cl
 
 
 def test_repeated_login_attempts_are_rate_limited(mu_isolated_root, monkeypatch):
-    import deeptutor.api.routers.auth as auth_router
-    from deeptutor.api.security import reset_security_state
+    auth_router = __import__("deeptutor.api.routers.auth", fromlist=["*"])
+    reset_security_state = __import__(
+        "deeptutor.api.security", fromlist=["reset_security_state"]
+    ).reset_security_state
 
     reset_security_state()
     monkeypatch.setattr(auth_router, "AUTH_ENABLED", True)

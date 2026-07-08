@@ -101,7 +101,9 @@ class TestWorkspaceSeeding:
         assert (ws / "knowledge_bases").is_dir()
 
     def test_existing_soul_not_overwritten(self, partners_root):
-        from deeptutor.services.partners.workspace import write_soul
+        write_soul = __import__(
+            "deeptutor.services.partners.workspace", fromlist=["write_soul"]
+        ).write_soul
 
         mgr = _mgr()
         mgr._ensure_partner_dirs("p1")
@@ -158,7 +160,9 @@ class TestLegacyTutorBotMigration:
         mgr = _mgr()
         mgr._discover_partner_ids()
         # Tweak the migrated partner, then re-discover with a fresh manager.
-        from deeptutor.services.partners.workspace import write_soul
+        write_soul = __import__(
+            "deeptutor.services.partners.workspace", fromlist=["write_soul"]
+        ).write_soul
 
         write_soul("old-bot", "# Edited after migration")
         mgr2 = _mgr()

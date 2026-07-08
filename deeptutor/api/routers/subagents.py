@@ -27,14 +27,23 @@ from deeptutor.api.routers.auth import require_admin
 from deeptutor.knowledge.kb_types import SUBAGENT_KB_TYPE
 from deeptutor.multi_user.knowledge_access import current_kb_manager
 from deeptutor.multi_user.partner_access import assert_partner_allowed, visible_partner_cards
+from deeptutor.services.partners import get_partner_manager
 from deeptutor.services.rag.linked_kb import assert_path_allowed
 from deeptutor.services.subagent import (
     PARTNER_BACKEND_KIND,
     detect_all,
+    get_backend,
     list_backend_kinds,
     load_subagent_settings,
     save_subagent_settings,
     settings_from_dict,
+)
+from deeptutor.services.subagent.models import list_backend_options, sync_backend_options
+from deeptutor.services.subagent.sessions import (
+    forget_connection,
+    get_session,
+    remember_session,
+    session_key,
 )
 
 logger = logging.getLogger(__name__)
@@ -70,8 +79,6 @@ async def detect_subagents():
 @router.get("/backends/options")
 async def backend_options():
     """Synced model + reasoning-effort options per backend (settings page sync)."""
-    from deeptutor.services.subagent.models import list_backend_options
-
     options = await list_backend_options()
     return {"backends": [o.to_dict() for o in options]}
 
@@ -83,9 +90,6 @@ async def sync_backend(kind: str):
     For Claude Code this scrapes its ``/model`` TUI live and caches the result;
     for Codex it re-reads the CLI-maintained cache.
     """
-    from deeptutor.services.subagent import get_backend
-    from deeptutor.services.subagent.models import sync_backend_options
-
     backend = get_backend(kind)
     if backend is None or not getattr(backend, "local_cli", True):
         # Only local CLIs have a model catalog to sync; partners run their own.
@@ -158,7 +162,6 @@ async def create_connection(payload: ConnectSubagentRequest):
         # partner assigned to them (403 otherwise). The partner still runs in its
         # own isolated scope — connecting just lets the user consult it in chat.
         assert_partner_allowed(partner_id)
-        from deeptutor.services.partners import get_partner_manager
 
         if not get_partner_manager().partner_exists(partner_id):
             raise HTTPException(status_code=400, detail=f"No partner named {partner_id!r}.")
@@ -203,8 +206,6 @@ async def delete_connection(name: str):
         logger.error("Error disconnecting subagent: %s", exc)
         raise HTTPException(status_code=500, detail=str(exc)) from exc
     # Drop any remembered live-session ids for this connection.
-    from deeptutor.services.subagent.sessions import forget_connection
-
     forget_connection(name)
     return {"status": "disconnected", "name": name}
 
@@ -231,9 +232,6 @@ async def message_connection(name: str, payload: SubagentMessageRequest):
     meta = manager.get_metadata(name)
     if not isinstance(meta, dict) or meta.get("type") != SUBAGENT_KB_TYPE:
         raise HTTPException(status_code=404, detail=f"No connected subagent named {name!r}.")
-
-    from deeptutor.services.subagent import get_backend
-    from deeptutor.services.subagent.sessions import get_session, remember_session, session_key
 
     kind = str(meta.get("agent_kind") or "")
     cwd = str(meta.get("cwd") or "")

@@ -21,6 +21,22 @@ from urllib import request as urlrequest
 
 from deeptutor.runtime.banner import labels_for, print_banner, resolve_language
 from deeptutor.runtime.home import DEEPTUTOR_HOME_ENV, PACKAGE_ROOT, get_runtime_home
+from deeptutor.services.config import (
+    ensure_runtime_settings_files,
+    export_runtime_settings_to_env,
+    get_ws_max_size,
+    load_auth_settings,
+    load_launch_settings,
+)
+from deeptutor.services.config.model_catalog import ModelCatalogService
+from deeptutor.services.config.runtime_settings import RuntimeSettingsService
+from deeptutor.services.path_service import PathService
+from deeptutor.services.setup import init_user_directories
+
+try:
+    import deeptutor_web
+except ImportError:  # pragma: no cover - packaged web assets optional
+    deeptutor_web = None
 
 BACKEND_READY_TIMEOUT = 60
 FRONTEND_READY_TIMEOUT = 120
@@ -72,20 +88,14 @@ def _log(message: str) -> None:
 def _reset_runtime_singletons() -> None:
     """Make a just-selected DEEPTUTOR_HOME visible to path/config singletons."""
     try:
-        from deeptutor.services.path_service import PathService
-
         PathService.reset_instance()
     except Exception:
         pass
     try:
-        from deeptutor.services.config.runtime_settings import RuntimeSettingsService
-
         RuntimeSettingsService._instances.clear()
     except Exception:
         pass
     try:
-        from deeptutor.services.config.model_catalog import ModelCatalogService
-
         ModelCatalogService._instances.clear()
     except Exception:
         pass
@@ -298,8 +308,6 @@ def _prompt_conflict_choice() -> str:
 
 
 def _persist_ports(settings_dir: Path, backend_port: int, frontend_port: int) -> Path:
-    from deeptutor.services.config.runtime_settings import RuntimeSettingsService
-
     service = RuntimeSettingsService.get_instance(settings_dir)
     system = service.load_system(include_process_overrides=False)
     system["backend_port"] = backend_port
@@ -443,9 +451,7 @@ def _http_ready(url: str, *, timeout: float) -> bool:
 
 
 def _packaged_web_dir() -> Path | None:
-    try:
-        import deeptutor_web
-    except ImportError:
+    if deeptutor_web is None:
         return None
     path = Path(deeptutor_web.__file__).resolve().parent
     return path if (path / "server.js").exists() else None
@@ -724,15 +730,6 @@ def start(home: str | Path | None = None) -> None:
     runtime_home.mkdir(parents=True, exist_ok=True)
     os.environ[DEEPTUTOR_HOME_ENV] = str(runtime_home)
     _reset_runtime_singletons()
-
-    from deeptutor.services.config import (
-        ensure_runtime_settings_files,
-        export_runtime_settings_to_env,
-        get_ws_max_size,
-        load_auth_settings,
-        load_launch_settings,
-    )
-    from deeptutor.services.setup import init_user_directories
 
     init_user_directories(runtime_home)
     ensure_runtime_settings_files()

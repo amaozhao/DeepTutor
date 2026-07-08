@@ -5,6 +5,8 @@ from __future__ import annotations
 from typing import Any
 
 from deeptutor.core.tool_protocol import BaseTool, ToolDefinition, ToolParameter, ToolResult
+from deeptutor.services.memory import get_memory_store
+from deeptutor.services.memory.trace import TraceEvent
 from deeptutor.tools.builtin.common import _PromptHintsMixin
 
 
@@ -29,8 +31,6 @@ class ReadMemoryTool(_PromptHintsMixin, BaseTool):
         )
 
     async def execute(self, **kwargs: Any) -> ToolResult:
-        from deeptutor.services.memory import get_memory_store
-
         text = get_memory_store().read_l3_concat()
         return ToolResult(
             content=text,
@@ -85,9 +85,6 @@ class WriteMemoryTool(_PromptHintsMixin, BaseTool):
         )
 
     async def execute(self, **kwargs: Any) -> ToolResult:
-        from deeptutor.services.memory import get_memory_store
-        from deeptutor.services.memory.trace import TraceEvent
-
         op = str(kwargs.get("op") or "").strip().lower()
         text = str(kwargs.get("text") or "").strip()
         target_id = kwargs.get("target_id")

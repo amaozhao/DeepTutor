@@ -13,6 +13,11 @@ Features:
 from datetime import datetime
 from typing import Any
 
+try:
+    from perplexity import Perplexity
+except ModuleNotFoundError:  # pragma: no cover - optional dependency
+    Perplexity = None
+
 from ..base import BaseSearchProvider
 from ..types import Citation, SearchResult, WebSearchResponse
 from . import register_provider
@@ -35,13 +40,11 @@ class PerplexityProvider(BaseSearchProvider):
     def client(self):
         """Lazy-load the Perplexity client."""
         if self._client is None:
-            try:
-                from perplexity import Perplexity
-            except ImportError as e:
+            if Perplexity is None:
                 raise ImportError(
                     "perplexityai module is not installed. To use Perplexity search, please install: "
                     "pip install perplexityai"
-                ) from e
+                )
             self._client = Perplexity(api_key=self.api_key)
         return self._client
 

@@ -9,6 +9,11 @@ import logging
 import threading
 from typing import Any
 
+try:
+    import fcntl as fcntl_module
+except ImportError:  # pragma: no cover - Windows
+    fcntl_module = None
+
 from . import paths
 from .context import get_current_user
 
@@ -30,15 +35,11 @@ def _audit_write_lock():
     lock_path = target.with_suffix(".lock")
     with _AUDIT_WRITE_LOCK:
         with lock_path.open("a+", encoding="utf-8") as handle:
-            fcntl_module = None
             locked = False
             try:
-                import fcntl as fcntl_module
-
-                fcntl_module.flock(handle.fileno(), fcntl_module.LOCK_EX)
-                locked = True
-            except ImportError:
-                pass
+                if fcntl_module is not None:
+                    fcntl_module.flock(handle.fileno(), fcntl_module.LOCK_EX)
+                    locked = True
             except OSError as exc:
                 logger.warning("Audit write lock unavailable for %s: %s", lock_path, exc)
             try:

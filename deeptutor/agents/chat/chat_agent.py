@@ -11,10 +11,16 @@ This agent provides:
 Uses the unified LLM factory from BaseAgent for both cloud and local LLM support.
 """
 
+try:
+    import tiktoken
+except ImportError:  # pragma: no cover - optional tokenizer
+    tiktoken = None
+
 from typing import Any, AsyncGenerator
 
 from deeptutor.agents.base_agent import BaseAgent
 from deeptutor.runtime.registry.tool_registry import get_tool_registry
+from deeptutor.services.llm import stream as llm_stream
 from deeptutor.services.prompt.language import append_language_directive
 
 
@@ -77,12 +83,10 @@ class ChatAgent(BaseAgent):
             Estimated token count
         """
         try:
-            import tiktoken
-
             # Use cl100k_base encoding (GPT-4, GPT-3.5-turbo)
             encoding = tiktoken.get_encoding("cl100k_base")
             return len(encoding.encode(text))
-        except ImportError:
+        except (AttributeError, ImportError):
             # Fallback: rough estimate of 4 characters per token
             return len(text) // 4
 
@@ -335,8 +339,6 @@ class ChatAgent(BaseAgent):
             if msg.get("role") == "user":
                 user_prompt = msg.get("content", "")
                 break
-
-        from deeptutor.services.llm import stream as llm_stream
 
         _chunks: list[str] = []
         async for _c in llm_stream(

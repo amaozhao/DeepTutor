@@ -34,6 +34,10 @@ from pathlib import Path
 import re
 from typing import Any
 
+from deeptutor.services.subagent.claude_models import (
+    load_cached_claude_models,
+    sync_claude_models,
+)
 from deeptutor.services.subagent.process import probe_version
 from deeptutor.services.subagent.registry import get_backend
 
@@ -131,8 +135,6 @@ def _codex_default_model() -> str:
 
 
 async def _claude_options() -> BackendOptions:
-    from deeptutor.services.subagent.claude_models import load_cached_claude_models
-
     backend = get_backend("claude_code")
     ok, text = await probe_version([backend.cli_command, "--version"]) if backend else (False, "")
     # Prefer a live-synced catalog (scraped from ``/model``); fall back to the
@@ -319,8 +321,6 @@ async def sync_backend_options(kind: str) -> BackendOptions:
     --refresh``. The rest have nothing external to refresh.
     """
     if kind == "claude_code":
-        from deeptutor.services.subagent.claude_models import sync_claude_models
-
         await sync_claude_models()  # writes the cache that _claude_options reads
         return await _claude_options()
     if kind in ("opencode", "mimo"):

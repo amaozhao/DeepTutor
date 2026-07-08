@@ -10,6 +10,7 @@ import zipfile
 from openpyxl import Workbook
 import pytest
 
+from deeptutor.services.config.runtime_settings import ChatAttachmentLimits
 from deeptutor.utils import document_extractor as document_extractor_module
 from deeptutor.utils.document_extractor import (
     MAX_DOC_BYTES,
@@ -285,7 +286,7 @@ class TestExtractPdf:
     def test_minimal_pdf(self) -> None:
         # Build a minimal valid PDF via pymupdf (dependency already in project).
         pytest.importorskip("fitz")
-        import fitz  # noqa: WPS433
+        fitz = __import__("fitz")
 
         doc = fitz.open()
         page = doc.new_page()
@@ -435,15 +436,14 @@ class TestExtractDocumentsFromRecords:
 
     def test_limits_come_from_settings_layer(self, monkeypatch) -> None:
         """extract_documents_from_records honors the configured policy."""
-        from deeptutor.services.config import runtime_settings as rs
 
         # Tiny caps prove the configured values flow through (defaults would
         # accept everything here).
         def set_limits(max_file: int, max_total: int) -> None:
             monkeypatch.setattr(
-                rs,
+                document_extractor_module,
                 "get_chat_attachment_limits",
-                lambda: rs.ChatAttachmentLimits(
+                lambda: ChatAttachmentLimits(
                     max_file_bytes=max_file,
                     max_total_bytes=max_total,
                     max_chars_per_doc=100_000,
@@ -478,12 +478,10 @@ class TestExtractDocumentsFromRecords:
         assert "quota exceeded" in doc_texts[1]
 
     def test_char_budget_comes_from_settings_layer(self, monkeypatch) -> None:
-        from deeptutor.services.config import runtime_settings as rs
-
         monkeypatch.setattr(
-            rs,
+            document_extractor_module,
             "get_chat_attachment_limits",
-            lambda: rs.ChatAttachmentLimits(
+            lambda: ChatAttachmentLimits(
                 max_file_bytes=10 * 1024 * 1024,
                 max_total_bytes=25 * 1024 * 1024,
                 max_chars_per_doc=100_000,

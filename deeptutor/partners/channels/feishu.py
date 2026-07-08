@@ -3,6 +3,7 @@
 import asyncio
 from collections import OrderedDict
 from dataclasses import dataclass
+import importlib
 import importlib.util
 import json
 import os
@@ -23,6 +24,17 @@ from deeptutor.partners.config.schema import DeliveryOverrides, StreamingSupport
 from deeptutor.partners.helpers import split_markdown_table_row
 
 FEISHU_AVAILABLE = importlib.util.find_spec("lark_oapi") is not None
+
+if FEISHU_AVAILABLE:
+    lark = importlib.import_module("lark_oapi")
+    _lark_ws_client = importlib.import_module("lark_oapi.ws.client")
+    _lark_im_v1 = importlib.import_module("lark_oapi.api.im.v1")
+    _lark_cardkit_v1 = importlib.import_module("lark_oapi.api.cardkit.v1")
+else:  # pragma: no cover - optional dependency
+    lark = None
+    _lark_ws_client = None
+    _lark_im_v1 = None
+    _lark_cardkit_v1 = None
 
 # Message type display mapping
 MSG_TYPE_MAP = {
@@ -318,8 +330,6 @@ class FeishuChannel(BaseChannel):
             logger.error("Feishu app_id and app_secret not configured")
             return
 
-        import lark_oapi as lark
-
         self._running = True
         self._loop = asyncio.get_running_loop()
 
@@ -362,10 +372,6 @@ class FeishuChannel(BaseChannel):
         # instead of the already-running main asyncio loop, which would cause
         # "This event loop is already running" errors.
         def run_ws():
-            import time
-
-            import lark_oapi.ws.client as _lark_ws_client
-
             ws_loop = asyncio.new_event_loop()
             asyncio.set_event_loop(ws_loop)
             # Patch the module-level loop used by lark's ws Client.start()
@@ -427,19 +433,13 @@ class FeishuChannel(BaseChannel):
 
     def _add_reaction_sync(self, message_id: str, emoji_type: str) -> None:
         """Sync helper for adding reaction (runs in thread pool)."""
-        from lark_oapi.api.im.v1 import (
-            CreateMessageReactionRequest,
-            CreateMessageReactionRequestBody,
-            Emoji,
-        )
-
         try:
             request = (
-                CreateMessageReactionRequest.builder()
+                _lark_im_v1.CreateMessageReactionRequest.builder()
                 .message_id(message_id)
                 .request_body(
-                    CreateMessageReactionRequestBody.builder()
-                    .reaction_type(Emoji.builder().emoji_type(emoji_type).build())
+                    _lark_im_v1.CreateMessageReactionRequestBody.builder()
+                    .reaction_type(_lark_im_v1.Emoji.builder().emoji_type(emoji_type).build())
                     .build()
                 )
                 .build()
@@ -716,14 +716,15 @@ class FeishuChannel(BaseChannel):
 
     def _upload_image_sync(self, file_path: str) -> str | None:
         """Upload an image to Feishu and return the image_key."""
-        from lark_oapi.api.im.v1 import CreateImageRequest, CreateImageRequestBody
-
         try:
             with open(file_path, "rb") as f:
                 request = (
-                    CreateImageRequest.builder()
+                    _lark_im_v1.CreateImageRequest.builder()
                     .request_body(
-                        CreateImageRequestBody.builder().image_type("message").image(f).build()
+                        _lark_im_v1.CreateImageRequestBody.builder()
+                        .image_type("message")
+                        .image(f)
+                        .build()
                     )
                     .build()
                 )
@@ -743,17 +744,15 @@ class FeishuChannel(BaseChannel):
 
     def _upload_file_sync(self, file_path: str) -> str | None:
         """Upload a file to Feishu and return the file_key."""
-        from lark_oapi.api.im.v1 import CreateFileRequest, CreateFileRequestBody
-
         ext = os.path.splitext(file_path)[1].lower()
         file_type = self._FILE_TYPE_MAP.get(ext, "stream")
         file_name = os.path.basename(file_path)
         try:
             with open(file_path, "rb") as f:
                 request = (
-                    CreateFileRequest.builder()
+                    _lark_im_v1.CreateFileRequest.builder()
                     .request_body(
-                        CreateFileRequestBody.builder()
+                        _lark_im_v1.CreateFileRequestBody.builder()
                         .file_type(file_type)
                         .file_name(file_name)
                         .file(f)
@@ -779,11 +778,9 @@ class FeishuChannel(BaseChannel):
         self, message_id: str, image_key: str
     ) -> tuple[bytes | None, str | None]:
         """Download an image from Feishu message by message_id and image_key."""
-        from lark_oapi.api.im.v1 import GetMessageResourceRequest
-
         try:
             request = (
-                GetMessageResourceRequest.builder()
+                _lark_im_v1.GetMessageResourceRequest.builder()
                 .message_id(message_id)
                 .file_key(image_key)
                 .type("image")
@@ -809,8 +806,6 @@ class FeishuChannel(BaseChannel):
         self, message_id: str, file_key: str, resource_type: str = "file"
     ) -> tuple[bytes | None, str | None]:
         """Download a file/audio/media from a Feishu message by message_id and file_key."""
-        from lark_oapi.api.im.v1 import GetMessageResourceRequest
-
         # Feishu API only accepts 'image' or 'file' as type parameter
         # Convert 'audio' to 'file' for API compatibility
         if resource_type == "audio":
@@ -818,7 +813,7 @@ class FeishuChannel(BaseChannel):
 
         try:
             request = (
-                GetMessageResourceRequest.builder()
+                _lark_im_v1.GetMessageResourceRequest.builder()
                 .message_id(message_id)
                 .file_key(file_key)
                 .type(resource_type)
@@ -888,14 +883,12 @@ class FeishuChannel(BaseChannel):
         self, receive_id_type: str, receive_id: str, msg_type: str, content: str
     ) -> bool:
         """Send a single message (text/image/file/interactive) synchronously."""
-        from lark_oapi.api.im.v1 import CreateMessageRequest, CreateMessageRequestBody
-
         try:
             request = (
-                CreateMessageRequest.builder()
+                _lark_im_v1.CreateMessageRequest.builder()
                 .receive_id_type(receive_id_type)
                 .request_body(
-                    CreateMessageRequestBody.builder()
+                    _lark_im_v1.CreateMessageRequestBody.builder()
                     .receive_id(receive_id)
                     .msg_type(msg_type)
                     .content(content)
@@ -923,8 +916,6 @@ class FeishuChannel(BaseChannel):
 
     def _create_streaming_card_sync(self, receive_id_type: str, chat_id: str) -> str | None:
         """Create a CardKit streaming card, send it to chat, return card_id."""
-        from lark_oapi.api.cardkit.v1 import CreateCardRequest, CreateCardRequestBody
-
         card_json = {
             "schema": "2.0",
             "config": {"wide_screen_mode": True, "update_multi": True, "streaming_mode": True},
@@ -934,9 +925,9 @@ class FeishuChannel(BaseChannel):
         }
         try:
             request = (
-                CreateCardRequest.builder()
+                _lark_cardkit_v1.CreateCardRequest.builder()
                 .request_body(
-                    CreateCardRequestBody.builder()
+                    _lark_cardkit_v1.CreateCardRequestBody.builder()
                     .type("card_json")
                     .data(json.dumps(card_json, ensure_ascii=False))
                     .build()
@@ -970,18 +961,13 @@ class FeishuChannel(BaseChannel):
 
     def _stream_update_text_sync(self, card_id: str, content: str, sequence: int) -> bool:
         """Stream-update the markdown element on a CardKit card (typewriter effect)."""
-        from lark_oapi.api.cardkit.v1 import (
-            ContentCardElementRequest,
-            ContentCardElementRequestBody,
-        )
-
         try:
             request = (
-                ContentCardElementRequest.builder()
+                _lark_cardkit_v1.ContentCardElementRequest.builder()
                 .card_id(card_id)
                 .element_id(_STREAM_ELEMENT_ID)
                 .request_body(
-                    ContentCardElementRequestBody.builder()
+                    _lark_cardkit_v1.ContentCardElementRequestBody.builder()
                     .content(content)
                     .sequence(sequence)
                     .build()
@@ -1009,15 +995,13 @@ class FeishuChannel(BaseChannel):
         the session list until streaming_mode is set to false via card
         settings. Sequence must strictly exceed the previous card operation.
         """
-        from lark_oapi.api.cardkit.v1 import SettingsCardRequest, SettingsCardRequestBody
-
         settings_payload = json.dumps({"config": {"streaming_mode": False}}, ensure_ascii=False)
         try:
             request = (
-                SettingsCardRequest.builder()
+                _lark_cardkit_v1.SettingsCardRequest.builder()
                 .card_id(card_id)
                 .request_body(
-                    SettingsCardRequestBody.builder()
+                    _lark_cardkit_v1.SettingsCardRequestBody.builder()
                     .settings(settings_payload)
                     .sequence(sequence)
                     .uuid(str(uuid.uuid4()))

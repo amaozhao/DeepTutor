@@ -1,20 +1,38 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 from dataclasses import dataclass, field
+import io
 import json
 import threading
 from threading import Lock
 import time
 from typing import Any
 from uuid import uuid4
+import wave
+
+from deeptutor.services.embedding.client import EmbeddingClient, reset_embedding_client
+from deeptutor.services.embedding.config import EmbeddingConfig
+from deeptutor.services.imagegen import generate_image
+from deeptutor.services.llm import clear_llm_config_cache, get_token_limit_kwargs
+from deeptutor.services.llm import complete as llm_complete
+from deeptutor.services.llm.config import LLMConfig
+from deeptutor.services.search import web_search
+from deeptutor.services.videogen import probe_video
+from deeptutor.services.voice import synthesize_speech, transcribe_audio
 
 from .context_window_detection import detect_context_window
+from .loader import get_agent_params
 from .model_catalog import get_model_catalog_service
 from .provider_runtime import (
     resolve_embedding_runtime_config,
+    resolve_imagegen_runtime_config,
     resolve_llm_runtime_config,
     resolve_search_runtime_config,
+    resolve_stt_runtime_config,
+    resolve_tts_runtime_config,
+    resolve_videogen_runtime_config,
 )
 
 
@@ -152,8 +170,6 @@ class ConfigTestRunner:
         Refreshes the embedding client singleton so subsequent embed calls
         use the new dim.
         """
-        from deeptutor.services.embedding.client import reset_embedding_client
-
         service = get_model_catalog_service()
         if model is None:
             return catalog
@@ -208,10 +224,6 @@ class ConfigTestRunner:
         }
 
     async def _test_llm(self, run: TestRun, catalog: dict[str, Any]) -> None:
-        from deeptutor.services.llm import clear_llm_config_cache, get_token_limit_kwargs
-        from deeptutor.services.llm import complete as llm_complete
-        from deeptutor.services.llm.config import LLMConfig
-
         clear_llm_config_cache()
         run.emit("info", "Loading LLM config from the active catalog selection.")
         resolved = resolve_llm_runtime_config(catalog=catalog)
@@ -234,8 +246,6 @@ class ConfigTestRunner:
         # Reasoning models spend part of the budget on internal thinking;
         # too tight a cap makes them return empty content. Configurable
         # via diagnostics.llm_probe.max_tokens in agents.yaml.
-        from .loader import get_agent_params
-
         probe_params = get_agent_params("llm_probe")
         max_tokens = _coerce_int(probe_params.get("max_tokens"), 1024)
         temperature = _coerce_float(probe_params.get("temperature"), 0.1)
@@ -291,9 +301,6 @@ class ConfigTestRunner:
     async def _test_embedding(
         self, run: TestRun, model: dict[str, Any], catalog: dict[str, Any]
     ) -> None:
-        from deeptutor.services.embedding.client import EmbeddingClient
-        from deeptutor.services.embedding.config import EmbeddingConfig
-
         run.emit("info", "Loading embedding config from the active catalog selection.")
         resolved = resolve_embedding_runtime_config(catalog=catalog)
         catalog_dim = _coerce_int(model.get("dimension"), 0, minimum=0)
@@ -418,8 +425,6 @@ class ConfigTestRunner:
         )
 
     def _test_search(self, run: TestRun, catalog: dict[str, Any]) -> None:
-        from deeptutor.services.search import web_search
-
         resolved = resolve_search_runtime_config(catalog=catalog)
         if resolved.provider == "none":
             run.status = "completed"
@@ -452,11 +457,6 @@ class ConfigTestRunner:
             raise ValueError("Search provider returned no answer and no search results.")
 
     async def _test_tts(self, run: TestRun, catalog: dict[str, Any]) -> None:
-        import base64
-
-        from deeptutor.services.config.provider_runtime import resolve_tts_runtime_config
-        from deeptutor.services.voice import synthesize_speech
-
         run.emit("info", "Loading TTS config from the active catalog selection.")
         resolved = resolve_tts_runtime_config(catalog=catalog)
         run.emit(
@@ -477,12 +477,6 @@ class ConfigTestRunner:
         )
 
     async def _test_stt(self, run: TestRun, catalog: dict[str, Any]) -> None:
-        import io
-        import wave
-
-        from deeptutor.services.config.provider_runtime import resolve_stt_runtime_config
-        from deeptutor.services.voice import transcribe_audio
-
         run.emit("info", "Loading STT config from the active catalog selection.")
         resolved = resolve_stt_runtime_config(catalog=catalog)
         run.emit(
@@ -515,11 +509,6 @@ class ConfigTestRunner:
         )
 
     async def _test_imagegen(self, run: TestRun, catalog: dict[str, Any]) -> None:
-        import base64
-
-        from deeptutor.services.config.provider_runtime import resolve_imagegen_runtime_config
-        from deeptutor.services.imagegen import generate_image
-
         run.emit("info", "Loading image-generation config from the active catalog selection.")
         resolved = resolve_imagegen_runtime_config(catalog=catalog)
         run.emit(
@@ -546,9 +535,6 @@ class ConfigTestRunner:
         )
 
     async def _test_videogen(self, run: TestRun, catalog: dict[str, Any]) -> None:
-        from deeptutor.services.config.provider_runtime import resolve_videogen_runtime_config
-        from deeptutor.services.videogen import probe_video
-
         run.emit("info", "Loading video-generation config from the active catalog selection.")
         resolved = resolve_videogen_runtime_config(catalog=catalog)
         run.emit(

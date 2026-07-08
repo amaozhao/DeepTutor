@@ -14,6 +14,11 @@ Features:
 from datetime import datetime
 from typing import Any, List
 
+try:
+    from openai import OpenAI
+except ModuleNotFoundError:  # pragma: no cover - optional dependency
+    OpenAI = None
+
 from deeptutor.services.search.base import BaseSearchProvider
 from deeptutor.services.search.providers import register_provider
 from deeptutor.services.search.types import Citation, SearchResult, WebSearchResponse
@@ -39,13 +44,11 @@ class OpenRouterProvider(BaseSearchProvider):
     def client(self):
         """Lazy-load the OpenAI client configured for OpenRouter."""
         if self._client is None:
-            try:
-                from openai import OpenAI
-            except ImportError as e:
+            if OpenAI is None:
                 raise ImportError(
                     "openai module is not installed. To use OpenRouter search, please install: "
                     "pip install openai"
-                ) from e
+                )
 
             if not self.api_key:
                 raise ValueError("API Key is required for OpenRouter search provider.")

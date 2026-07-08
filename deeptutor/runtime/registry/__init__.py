@@ -1,7 +1,8 @@
 """Runtime registries for capabilities and tools."""
 
-from .capability_registry import CapabilityRegistry, get_capability_registry
-from .tool_registry import ToolRegistry, get_tool_registry
+from __future__ import annotations
+
+import importlib
 
 __all__ = [
     "CapabilityRegistry",
@@ -9,3 +10,13 @@ __all__ = [
     "get_capability_registry",
     "get_tool_registry",
 ]
+
+
+def __getattr__(name: str):
+    if name in {"CapabilityRegistry", "get_capability_registry"}:
+        module = importlib.import_module(f"{__name__}.capability_registry")
+        return getattr(module, name)
+    if name in {"ToolRegistry", "get_tool_registry"}:
+        module = importlib.import_module(f"{__name__}.tool_registry")
+        return getattr(module, name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

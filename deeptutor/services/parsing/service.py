@@ -9,6 +9,7 @@ content; nothing is parsed implicitly.
 
 from __future__ import annotations
 
+import importlib
 import logging
 from pathlib import Path
 from typing import Callable, Optional
@@ -25,6 +26,10 @@ from .types import ParsedDocument, ParserError
 logger = logging.getLogger(__name__)
 
 
+def _get_path_service():
+    return importlib.import_module("deeptutor.services.path_service").get_path_service()
+
+
 class ParseService:
     """Cache-aware, engine-pluggable document parsing."""
 
@@ -36,9 +41,7 @@ class ParseService:
             return self._cache_root_override
         # Resolve lazily per call so the cache root tracks the active
         # user/workspace (multi-user safety), like get_path_service().
-        from deeptutor.services.path_service import get_path_service
-
-        return get_path_service().get_parse_cache_root()
+        return _get_path_service().get_parse_cache_root()
 
     def active_engine(self) -> str:
         return str(

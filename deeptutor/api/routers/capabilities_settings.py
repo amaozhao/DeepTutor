@@ -21,18 +21,21 @@ from typing import Any
 
 from fastapi import APIRouter
 
+from deeptutor.services.config.capabilities_settings import (
+    capabilities_settings_dict,
+    save_capabilities_settings,
+)
+
 router = APIRouter()
 
 
 @router.get("/settings")
 async def get_capabilities_settings_endpoint() -> dict[str, Any]:
-    from deeptutor.services.config.capabilities_settings import capabilities_settings_dict
 
     return capabilities_settings_dict()
 
 
 @router.put("/settings")
 async def put_capabilities_settings(payload: dict[str, Any]) -> dict[str, Any]:
-    from deeptutor.services.config.capabilities_settings import save_capabilities_settings
 
     return save_capabilities_settings(payload)

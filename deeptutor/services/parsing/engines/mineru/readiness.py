@@ -15,6 +15,7 @@ import os
 from pathlib import Path
 
 from ...base import ReadinessReport
+from .backend import local_cli_probe
 
 # Substrings of HF/ModelScope cache dir names that indicate MinerU's weights.
 _MODEL_DIR_HINTS = ("opendatalab", "mineru", "pdf-extract")
@@ -65,8 +66,6 @@ def mineru_readiness(config) -> ReadinessReport:
         return ReadinessReport(ready=True)
 
     # Local mode.
-    from .backend import local_cli_probe
-
     if not local_cli_probe(config.local_cli_path).get("found"):
         return ReadinessReport(
             ready=False,

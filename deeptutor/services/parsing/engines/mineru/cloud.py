@@ -23,6 +23,7 @@ from collections.abc import Callable
 import io
 import logging
 from pathlib import Path
+import shutil
 import time
 import zipfile
 
@@ -313,8 +314,6 @@ def _http_error_message(exc: httpx.HTTPStatusError) -> str:
 
 def _reset_dir(path: Path) -> None:
     if path.exists():
-        import shutil
-
         shutil.rmtree(path)
     path.mkdir(parents=True, exist_ok=True)
 

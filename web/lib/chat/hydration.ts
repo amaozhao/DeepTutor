@@ -1,10 +1,10 @@
-import type { LLMSelection, StreamEvent } from "../unified-ws";
+import type { LLMSelection, StreamEvent } from "@/lib/unified-ws";
 import {
   normalizeBookReferences,
   type BookReferencePayload,
-} from "../book-references";
-import { normalizeMarkdownForDisplay } from "../markdown-display";
-import { normalizeMessageContent } from "../message-content";
+} from "@/lib/book-references";
+import { normalizeMarkdownForDisplay } from "@/lib/markdown-display";
+import { normalizeMessageContent } from "@/lib/message-content";
 
 type NotebookReferencePayload = {
   notebook_id: string;

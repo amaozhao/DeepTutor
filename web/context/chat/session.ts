@@ -1,10 +1,10 @@
-import type { SubscribeTurnMessage } from "../../lib/unified-ws";
+import type { SubscribeTurnMessage } from "@/lib/unified-ws";
 import {
   asLLMSelection,
   hydrateSessionMessages,
   normalizeSelectedBranches,
-} from "../../lib/chat/hydration";
-import type { Action, SessionRuntimeStatus } from "./state";
+} from "@/lib/chat/hydration";
+import type { Action, SessionRuntimeStatus } from "@/context/chat/state";
 
 type LoadSessionAction = Extract<Action, { type: "LOAD_SESSION" }>;
 

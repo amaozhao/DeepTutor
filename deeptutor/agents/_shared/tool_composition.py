@@ -24,8 +24,9 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Any
 
-from deeptutor.tools.builtin import (
-    BUILTIN_TOOL_NAMES,
+from deeptutor.services.memory import get_memory_store
+from deeptutor.services.notebook import get_notebook_manager
+from deeptutor.tools.builtin.names import (
     CONFIGURABLE_BUILTIN_TOOL_NAMES,
     USER_TOGGLEABLE_TOOL_NAMES,
 )
@@ -67,9 +68,7 @@ def default_optional_tools(excluded: Iterable[str] = ()) -> list[str]:
     return [
         name
         for name in USER_TOGGLEABLE_TOOL_NAMES
-        if name in BUILTIN_TOOL_NAMES
-        and name not in excluded_set
-        and name not in AUTO_MOUNTED_TOOLS
+        if name not in excluded_set and name not in AUTO_MOUNTED_TOOLS
     ]
 
 
@@ -212,8 +211,6 @@ def user_has_memory() -> bool:
     a tool with no payload to read.
     """
     try:
-        from deeptutor.services.memory import get_memory_store
-
         store = get_memory_store()
         return any(
             store.read_raw("L3", slot).strip()
@@ -230,8 +227,6 @@ def user_has_notebooks() -> bool:
     fail-closed posture as :func:`user_has_memory`.
     """
     try:
-        from deeptutor.services.notebook import get_notebook_manager
-
         notebooks = get_notebook_manager().list_notebooks()
         return isinstance(notebooks, list) and any(
             nb for nb in notebooks if str(nb.get("id") or "").strip()

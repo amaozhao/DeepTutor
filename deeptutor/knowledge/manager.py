@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 """Knowledge Base Manager."""
 
+import argparse
 from datetime import datetime, timedelta
 import json
 import logging
@@ -15,6 +16,9 @@ from deeptutor.knowledge.kb_types import (
     external_root_of,
     is_connected_kb,
 )
+from deeptutor.services.config import get_kb_config_service
+from deeptutor.services.pocketbase_client import get_pb_client, is_pocketbase_enabled
+from deeptutor.services.rag.embedding_signature import signature_from_embedding_config
 from deeptutor.services.rag.factory import (
     DEFAULT_PROVIDER,
     KNOWN_PROVIDERS,
@@ -22,6 +26,12 @@ from deeptutor.services.rag.factory import (
     normalize_provider_name,
 )
 from deeptutor.services.rag.index_probe import inspect_kb_versions
+from deeptutor.services.rag.index_versioning import (
+    LEGACY_VERSION_DIRNAME,
+    VERSION_PREFIX,
+    list_kb_versions,
+    resolve_storage_dir_for_read,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -86,8 +96,6 @@ class KnowledgeBaseManager:
         # PocketBase sync — enabled when integrations.pocketbase_url is set.
         # The local JSON file stays the source of truth; PocketBase gets a
         # mirrored copy for admin-panel visibility and future multi-user access.
-        from deeptutor.services.pocketbase_client import is_pocketbase_enabled
-
         self._pb_enabled = is_pocketbase_enabled()
 
     def _load_config(self) -> dict:
@@ -106,8 +114,6 @@ class KnowledgeBaseManager:
         if not self._pb_enabled:
             return
         try:
-            from deeptutor.services.pocketbase_client import get_pb_client
-
             pb = get_pb_client()
             records = pb.collection("knowledge_bases").get_full_list(
                 query_params={"filter": f'kb_name="{name}"'}
@@ -220,10 +226,6 @@ class KnowledgeBaseManager:
             # Record the active signature + the on-disk version registry so
             # the UI can render version chips without recomputing.
             try:
-                from deeptutor.services.rag.embedding_signature import (
-                    signature_from_embedding_config,
-                )
-
                 sig = signature_from_embedding_config()
                 if sig is not None:
                     kb_config["embedding_signature"] = sig.hash()
@@ -315,8 +317,6 @@ class KnowledgeBaseManager:
                     continue
 
                 # Check if this is a valid KB directory (flat versions or legacy stores)
-                from deeptutor.services.rag.index_versioning import list_kb_versions
-
                 rag_storage = item / "rag_storage"
                 versions = list_kb_versions(item)
                 detected_provider = _detect_provider_from_versions(versions)
@@ -342,8 +342,6 @@ class KnowledgeBaseManager:
         Reads info from metadata.json (if exists) for backward compatibility.
         """
         kb_dir = self.base_dir / name
-        from deeptutor.services.rag.index_versioning import list_kb_versions
-
         rag_storage = kb_dir / "rag_storage"
         versions = list_kb_versions(kb_dir)
         detected_provider = _detect_provider_from_versions(versions)
@@ -571,11 +569,6 @@ class KnowledgeBaseManager:
     def get_rag_storage_path(self, name: str | None = None) -> Path:
         """Get active index storage path for a knowledge base."""
         kb_dir = self.get_knowledge_base_path(name)
-        from deeptutor.services.rag.embedding_signature import signature_from_embedding_config
-        from deeptutor.services.rag.index_versioning import (
-            resolve_storage_dir_for_read,
-        )
-
         active_storage = resolve_storage_dir_for_read(kb_dir, signature_from_embedding_config())
         legacy_storage = kb_dir / "rag_storage"
         if active_storage is not None:
@@ -606,8 +599,6 @@ class KnowledgeBaseManager:
 
         # Persist default KB selection via the canonical KB config service.
         try:
-            from deeptutor.services.config import get_kb_config_service
-
             kb_config_service = get_kb_config_service()
             kb_config_service.set_default_kb(name)
         except Exception as e:
@@ -623,8 +614,6 @@ class KnowledgeBaseManager:
         """
         # Try centralized config first
         try:
-            from deeptutor.services.config import get_kb_config_service
-
             kb_config_service = get_kb_config_service()
             default_kb = kb_config_service.get_default_kb()
             if default_kb and default_kb in self.list_knowledge_bases():
@@ -773,11 +762,6 @@ class KnowledgeBaseManager:
         """
         kb_name = name or self.get_default()
         kb_dir = self.get_knowledge_base_path(kb_name)
-        from deeptutor.services.rag.index_versioning import (
-            LEGACY_VERSION_DIRNAME,
-            VERSION_PREFIX,
-        )
-
         legacy_llamaindex_storage_dir = kb_dir / "llamaindex_storage"
         legacy_versions_dir = kb_dir / LEGACY_VERSION_DIRNAME
         legacy_storage_dir = kb_dir / "rag_storage"
@@ -916,7 +900,6 @@ class KnowledgeBaseManager:
 
 def main():
     """Command-line interface for knowledge base manager"""
-    import argparse
 
     parser = argparse.ArgumentParser(description="Knowledge Base Manager")
     parser.add_argument(

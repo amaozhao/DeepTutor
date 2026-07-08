@@ -30,6 +30,9 @@ import time
 from typing import Any
 import uuid
 
+from deeptutor.multi_user.context import get_current_user
+import deeptutor.services.pocketbase_client as pocketbase_client
+
 logger = logging.getLogger(__name__)
 
 _VALID_ID = re.compile(r"^[a-zA-Z0-9_-]+$")
@@ -55,9 +58,7 @@ def _json_loads(value: Any, default: Any) -> Any:
 
 def _pb():
     """Return the shared PocketBase client."""
-    from deeptutor.services.pocketbase_client import get_pb_client
-
-    return get_pb_client()
+    return pocketbase_client.get_pb_client()
 
 
 def _to_float(value: Any, default: float = 0.0) -> float:
@@ -83,8 +84,6 @@ def _current_user_id() -> str:
     PocketBase record id, a ``u_<hex>`` id, or ``local-admin``) so it is safe to
     interpolate into a PocketBase filter string.
     """
-    from deeptutor.multi_user.context import get_current_user
-
     return _validate_id(get_current_user().id, "user_id")
 
 

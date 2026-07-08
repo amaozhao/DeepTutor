@@ -21,6 +21,7 @@ go through that same pipeline (enforced upstream in the knowledge router).
 
 from __future__ import annotations
 
+import importlib
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -44,6 +45,10 @@ KNOWN_PROVIDERS = frozenset(
 
 # Cached pipeline instances keyed by (kb_base_dir, provider).
 _PIPELINE_CACHE: Dict[Tuple[Optional[str], str], Any] = {}
+
+
+def _index_probe():
+    return importlib.import_module("deeptutor.services.rag.index_probe")
 
 
 def normalize_provider_name(name: Optional[str] = None) -> str:
@@ -85,18 +90,48 @@ def version_matches_provider(entry: dict[str, Any], provider: Optional[str]) -> 
     return entry_provider == resolved or signature == resolved
 
 
+try:
+    from .pipelines.pageindex.config import is_pageindex_configured
+    from .pipelines.pageindex.pipeline import PageIndexPipeline
+except ModuleNotFoundError:  # pragma: no cover - optional provider
+    PageIndexPipeline = None
+    is_pageindex_configured = None
+
+try:
+    from .pipelines.graphrag import config as graphrag_config
+    from .pipelines.graphrag.pipeline import GraphRagPipeline
+except ModuleNotFoundError:  # pragma: no cover - optional provider
+    GraphRagPipeline = None
+    graphrag_config = None
+
+try:
+    from .pipelines.lightrag import config as lightrag_config
+    from .pipelines.lightrag.pipeline import LightRagPipeline
+except ModuleNotFoundError:  # pragma: no cover - optional provider
+    LightRagPipeline = None
+    lightrag_config = None
+
+try:
+    from .pipelines.lightrag_server import config as lightrag_server_config
+    from .pipelines.lightrag_server.pipeline import LightRagServerPipeline
+except ModuleNotFoundError:  # pragma: no cover - optional provider
+    LightRagServerPipeline = None
+    lightrag_server_config = None
+
+try:
+    from .pipelines.llamaindex.pipeline import LlamaIndexPipeline
+except ModuleNotFoundError:  # pragma: no cover - optional provider
+    LlamaIndexPipeline = None
+
+
 def has_ready_provider_index(kb_dir: str | Path, provider: Optional[str]) -> bool:
     """Return whether ``kb_dir`` has a ready index for ``provider``."""
-    from .index_probe import has_ready_provider_index as _has_ready_provider_index
-
-    return _has_ready_provider_index(kb_dir, provider)
+    return _index_probe().has_ready_provider_index(kb_dir, provider)
 
 
 def version_has_provider_output(entry: dict[str, Any], provider: Optional[str]) -> bool:
     """Return True when a version entry is ready and has real provider output."""
-    from .index_probe import inspect_provider_version
-
-    return inspect_provider_version(entry, provider).ready
+    return _index_probe().inspect_provider_version(entry, provider).ready
 
 
 def provider_failure_summary(
@@ -106,42 +141,40 @@ def provider_failure_summary(
     limit: int = 3,
 ) -> str:
     """Return a short provider-specific failure summary, when available."""
-    from .index_probe import provider_failure_summary as _provider_failure_summary
-
-    return _provider_failure_summary(kb_dir, provider, limit=limit)
+    return _index_probe().provider_failure_summary(kb_dir, provider, limit=limit)
 
 
 def _build_pipeline(provider: str, kb_base_dir: Optional[str], **kwargs: Any):
     if provider == PAGEINDEX_PROVIDER:
-        from .pipelines.pageindex.pipeline import PageIndexPipeline
-
+        if PageIndexPipeline is None:
+            raise RuntimeError("PageIndex pipeline is unavailable")
         if kb_base_dir is not None:
             kwargs.setdefault("kb_base_dir", kb_base_dir)
         return PageIndexPipeline(**kwargs)
 
     if provider == GRAPHRAG_PROVIDER:
-        from .pipelines.graphrag.pipeline import GraphRagPipeline
-
+        if GraphRagPipeline is None:
+            raise RuntimeError("GraphRAG pipeline is unavailable")
         if kb_base_dir is not None:
             kwargs.setdefault("kb_base_dir", kb_base_dir)
         return GraphRagPipeline(**kwargs)
 
     if provider == LIGHTRAG_PROVIDER:
-        from .pipelines.lightrag.pipeline import LightRagPipeline
-
+        if LightRagPipeline is None:
+            raise RuntimeError("LightRAG pipeline is unavailable")
         if kb_base_dir is not None:
             kwargs.setdefault("kb_base_dir", kb_base_dir)
         return LightRagPipeline(**kwargs)
 
     if provider == LIGHTRAG_SERVER_PROVIDER:
-        from .pipelines.lightrag_server.pipeline import LightRagServerPipeline
-
+        if LightRagServerPipeline is None:
+            raise RuntimeError("LightRAG server pipeline is unavailable")
         if kb_base_dir is not None:
             kwargs.setdefault("kb_base_dir", kb_base_dir)
         return LightRagServerPipeline(**kwargs)
 
-    from .pipelines.llamaindex.pipeline import LlamaIndexPipeline
-
+    if LlamaIndexPipeline is None:
+        raise RuntimeError("LlamaIndex pipeline is unavailable")
     if kb_base_dir is not None:
         kwargs.setdefault("kb_base_dir", kb_base_dir)
     return LlamaIndexPipeline(**kwargs)
@@ -169,35 +202,31 @@ def get_pipeline(
 def list_pipelines() -> List[Dict[str, Any]]:
     """Describe the available pipelines for the UI provider picker."""
     try:
-        from .pipelines.pageindex.config import is_pageindex_configured
-
-        pageindex_ready = is_pageindex_configured()
+        pageindex_ready = bool(is_pageindex_configured and is_pageindex_configured())
     except Exception:
         pageindex_ready = False
 
     try:
-        from .pipelines.graphrag import config as graphrag_config
-
-        graphrag_ready = graphrag_config.is_graphrag_available()
-        graphrag_modes = list(graphrag_config.SUPPORTED_MODES)
-        graphrag_default_mode = graphrag_config.DEFAULT_MODE
+        graphrag_ready = bool(graphrag_config and graphrag_config.is_graphrag_available())
+        graphrag_modes = list(graphrag_config.SUPPORTED_MODES) if graphrag_config else []
+        graphrag_default_mode = graphrag_config.DEFAULT_MODE if graphrag_config else ""
     except Exception:
         graphrag_ready, graphrag_modes, graphrag_default_mode = False, [], ""
 
     try:
-        from .pipelines.lightrag import config as lightrag_config
-
-        lightrag_ready = lightrag_config.is_lightrag_available()
-        lightrag_modes = list(lightrag_config.SUPPORTED_MODES)
-        lightrag_default_mode = lightrag_config.DEFAULT_MODE
+        lightrag_ready = bool(lightrag_config and lightrag_config.is_lightrag_available())
+        lightrag_modes = list(lightrag_config.SUPPORTED_MODES) if lightrag_config else []
+        lightrag_default_mode = lightrag_config.DEFAULT_MODE if lightrag_config else ""
     except Exception:
         lightrag_ready, lightrag_modes, lightrag_default_mode = False, [], ""
 
     try:
-        from .pipelines.lightrag_server import config as lightrag_server_config
-
-        lightrag_server_modes = list(lightrag_server_config.SUPPORTED_MODES)
-        lightrag_server_default_mode = lightrag_server_config.DEFAULT_MODE
+        lightrag_server_modes = (
+            list(lightrag_server_config.SUPPORTED_MODES) if lightrag_server_config else []
+        )
+        lightrag_server_default_mode = (
+            lightrag_server_config.DEFAULT_MODE if lightrag_server_config else ""
+        )
     except Exception:
         lightrag_server_modes, lightrag_server_default_mode = [], ""
 

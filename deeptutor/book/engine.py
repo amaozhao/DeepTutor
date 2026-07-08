@@ -37,11 +37,20 @@ import time
 from typing import Any
 
 from deeptutor.core.stream_bus import StreamBus
+from deeptutor.services.path_service import get_path_service
 
 from .agents.ideation_agent import IdeationAgent
 from .agents.source_explorer import SourceExplorer
 from .agents.spine_synthesizer import SpineSynthesizer
+from .blocks.base import BlockContext, get_block_registry
+from .blocks.concept_graph import render_mermaid
 from .compiler import BookCompiler, CompilerOptions
+from .health import (
+    fingerprint_kbs,
+    mark_drift_on_book,
+    refresh_book_fingerprints,
+    scan_log_health,
+)
 from .inputs import IdeationContext, build_book_inputs
 from .models import (
     Block,
@@ -247,8 +256,6 @@ class BookEngine:
             # first health-check run treats every selected KB as "newly added"
             # and surfaces a spurious drift warning.
             try:
-                from .health import fingerprint_kbs
-
                 if book.knowledge_bases:
                     book.kb_fingerprints = fingerprint_kbs(book.knowledge_bases)
             except Exception as exc:  # noqa: BLE001
@@ -513,8 +520,6 @@ class BookEngine:
         )
 
         # 2) Concept graph block — render deterministically
-        from .blocks.concept_graph import render_mermaid
-
         graph_block = Block(
             type=BlockType.CONCEPT_GRAPH,
             status=BlockStatus.READY,
@@ -757,8 +762,6 @@ class BookEngine:
         # soon as the very first page is compiled.
         if page.status == PageStatus.READY:
             try:
-                from .health import refresh_book_fingerprints
-
                 refreshed = self.storage.load_book(book_id)
                 if refreshed is not None and not refreshed.kb_fingerprints:
                     refresh_book_fingerprints(book_id, storage=self.storage)
@@ -938,8 +941,6 @@ class BookEngine:
         bus = stream or StreamBus()
         bstream = BookStream(bus)
 
-        from .blocks.base import BlockContext, get_block_registry
-
         registry = get_block_registry()
         generator = registry.get(block.type)
         if generator is None:
@@ -982,16 +983,12 @@ class BookEngine:
 
     def kb_drift_report(self, book_id: str) -> dict[str, Any]:
         """Compute and persist the current KB drift report for *book_id*."""
-        from .health import mark_drift_on_book
-
         report = mark_drift_on_book(book_id, storage=self.storage)
         if report is None:
             return {"book_id": book_id, "has_drift": False, "missing": True}
         return report.to_dict()
 
     def refresh_kb_fingerprints(self, book_id: str) -> dict[str, Any] | None:
-        from .health import refresh_book_fingerprints
-
         book = refresh_book_fingerprints(book_id, storage=self.storage)
         if book is None:
             return None
@@ -1002,8 +999,6 @@ class BookEngine:
         }
 
     def log_health(self, book_id: str) -> dict[str, Any]:
-        from .health import scan_log_health
-
         return scan_log_health(book_id, storage=self.storage).to_dict()
 
     # ── Block CRUD operations (Phase 3) ────────────────────────────────
@@ -1042,8 +1037,6 @@ class BookEngine:
         self.storage.save_page(page)
 
         if compile_now and block_type != BlockType.USER_NOTE:
-            from .blocks.base import BlockContext, get_block_registry
-
             generator = get_block_registry().get(block_type)
             if generator is not None:
                 ctx = BlockContext(
@@ -1279,8 +1272,6 @@ _engines: dict[str, BookEngine] = {}
 
 
 def get_book_engine() -> BookEngine:
-    from deeptutor.services.path_service import get_path_service
-
     key = str(get_path_service().workspace_root.resolve())
     if key not in _engines:
         _engines[key] = BookEngine()

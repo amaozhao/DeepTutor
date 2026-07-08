@@ -7,6 +7,7 @@ from datetime import datetime
 import json
 import logging
 from pathlib import Path
+import traceback as _tb
 from typing import Any
 
 from deeptutor.api.utils.task_id_manager import TaskIDManager
@@ -16,6 +17,7 @@ from deeptutor.knowledge.initializer import KnowledgeBaseInitializer
 from deeptutor.knowledge.progress_tracker import ProgressStage, ProgressTracker
 from deeptutor.services.file_io import atomic_write_json
 from deeptutor.services.rag.file_routing import FileTypeRouter
+from deeptutor.services.rag.service import RAGService
 
 logger = logging.getLogger(__name__)
 
@@ -106,8 +108,6 @@ async def run_initialization_task(initializer: KnowledgeBaseInitializer, task_id
                 task_id, f"Knowledge base '{initializer.kb_name}' initialization complete"
             )
         except Exception as exc:
-            import traceback as _tb
-
             error_msg = str(exc)
             trace = _tb.format_exc()
 
@@ -257,8 +257,6 @@ async def run_upload_processing_task(
                 task_id, f"Successfully processed {num_processed} files for '{kb_name}'"
             )
         except Exception as exc:
-            import traceback as _tb
-
             error_msg = f"Upload processing failed (KB '{kb_name}'): {exc}"
             trace = _tb.format_exc()
             _task_log(task_id, error_msg, level="error")
@@ -305,8 +303,6 @@ async def run_reindex_task(kb_name: str, base_dir: str, task_id: str, signature_
                 current=0,
                 total=len(file_paths),
             )
-
-            from deeptutor.services.rag.service import RAGService
 
             rag_service = RAGService(kb_base_dir=str(base_path), provider=None)
 
@@ -379,8 +375,6 @@ async def run_reindex_task(kb_name: str, base_dir: str, task_id: str, signature_
             task_manager.update_task_status(task_id, "completed")
             task_stream_manager.emit_complete(task_id, f"Re-index of '{kb_name}' complete")
         except Exception as exc:
-            import traceback as _tb
-
             error_msg = str(exc)
             trace = _tb.format_exc()
             _task_log(task_id, f"Re-index failed: {error_msg}", level="error")

@@ -6,6 +6,9 @@ from typing import Any, Dict, List, Optional
 
 import yaml
 
+from deeptutor.services.config.model_catalog import ModelCatalogService
+from deeptutor.services.config.runtime_settings import RuntimeSettingsService
+
 from ..services.config.loader import get_runtime_settings_dir
 
 
@@ -105,9 +108,6 @@ class ConfigManager:
         return {"missing": missing}
 
     def _runtime_key_values(self) -> Dict[str, str]:
-        from deeptutor.services.config.model_catalog import ModelCatalogService
-        from deeptutor.services.config.runtime_settings import RuntimeSettingsService
-
         settings_dir = get_runtime_settings_dir(self.project_root)
         catalog_service = ModelCatalogService(settings_dir / "model_catalog.json")
         catalog = catalog_service.load()

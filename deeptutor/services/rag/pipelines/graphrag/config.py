@@ -25,9 +25,15 @@ releases; pin the dependency to the 3.x line (see ``pyproject`` extra).
 from __future__ import annotations
 
 from dataclasses import dataclass
+import importlib.util
 import logging
 from pathlib import Path
 from typing import Any
+
+import yaml
+
+from deeptutor.services.config import load_graphrag_settings, resolve_llm_runtime_config
+from deeptutor.services.embedding import get_embedding_config
 
 logger = logging.getLogger(__name__)
 
@@ -59,7 +65,6 @@ def is_graphrag_available() -> bool:
     extra: ``pip install 'deeptutor[graphrag]'``. Until it is installed the
     provider is hidden / blocked in the UI.
     """
-    import importlib.util
 
     return importlib.util.find_spec("graphrag") is not None
 
@@ -87,8 +92,6 @@ class GraphRagQueryConfig:
 def query_config_from_settings() -> GraphRagQueryConfig:
     """Load GraphRAG query knobs from runtime settings (defaults on any error)."""
     try:
-        from deeptutor.services.config import load_graphrag_settings
-
         settings = load_graphrag_settings()
         return GraphRagQueryConfig(
             response_type=str(settings.get("response_type") or "Multiple Paragraphs"),
@@ -121,12 +124,8 @@ def build_settings(*, llm_cfg: Any = None, embedding_cfg: Any = None) -> dict[st
     :class:`GraphRagNotConfiguredError` if either side has no usable model.
     """
     if llm_cfg is None:
-        from deeptutor.services.config import resolve_llm_runtime_config
-
         llm_cfg = resolve_llm_runtime_config()
     if embedding_cfg is None:
-        from deeptutor.services.embedding import get_embedding_config
-
         embedding_cfg = get_embedding_config()
 
     chat_model = getattr(llm_cfg, "model", None)
@@ -188,8 +187,6 @@ def build_settings(*, llm_cfg: Any = None, embedding_cfg: Any = None) -> dict[st
 
 def write_settings(root_dir: Path, *, llm_cfg: Any = None, embedding_cfg: Any = None) -> Path:
     """Write ``settings.yaml`` into ``root_dir`` and return its path."""
-    import yaml
-
     root_dir = Path(root_dir)
     root_dir.mkdir(parents=True, exist_ok=True)
     settings = build_settings(llm_cfg=llm_cfg, embedding_cfg=embedding_cfg)

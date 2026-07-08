@@ -455,8 +455,8 @@ class _FakePartnerManager:
 
 
 def _patch_partner(monkeypatch, manager, *, is_admin=True):
-    import deeptutor.multi_user.context as ctx
-    import deeptutor.services.partners as partners_pkg
+    ctx = __import__("deeptutor.multi_user.context", fromlist=["*"])
+    partners_pkg = __import__("deeptutor.services.partners", fromlist=["*"])
 
     monkeypatch.setattr(partners_pkg, "get_partner_manager", lambda: manager)
     user = type("U", (), {"is_admin": is_admin})()
@@ -465,7 +465,9 @@ def _patch_partner(monkeypatch, manager, *, is_admin=True):
 
 @pytest.mark.asyncio
 async def test_load_history_session_resolves_partner_reference(monkeypatch) -> None:
-    from deeptutor.services.session.source_inventory import _load_history_session
+    _load_history_session = __import__(
+        "deeptutor.services.session.source_inventory", fromlist=["_load_history_session"]
+    )._load_history_session
 
     manager = _FakePartnerManager(
         messages=[
@@ -486,7 +488,9 @@ async def test_load_history_session_resolves_partner_reference(monkeypatch) -> N
 
 @pytest.mark.asyncio
 async def test_load_history_session_partner_blocked_for_non_admin(monkeypatch) -> None:
-    from deeptutor.services.session.source_inventory import _load_history_session
+    _load_history_session = __import__(
+        "deeptutor.services.session.source_inventory", fromlist=["_load_history_session"]
+    )._load_history_session
 
     manager = _FakePartnerManager(messages=[{"role": "user", "content": "secret"}])
     _patch_partner(monkeypatch, manager, is_admin=False)
@@ -497,7 +501,9 @@ async def test_load_history_session_partner_blocked_for_non_admin(monkeypatch) -
 
 @pytest.mark.asyncio
 async def test_load_history_session_partner_missing_returns_empty(monkeypatch) -> None:
-    from deeptutor.services.session.source_inventory import _load_history_session
+    _load_history_session = __import__(
+        "deeptutor.services.session.source_inventory", fromlist=["_load_history_session"]
+    )._load_history_session
 
     manager = _FakePartnerManager(exists=False)
     _patch_partner(monkeypatch, manager, is_admin=True)

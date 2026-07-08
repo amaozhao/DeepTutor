@@ -230,7 +230,7 @@ def test_migrate_v1_preserves_v2_dirs(tmp_memory: Path) -> None:
 
 
 def test_migrate_partner_surface_renames_artifacts(tmp_memory: Path) -> None:
-    import json
+    json = __import__("json")
 
     l2 = tmp_memory / "L2"
     (l2 / "tutorbot.md").write_text(

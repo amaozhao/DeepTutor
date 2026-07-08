@@ -9,6 +9,9 @@ import json
 import secrets
 from typing import Any, Callable
 
+import psycopg
+from psycopg.rows import dict_row
+
 from deeptutor.services.config import load_shared_state_settings
 
 
@@ -39,9 +42,6 @@ def _dict(value: Any) -> dict[str, Any]:
 
 @contextmanager
 def connect() -> Iterator[Any]:
-    import psycopg
-    from psycopg.rows import dict_row
-
     with psycopg.connect(_database_url(), row_factory=dict_row) as conn:
         yield conn
 

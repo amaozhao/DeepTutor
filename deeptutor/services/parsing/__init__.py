@@ -13,16 +13,9 @@ to avoid pulling engine deps at import time.
 from __future__ import annotations
 
 from .base import Parser, ReadinessReport
+from .service import get_parse_service
 from .signature import ParserSignature
 from .types import ParsedDocument, ParserError
-
-
-def get_parse_service():
-    """Return the process-wide :class:`ParseService` singleton."""
-    from .service import get_parse_service as _get
-
-    return _get()
-
 
 __all__ = [
     "ParsedDocument",

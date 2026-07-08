@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from deeptutor.services.settings.interface_settings import get_ui_language
+
 
 def _parse_language(language: str | None) -> str:
     raw = (language or "en").strip().lower()
@@ -64,8 +66,6 @@ _MESSAGES: dict[str, dict[str, str]] = {
 
 def current_language(default: str = "en") -> str:
     try:
-        from deeptutor.services.settings.interface_settings import get_ui_language
-
         return _parse_language(get_ui_language(default=default))
     except Exception:
         return _parse_language(default)

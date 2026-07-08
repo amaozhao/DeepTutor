@@ -16,6 +16,13 @@ from telegram.error import BadRequest, TimedOut
 from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters
 from telegram.request import HTTPXRequest
 
+try:
+    from telegram.error import RetryAfter
+except Exception:  # pragma: no cover - optional backend detail
+    RetryAfter = None
+
+from pathlib import Path
+
 from deeptutor.partners.bus.events import OutboundMessage
 from deeptutor.partners.bus.queue import MessageBus
 from deeptutor.partners.channels.base import BaseChannel
@@ -520,8 +527,6 @@ class TelegramChannel(BaseChannel):
         control gives an explicit wait time); persistent failures still raise
         so the channel manager's outer policy applies.
         """
-        from telegram.error import RetryAfter
-
         for attempt in range(1, _SEND_MAX_RETRIES + 1):
             try:
                 return await fn(*args, **kwargs)
@@ -536,17 +541,20 @@ class TelegramChannel(BaseChannel):
                     delay,
                 )
                 await asyncio.sleep(delay)
-            except RetryAfter as e:
-                if attempt == _SEND_MAX_RETRIES:
-                    raise
-                delay = float(e.retry_after)
-                logger.warning(
-                    "Telegram flood control (attempt {}/{}), retrying in {:.1f}s",
-                    attempt,
-                    _SEND_MAX_RETRIES,
-                    delay,
-                )
-                await asyncio.sleep(delay)
+            except Exception as e:
+                if RetryAfter is not None and isinstance(e, RetryAfter):
+                    if attempt == _SEND_MAX_RETRIES:
+                        raise
+                    delay = float(e.retry_after)
+                    logger.warning(
+                        "Telegram flood control (attempt {}/{}), retrying in {:.1f}s",
+                        attempt,
+                        _SEND_MAX_RETRIES,
+                        delay,
+                    )
+                    await asyncio.sleep(delay)
+                    continue
+                raise
 
     @staticmethod
     def _is_not_modified_error(exc: Exception) -> bool:
@@ -1053,8 +1061,6 @@ class TelegramChannel(BaseChannel):
             return ext
 
         if filename:
-            from pathlib import Path
-
             return "".join(Path(filename).suffixes)
 
         return ""

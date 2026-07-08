@@ -16,6 +16,11 @@ from loguru import logger
 from pydantic import Field
 import requests
 
+try:
+    import zulip
+except ModuleNotFoundError:  # pragma: no cover - optional dependency
+    zulip = None
+
 from deeptutor.partners.bus.events import OutboundMessage
 from deeptutor.partners.bus.queue import MessageBus
 from deeptutor.partners.channels.base import BaseChannel
@@ -109,8 +114,8 @@ class ZulipChannel(BaseChannel):
         self._loop = asyncio.get_running_loop()
 
         try:
-            import zulip
-
+            if zulip is None:
+                raise ModuleNotFoundError("zulip")
             self._client = zulip.Client(
                 email=self.config.email,
                 api_key=self.config.api_key,

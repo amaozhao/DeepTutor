@@ -13,6 +13,7 @@ from typing import Callable, Optional
 from ...base import ReadinessReport
 from ...signature import ParserSignature
 from .._versions import package_version
+from .backend import parse_pdf_to_workdir
 from .config import MinerUConfig, resolve_mineru_config
 from .readiness import mineru_readiness
 
@@ -62,8 +63,6 @@ class MinerUParser:
         config: MinerUConfig,
         on_output: Optional[Callable[[str], None]] = None,
     ) -> None:
-        from .backend import parse_pdf_to_workdir
-
         # Writes ``<workdir>/<stem>/...`` (markdown + content_list + images);
         # ParseService loads the IR from ``workdir`` afterwards.
         parse_pdf_to_workdir(source_path, workdir, config=config, on_output=on_output)

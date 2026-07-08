@@ -51,7 +51,7 @@ def test_normalize_provider_keeps_graphrag() -> None:
 
 
 def test_ragservice_routes_graphrag_from_metadata(tmp_path) -> None:
-    from deeptutor.services.rag.service import RAGService
+    RAGService = __import__("deeptutor.services.rag.service", fromlist=["RAGService"]).RAGService
 
     kb = tmp_path / "kbg"
     kb.mkdir()
@@ -127,7 +127,7 @@ def test_local_api_key_placeholder_when_missing() -> None:
 
 
 def test_write_settings_roundtrips(tmp_path) -> None:
-    import yaml
+    yaml = __import__("yaml")
 
     path = gr_config.write_settings(
         tmp_path,
@@ -201,7 +201,7 @@ def test_ingestion_writes_text_and_skips_noise(tmp_path) -> None:
 
 
 def test_ingestion_uses_active_parse_service_for_parser_files(tmp_path, monkeypatch) -> None:
-    from deeptutor.services import parsing
+    parsing = __import__("deeptutor.services", fromlist=["parsing"]).parsing
 
     root = tmp_path / "root"
     pdf = tmp_path / "paper.pdf"
@@ -432,9 +432,9 @@ def test_context_to_sources_prefers_concrete_records() -> None:
 
 
 def test_router_blocks_graphrag_when_unavailable(monkeypatch) -> None:
-    from fastapi import HTTPException
+    HTTPException = __import__("fastapi", fromlist=["HTTPException"]).HTTPException
 
-    from deeptutor.api.routers import knowledge
+    knowledge = __import__("deeptutor.api.routers", fromlist=["knowledge"]).knowledge
 
     monkeypatch.setattr(gr_config, "is_graphrag_available", lambda: False)
     with pytest.raises(HTTPException) as exc:

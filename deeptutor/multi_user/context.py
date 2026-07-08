@@ -2,29 +2,23 @@
 
 from __future__ import annotations
 
-from contextvars import ContextVar, Token
 from typing import Any
 
+from .current import get_current_user_or_none, reset_current_user, set_current_user
 from .models import CurrentUser
 from .paths import local_admin_user, scope_for_user
 
-_current_user: ContextVar[CurrentUser | None] = ContextVar("deeptutor_current_user", default=None)
-
-
-def set_current_user(user: CurrentUser) -> Token[CurrentUser | None]:
-    return _current_user.set(user)
-
-
-def reset_current_user(token: Token[CurrentUser | None]) -> None:
-    _current_user.reset(token)
+__all__ = [
+    "get_current_user",
+    "get_current_user_or_none",
+    "reset_current_user",
+    "set_current_user",
+    "user_from_token_payload",
+]
 
 
 def get_current_user() -> CurrentUser:
-    return _current_user.get() or local_admin_user()
-
-
-def get_current_user_or_none() -> CurrentUser | None:
-    return _current_user.get()
+    return get_current_user_or_none() or local_admin_user()
 
 
 def user_from_token_payload(payload: Any | None) -> CurrentUser:

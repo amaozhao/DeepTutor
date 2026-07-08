@@ -16,6 +16,7 @@ from deeptutor.learning.models import (
     KnowledgeType,
     LearningModule,
     LearningProgress,
+    QuizAttempt,
     RepetitionState,
     ReviewTask,
 )
@@ -225,8 +226,6 @@ class TestReplaceModules:
 
 class TestMasteryPolicy:
     def _service_with_attempts(self, tmp_path: Path, kp_id: str, outcomes: list[bool]):
-        from deeptutor.learning.models import QuizAttempt
-
         store = LearningStore(root=tmp_path)
         service = LearningService(store)
         progress = LearningProgress(book_id="test")

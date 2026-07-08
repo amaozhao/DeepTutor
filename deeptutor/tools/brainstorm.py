@@ -10,6 +10,11 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from deeptutor.services.config import get_agent_params
+from deeptutor.services.llm import get_token_limit_kwargs
+from deeptutor.services.llm import stream as llm_stream
+from deeptutor.services.llm.config import get_llm_config
+
 logger = logging.getLogger(__name__)
 
 _SYSTEM_PROMPT = """\
@@ -52,10 +57,6 @@ async def brainstorm(
     temperature: float | None = None,
 ) -> dict[str, Any]:
     """Generate breadth-first ideas for a topic via one LLM call."""
-    from deeptutor.services.config import get_agent_params
-    from deeptutor.services.llm import get_token_limit_kwargs
-    from deeptutor.services.llm import stream as llm_stream
-    from deeptutor.services.llm.config import get_llm_config
 
     try:
         llm_cfg = get_llm_config()

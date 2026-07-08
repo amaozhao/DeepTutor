@@ -101,9 +101,14 @@ class TestLlmProbeUsesAgentsYaml:
     @pytest.mark.asyncio
     @pytest.mark.usefixtures("_patch_project_root")
     async def test_probe_passes_configured_max_tokens(self, monkeypatch):
-        from deeptutor.services import llm as llm_module
-        from deeptutor.services.config import test_runner as test_runner_module
-        from deeptutor.services.config.test_runner import ConfigTestRunner, TestRun
+        llm_module = __import__("deeptutor.services", fromlist=["llm"]).llm
+        test_runner_module = __import__(
+            "deeptutor.services.config", fromlist=["test_runner"]
+        ).test_runner
+        ConfigTestRunner = __import__(
+            "deeptutor.services.config.test_runner", fromlist=["ConfigTestRunner"]
+        ).ConfigTestRunner
+        TestRun = __import__("deeptutor.services.config.test_runner", fromlist=["TestRun"]).TestRun
 
         captured_kwargs: dict[str, Any] = {}
 
@@ -144,9 +149,14 @@ class TestLlmProbeUsesAgentsYaml:
         project_root = _write_agents_yaml(tmp_path, {"capabilities": {}})
         monkeypatch.setattr(loader_module, "PROJECT_ROOT", project_root)
 
-        from deeptutor.services import llm as llm_module
-        from deeptutor.services.config import test_runner as test_runner_module
-        from deeptutor.services.config.test_runner import ConfigTestRunner, TestRun
+        llm_module = __import__("deeptutor.services", fromlist=["llm"]).llm
+        test_runner_module = __import__(
+            "deeptutor.services.config", fromlist=["test_runner"]
+        ).test_runner
+        ConfigTestRunner = __import__(
+            "deeptutor.services.config.test_runner", fromlist=["ConfigTestRunner"]
+        ).ConfigTestRunner
+        TestRun = __import__("deeptutor.services.config.test_runner", fromlist=["TestRun"]).TestRun
 
         captured_kwargs: dict[str, Any] = {}
 
@@ -179,9 +189,14 @@ class TestLlmProbeUsesAgentsYaml:
 
     @pytest.mark.asyncio
     async def test_probe_passes_runtime_api_version_and_reasoning_effort(self, monkeypatch):
-        from deeptutor.services import llm as llm_module
-        from deeptutor.services.config import test_runner as test_runner_module
-        from deeptutor.services.config.test_runner import ConfigTestRunner, TestRun
+        llm_module = __import__("deeptutor.services", fromlist=["llm"]).llm
+        test_runner_module = __import__(
+            "deeptutor.services.config", fromlist=["test_runner"]
+        ).test_runner
+        ConfigTestRunner = __import__(
+            "deeptutor.services.config.test_runner", fromlist=["ConfigTestRunner"]
+        ).ConfigTestRunner
+        TestRun = __import__("deeptutor.services.config.test_runner", fromlist=["TestRun"]).TestRun
 
         captured_kwargs: dict[str, Any] = {}
 
@@ -217,10 +232,17 @@ class TestLlmProbeUsesAgentsYaml:
     async def test_probe_reports_detected_context_window_without_persisting_catalog(
         self, tmp_path, monkeypatch
     ):
-        from deeptutor.services import llm as llm_module
-        from deeptutor.services.config import test_runner as test_runner_module
-        from deeptutor.services.config.model_catalog import ModelCatalogService
-        from deeptutor.services.config.test_runner import ConfigTestRunner, TestRun
+        llm_module = __import__("deeptutor.services", fromlist=["llm"]).llm
+        test_runner_module = __import__(
+            "deeptutor.services.config", fromlist=["test_runner"]
+        ).test_runner
+        ModelCatalogService = __import__(
+            "deeptutor.services.config.model_catalog", fromlist=["ModelCatalogService"]
+        ).ModelCatalogService
+        ConfigTestRunner = __import__(
+            "deeptutor.services.config.test_runner", fromlist=["ConfigTestRunner"]
+        ).ConfigTestRunner
+        TestRun = __import__("deeptutor.services.config.test_runner", fromlist=["TestRun"]).TestRun
 
         catalog = {
             "version": 1,
@@ -303,7 +325,9 @@ class TestLlmProbeUsesAgentsYaml:
 
 def _stub_resolved_llm(**overrides: Any):
     """Return a minimal resolved LLM config stub."""
-    from deeptutor.services.config.provider_runtime import ResolvedLLMConfig
+    ResolvedLLMConfig = __import__(
+        "deeptutor.services.config.provider_runtime", fromlist=["ResolvedLLMConfig"]
+    ).ResolvedLLMConfig
 
     values = {
         "model": "gpt-4o-mini",
@@ -325,7 +349,9 @@ def _stub_resolved_llm(**overrides: Any):
 
 def _real_get_token_limit_kwargs(model: str, max_tokens: int) -> dict[str, int]:
     """Inline reimplementation to avoid importing the full LLM stack in tests."""
-    from deeptutor.services.llm.config import uses_max_completion_tokens
+    uses_max_completion_tokens = __import__(
+        "deeptutor.services.llm.config", fromlist=["uses_max_completion_tokens"]
+    ).uses_max_completion_tokens
 
     if uses_max_completion_tokens(model):
         return {"max_completion_tokens": max_tokens}
@@ -333,9 +359,10 @@ def _real_get_token_limit_kwargs(model: str, max_tokens: int) -> dict[str, int]:
 
 
 async def _stub_context_window_detection(*_args, **_kwargs):
-    from deeptutor.services.config.context_window_detection import (
-        ContextWindowDetectionResult,
-    )
+    ContextWindowDetectionResult = __import__(
+        "deeptutor.services.config.context_window_detection",
+        fromlist=["ContextWindowDetectionResult"],
+    ).ContextWindowDetectionResult
 
     return ContextWindowDetectionResult(
         context_window=65536,
@@ -346,9 +373,10 @@ async def _stub_context_window_detection(*_args, **_kwargs):
 
 
 async def _stub_metadata_context_window_detection(*_args, **_kwargs):
-    from deeptutor.services.config.context_window_detection import (
-        ContextWindowDetectionResult,
-    )
+    ContextWindowDetectionResult = __import__(
+        "deeptutor.services.config.context_window_detection",
+        fromlist=["ContextWindowDetectionResult"],
+    ).ContextWindowDetectionResult
 
     return ContextWindowDetectionResult(
         context_window=128000,

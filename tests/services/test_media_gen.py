@@ -378,11 +378,15 @@ async def test_imagegen_tool_saves_public_artifact(monkeypatch: pytest.MonkeyPat
     Regression: media landed under ``<task>/media`` which was not on the
     public-output allowlist, so artifacts collected empty ("no saved files").
     """
-    import shutil
+    shutil = __import__("shutil")
 
-    import deeptutor.services.imagegen as imagegen_mod
-    from deeptutor.services.path_service import get_path_service
-    from deeptutor.tools.media_gen_tool import ImagegenTool
+    imagegen_mod = __import__("deeptutor.services.imagegen", fromlist=["*"])
+    get_path_service = __import__(
+        "deeptutor.services.path_service", fromlist=["get_path_service"]
+    ).get_path_service
+    ImagegenTool = __import__(
+        "deeptutor.tools.media_gen_tool", fromlist=["ImagegenTool"]
+    ).ImagegenTool
 
     async def fake_generate_image(prompt: str, **_kwargs: Any) -> list[tuple[bytes, str]]:
         return [(b"\x89PNG\r\n\x1a\nfake", "image/png")]
@@ -410,11 +414,15 @@ async def test_imagegen_tool_without_injected_workspace_uses_public_fallback(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Direct tool calls still need a real public workspace, not a phantom agent dir."""
-    import shutil
+    shutil = __import__("shutil")
 
-    import deeptutor.services.imagegen as imagegen_mod
-    from deeptutor.services.path_service import get_path_service
-    from deeptutor.tools.media_gen_tool import ImagegenTool
+    imagegen_mod = __import__("deeptutor.services.imagegen", fromlist=["*"])
+    get_path_service = __import__(
+        "deeptutor.services.path_service", fromlist=["get_path_service"]
+    ).get_path_service
+    ImagegenTool = __import__(
+        "deeptutor.tools.media_gen_tool", fromlist=["ImagegenTool"]
+    ).ImagegenTool
 
     async def fake_generate_image(prompt: str, **_kwargs: Any) -> list[tuple[bytes, str]]:
         return [(b"\x89PNG\r\n\x1a\nfake", "image/png")]
@@ -437,11 +445,15 @@ async def test_imagegen_tool_without_injected_workspace_uses_public_fallback(
 async def test_videogen_tool_forwards_progress_and_saves(monkeypatch: pytest.MonkeyPatch) -> None:
     """videogen must forward progress to its event_sink (resets the chat idle
     watchdog during long renders) and save the video to a public path."""
-    import shutil
+    shutil = __import__("shutil")
 
-    from deeptutor.services.path_service import get_path_service
-    import deeptutor.services.videogen as videogen_mod
-    from deeptutor.tools.media_gen_tool import VideogenTool
+    get_path_service = __import__(
+        "deeptutor.services.path_service", fromlist=["get_path_service"]
+    ).get_path_service
+    videogen_mod = __import__("deeptutor.services.videogen", fromlist=["*"])
+    VideogenTool = __import__(
+        "deeptutor.tools.media_gen_tool", fromlist=["VideogenTool"]
+    ).VideogenTool
 
     async def fake_generate_video(
         prompt: str, *, progress: Any = None, **_kwargs: Any

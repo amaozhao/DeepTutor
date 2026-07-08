@@ -43,7 +43,7 @@ async def test_tool_call_event_args_exclude_private_kwargs() -> None:
     bus = StreamBus()
     events: list[StreamEvent] = []
 
-    import asyncio
+    asyncio = __import__("asyncio")
 
     async def _consume() -> None:
         async for event in bus.subscribe():

@@ -15,6 +15,7 @@ import yaml
 
 from deeptutor.runtime.home import get_runtime_home
 from deeptutor.services.path_service import get_path_service
+from deeptutor.services.setup.defaults import DEFAULT_AGENTS_SETTINGS
 
 # Runtime workspace root. Application settings live under PROJECT_ROOT/data/user/settings.
 PROJECT_ROOT = get_runtime_home()
@@ -247,9 +248,6 @@ def get_agent_params(module_name: str) -> dict:
     # Per-module defaults come from the shipped DEFAULT_AGENTS_SETTINGS so that
     # adding a new capability seeded with non-default tokens (e.g. visualize at
     # 16k) doesn't require existing users to hand-edit their stale agents.yaml.
-    # Imported lazily to avoid a circular dependency with services.setup.
-    from deeptutor.services.setup.init import DEFAULT_AGENTS_SETTINGS
-
     seeded: dict[str, Any] = DEFAULT_AGENTS_SETTINGS
     for key in section:
         seeded = seeded.get(key, {}) if isinstance(seeded, dict) else {}

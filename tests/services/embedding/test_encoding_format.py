@@ -12,6 +12,7 @@ diverge on purpose:
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 import httpx
@@ -41,9 +42,7 @@ class _CapturingTransport(httpx.AsyncBaseTransport):
         self._dim = dim
 
     async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
-        import json as _json
-
-        self.captured_payloads.append(_json.loads(request.content.decode("utf-8")))
+        self.captured_payloads.append(json.loads(request.content.decode("utf-8")))
         body = {
             "object": "list",
             "data": [{"object": "embedding", "index": 0, "embedding": [0.1] * self._dim}],

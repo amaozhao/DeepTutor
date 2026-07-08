@@ -18,8 +18,8 @@ class FakeNotebookManager:
         self.notebooks: dict[str, dict] = {}
 
     def create_notebook(self, name: str, description: str = "") -> dict:
-        import time
-        import uuid
+        time = __import__("time")
+        uuid = __import__("uuid")
 
         nb = {
             "id": str(uuid.uuid4())[:8],
@@ -46,8 +46,8 @@ class FakeNotebookManager:
         metadata: dict | None = None,
         kb_name: str | None = None,
     ) -> dict:
-        import time
-        import uuid
+        time = __import__("time")
+        uuid = __import__("uuid")
 
         record = {
             "id": str(uuid.uuid4())[:8],
@@ -107,7 +107,7 @@ def _patch_facade(monkeypatch) -> None:
     def _remove_record(self, notebook_id, record_id) -> bool:
         return _fake_manager.remove_record(notebook_id, record_id)
 
-    from deeptutor.app import facade
+    facade = __import__("deeptutor.app", fromlist=["facade"]).facade
 
     monkeypatch.setattr(facade.DeepTutorApp, "create_notebook", _create_notebook)
     monkeypatch.setattr(facade.DeepTutorApp, "get_notebook", _get_notebook)

@@ -11,6 +11,12 @@ from typing import Any
 
 from loguru import logger
 
+from deeptutor.services.llm.multimodal import (
+    has_image_parts,
+    strip_image_parts,
+    strip_image_parts_inplace,
+)
+
 
 @dataclass
 class ToolCallRequest:
@@ -267,12 +273,6 @@ class LLMProvider(ABC):
         allow_image_fallback: bool = True,
         **kwargs: Any,
     ) -> LLMResponse:
-        from deeptutor.services.llm.multimodal import (
-            has_image_parts,
-            strip_image_parts,
-            strip_image_parts_inplace,
-        )
-
         delays = self._normalize_retry_delays(retry_delays)
         attempt = 0
 

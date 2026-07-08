@@ -6,11 +6,11 @@ import {
   normalizeLanguage,
   readStoredChatResponseTimeout,
   writeStoredActiveSessionId,
-} from "../app-shell-storage";
-import { hasPendingAskUserInMessages } from "../../lib/ask-user-state";
-import type { Action, ProviderState } from "./state";
-import type { ChatRunnerMap } from "./transport";
-import { initialDraftSessionAction } from "./session";
+} from "@/context/app-shell-storage";
+import { hasPendingAskUserInMessages } from "@/lib/ask-user-state";
+import type { Action, ProviderState } from "@/context/chat/state";
+import type { ChatRunnerMap } from "@/context/chat/transport";
+import { initialDraftSessionAction } from "@/context/chat/session";
 
 export function useActiveSessionStorageSync(state: ProviderState): void {
   useEffect(() => {

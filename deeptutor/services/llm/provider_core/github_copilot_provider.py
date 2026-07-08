@@ -9,6 +9,11 @@ from typing import Any
 import httpx
 from openai import AuthenticationError
 
+try:
+    from oauth_cli_kit.storage import FileTokenStorage
+except ModuleNotFoundError:  # pragma: no cover - optional dependency
+    FileTokenStorage = None
+
 from deeptutor.services.llm.provider_core.base import LLMResponse
 from deeptutor.services.llm.provider_core.openai_compat_provider import OpenAICompatProvider
 from deeptutor.services.provider_registry import find_by_name
@@ -45,9 +50,7 @@ class GitHubCopilotProvider(OpenAICompatProvider):
         self._client.api_key = "copilot"
 
     async def _load_stored_github_token(self) -> str | None:
-        try:
-            from oauth_cli_kit.storage import FileTokenStorage
-        except ImportError:
+        if FileTokenStorage is None:
             return None
         storage = FileTokenStorage(  # nosec B106 - token_filename is a file name, not a password.
             token_filename="github-copilot.json",

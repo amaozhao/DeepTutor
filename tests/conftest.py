@@ -28,7 +28,7 @@ def _guard_legacy_multi_user_migration(monkeypatch):
     legacy root at a path that cannot exist and reset the once-flag;
     migration tests opt back in by patching the constants themselves.
     """
-    from deeptutor.multi_user import paths
+    paths = __import__("deeptutor.multi_user", fromlist=["paths"]).paths
 
     monkeypatch.setattr(
         paths, "LEGACY_MULTI_USER_ROOT", Path("/nonexistent/deeptutor-legacy-multi-user")
@@ -44,7 +44,9 @@ def mu_isolated_root(tmp_path: Path, monkeypatch) -> Path:
     Also clears the ``_path_services`` cache so ``get_path_service()`` can be
     re-resolved per test without leaking instances created in earlier tests.
     """
-    from deeptutor.multi_user import grants, identity, paths
+    grants = __import__("deeptutor.multi_user", fromlist=["grants"]).grants
+    identity = __import__("deeptutor.multi_user", fromlist=["identity"]).identity
+    paths = __import__("deeptutor.multi_user", fromlist=["paths"]).paths
 
     project_root = tmp_path
     admin_root = (project_root / "data").resolve()
@@ -140,7 +142,10 @@ def tmp_db_path(tmp_path: Path) -> Path:
 @pytest.fixture
 def sqlite_store(tmp_db_path: Path):
     """SQLiteSessionStore backed by a temp file."""
-    from deeptutor.services.session.sqlite_store import SQLiteSessionStore
+    SQLiteSessionStore = __import__(
+        "deeptutor.services.session.sqlite_store",
+        fromlist=["SQLiteSessionStore"],
+    ).SQLiteSessionStore
 
     return SQLiteSessionStore(db_path=tmp_db_path)
 

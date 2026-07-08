@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { Loader2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import type { FilePreviewSource } from "../previewerFor";
+import type { FilePreviewSource } from "@/components/chat/preview/previewerFor";
 
 /**
  * PDF preview powered by the browser's built-in viewer (PDF.js in Chrome /

@@ -109,7 +109,9 @@ async def test_deep_research_forwards_enabled_tools_and_kb_unchanged() -> None:
     and the attached KB (``kb_name``) through to the pipeline as-is. There
     is no per-source gating: ``compose_enabled_tools`` (run inside the
     pipeline) is the single arbiter of what the block loop sees."""
-    from deeptutor.agents.research.capability import DeepResearchCapability
+    DeepResearchCapability = __import__(
+        "deeptutor.agents.research.capability", fromlist=["DeepResearchCapability"]
+    ).DeepResearchCapability
 
     captured_kwargs: dict[str, Any] = {}
 

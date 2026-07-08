@@ -50,8 +50,10 @@ def _create_ready_version(
 def _patch_active_embedding(
     monkeypatch: pytest.MonkeyPatch, sig_hash: str = ACTIVE_SIGNATURE
 ) -> None:
-    from deeptutor.knowledge import manager as manager_module
-    from deeptutor.services.rag import embedding_signature
+    manager_module = __import__("deeptutor.knowledge", fromlist=["manager"]).manager
+    embedding_signature = __import__(
+        "deeptutor.services.rag", fromlist=["embedding_signature"]
+    ).embedding_signature
 
     monkeypatch.setattr(
         manager_module, "_get_embedding_fingerprint", lambda: ("embed-active", 4096)

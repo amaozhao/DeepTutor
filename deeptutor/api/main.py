@@ -28,6 +28,54 @@ export_runtime_settings_to_env(overwrite=True)
 configure_logging()
 logger = logging.getLogger(__name__)
 
+from deeptutor.api.routers import (  # noqa: E402
+    agent_config,
+    attachments,
+    auth,
+    book,
+    capabilities_settings,
+    chat,
+    co_writer,
+    dashboard,
+    imports,
+    knowledge,
+    mastery_path,
+    mcp_settings,
+    memory,
+    notebook,
+    partners,
+    personas,
+    plugins_api,
+    question,
+    question_notebook,
+    quiz_judge,
+    sessions,
+    settings,
+    skills,
+    subagents,
+    system,
+    unified_ws,
+    voice,
+)
+from deeptutor.api.routers import tools as tools_router  # noqa: E402
+from deeptutor.api.routers.auth import require_admin, require_auth  # noqa: E402
+from deeptutor.events.event_bus import get_event_bus  # noqa: E402
+from deeptutor.multi_user.router import router as multi_user_router  # noqa: E402
+from deeptutor.runtime.registry.capability_registry import (  # noqa: E402
+    get_capability_registry,
+)
+from deeptutor.runtime.registry.tool_registry import get_tool_registry  # noqa: E402
+from deeptutor.services.auth import decode_token  # noqa: E402
+from deeptutor.services.cron import get_cron_service  # noqa: E402
+from deeptutor.services.llm import get_llm_client  # noqa: E402
+from deeptutor.services.memory import (  # noqa: E402
+    migrate_partner_surface_if_needed,
+    migrate_v1_if_needed,
+)
+from deeptutor.services.partners import get_partner_manager  # noqa: E402
+from deeptutor.services.pocketbase_client import ping_pocketbase  # noqa: E402
+from deeptutor.services.setup import init_user_directories  # noqa: E402
+
 
 class _SuppressWsNoise(logging.Filter):
     """Suppress noisy uvicorn logs for WebSocket connection churn."""
@@ -67,9 +115,6 @@ def validate_tool_consistency():
     registered in the runtime ``ToolRegistry``.
     """
     try:
-        from deeptutor.runtime.registry.capability_registry import get_capability_registry
-        from deeptutor.runtime.registry.tool_registry import get_tool_registry
-
         capability_registry = get_capability_registry()
         tool_registry = get_tool_registry()
         available_tools = set(tool_registry.list_tools())
@@ -137,16 +182,12 @@ async def lifespan(app: FastAPI):
     # Initialize LLM client early so OPENAI_* env vars are available before
     # any downstream provider integrations start.
     try:
-        from deeptutor.services.llm import get_llm_client
-
         llm_client = get_llm_client()
         logger.info(f"LLM client initialized: model={llm_client.config.model}")
     except Exception as e:
         logger.warning(f"Failed to initialize LLM client at startup: {e}")
 
     try:
-        from deeptutor.events.event_bus import get_event_bus
-
         event_bus = get_event_bus()
         await event_bus.start()
         logger.info("EventBus started")
@@ -154,23 +195,17 @@ async def lifespan(app: FastAPI):
         logger.warning(f"Failed to start EventBus: {e}")
 
     try:
-        from deeptutor.services.partners import get_partner_manager
-
         await get_partner_manager().auto_start_partners()
     except Exception as e:
         logger.warning(f"Failed to auto-start partners: {e}")
 
     try:
-        from deeptutor.services.cron import get_cron_service
-
         await get_cron_service().start()
     except Exception as e:
         logger.warning(f"Failed to start cron service: {e}")
 
     # Ping PocketBase if configured — logs a warning (not an error) if unreachable
     try:
-        from deeptutor.services.pocketbase_client import ping_pocketbase
-
         await ping_pocketbase()
     except Exception as e:
         logger.warning(f"PocketBase startup check failed: {e}")
@@ -178,11 +213,6 @@ async def lifespan(app: FastAPI):
     # Migrate any v1 memory files (PROFILE.md / SUMMARY.md) into a
     # backup folder so the v2 three-layer subsystem starts clean.
     try:
-        from deeptutor.services.memory import (
-            migrate_partner_surface_if_needed,
-            migrate_v1_if_needed,
-        )
-
         backup = migrate_v1_if_needed()
         if backup is not None:
             logger.info("v1 memory archived to %s", backup)
@@ -199,16 +229,12 @@ async def lifespan(app: FastAPI):
 
     # Stop cron scheduler
     try:
-        from deeptutor.services.cron import get_cron_service
-
         await get_cron_service().stop()
     except Exception as e:
         logger.warning(f"Failed to stop cron service: {e}")
 
     # Stop partners
     try:
-        from deeptutor.services.partners import get_partner_manager
-
         await get_partner_manager().stop_all(preserve_auto_start=True)
         logger.info("Partners stopped")
     except Exception as e:
@@ -216,8 +242,6 @@ async def lifespan(app: FastAPI):
 
     # Stop EventBus
     try:
-        from deeptutor.events.event_bus import get_event_bus
-
         event_bus = get_event_bus()
         await event_bus.stop()
         logger.info("EventBus stopped")
@@ -274,8 +298,6 @@ async def security_guard(request, call_next):
                 and request.url.path.startswith("/api/v1/")
                 and not request.url.path.startswith("/api/v1/auth/")
             ):
-                from deeptutor.services.auth import decode_token
-
                 token = request.headers.get("authorization", "")
                 if token.lower().startswith("bearer "):
                     token = token.split(None, 1)[1]
@@ -331,8 +353,6 @@ user_dir = path_service.get_public_outputs_root()
 
 # Initialize user directories on startup
 try:
-    from deeptutor.services.setup import init_user_directories
-
     init_user_directories()
 except Exception:
     # Fallback: just create the main directory if it doesn't exist
@@ -345,144 +365,120 @@ app.mount(
     name="outputs",
 )
 
-# Import routers only after runtime settings are initialized.
-# Some router modules load YAML settings at import time.
-from deeptutor.api.routers import (
-    agent_config,
-    attachments,
-    auth,
-    book,
-    capabilities_settings,
-    chat,
-    co_writer,
-    dashboard,
-    imports,
-    knowledge,
-    mastery_path,
-    mcp_settings,
-    memory,
-    notebook,
-    partners,
-    personas,
-    plugins_api,
-    question,
-    question_notebook,
-    quiz_judge,
-    sessions,
-    settings,
-    skills,
-    subagents,
-    system,
-    unified_ws,
-    voice,
-)
-from deeptutor.api.routers import (
-    tools as tools_router,
-)
-from deeptutor.multi_user.router import router as multi_user_router  # noqa: E402
 
-# Auth router is public — login/logout/register/status require no token
-app.include_router(auth.router, prefix="/api/v1/auth", tags=["auth"])
+def _install_routers(api: FastAPI) -> None:
+    # Auth router is public — login/logout/register/status require no token.
+    api.include_router(auth.router, prefix="/api/v1/auth", tags=["auth"])
 
-# All other routers require a valid session when AUTH_ENABLED=true.
-# require_auth is a no-op when AUTH_ENABLED=false, so this is safe for local use.
-from deeptutor.api.routers.auth import require_admin, require_auth  # noqa: E402
+    # All other routers require a valid session when AUTH_ENABLED=true.
+    # require_auth is a no-op when AUTH_ENABLED=false, so this is safe locally.
+    auth_deps = [Depends(require_auth)]
+    # Partner data is anchored at the admin workspace (data/partners) and shared
+    # process-wide, so management is admin-gated in multi-user deployments.
+    admin_deps = [Depends(require_admin)]
 
-_auth = [Depends(require_auth)]
-# Partner data is anchored at the admin workspace (data/partners) and shared
-# process-wide, so management is admin-gated in multi-user deployments
-# (single-user local runs are implicitly admin — no behaviour change there).
-_admin = [Depends(require_admin)]
+    api.include_router(
+        multi_user_router,
+        prefix="/api/v1/multi-user",
+        tags=["multi-user"],
+        dependencies=auth_deps,
+    )
 
-app.include_router(
-    multi_user_router,
-    prefix="/api/v1/multi-user",
-    tags=["multi-user"],
-    dependencies=_auth,
-)
+    api.include_router(chat.router, prefix="/api/v1", tags=["chat"], dependencies=auth_deps)
+    api.include_router(
+        question.router, prefix="/api/v1/question", tags=["question"], dependencies=auth_deps
+    )
+    api.include_router(
+        knowledge.router, prefix="/api/v1/knowledge", tags=["knowledge"], dependencies=auth_deps
+    )
+    api.include_router(
+        imports.router, prefix="/api/v1/imports", tags=["imports"], dependencies=auth_deps
+    )
+    api.include_router(
+        dashboard.router, prefix="/api/v1/dashboard", tags=["dashboard"], dependencies=auth_deps
+    )
+    api.include_router(
+        mastery_path.router,
+        prefix="/api/v1/learning",
+        tags=["mastery-path"],
+        dependencies=auth_deps,
+    )
+    api.include_router(
+        co_writer.router, prefix="/api/v1/co_writer", tags=["co_writer"], dependencies=auth_deps
+    )
+    api.include_router(
+        notebook.router, prefix="/api/v1/notebook", tags=["notebook"], dependencies=auth_deps
+    )
+    api.include_router(book.router, prefix="/api/v1/book", tags=["book"], dependencies=auth_deps)
+    api.include_router(
+        memory.router, prefix="/api/v1/memory", tags=["memory"], dependencies=auth_deps
+    )
+    api.include_router(
+        capabilities_settings.router,
+        prefix="/api/v1/capabilities",
+        tags=["capabilities"],
+        dependencies=auth_deps,
+    )
+    api.include_router(
+        sessions.router, prefix="/api/v1/sessions", tags=["sessions"], dependencies=auth_deps
+    )
+    api.include_router(
+        question_notebook.router,
+        prefix="/api/v1/question-notebook",
+        tags=["question-notebook"],
+        dependencies=auth_deps,
+    )
+    api.include_router(
+        settings.router, prefix="/api/v1/settings", tags=["settings"], dependencies=auth_deps
+    )
+    api.include_router(
+        mcp_settings.router,
+        prefix="/api/v1/settings/mcp",
+        tags=["mcp-settings"],
+        dependencies=auth_deps,
+    )
+    api.include_router(
+        skills.router, prefix="/api/v1/skills", tags=["skills"], dependencies=auth_deps
+    )
+    api.include_router(
+        subagents.router, prefix="/api/v1/subagents", tags=["subagents"], dependencies=auth_deps
+    )
+    api.include_router(
+        personas.router, prefix="/api/v1/personas", tags=["personas"], dependencies=auth_deps
+    )
+    api.include_router(
+        tools_router.router, prefix="/api/v1/tools", tags=["tools"], dependencies=auth_deps
+    )
+    api.include_router(
+        system.router, prefix="/api/v1/system", tags=["system"], dependencies=auth_deps
+    )
+    api.include_router(voice.router, prefix="/api/v1/voice", tags=["voice"], dependencies=auth_deps)
+    api.include_router(
+        plugins_api.router, prefix="/api/v1/plugins", tags=["plugins"], dependencies=auth_deps
+    )
+    api.include_router(
+        agent_config.router,
+        prefix="/api/v1/agent-config",
+        tags=["agent-config"],
+        dependencies=auth_deps,
+    )
+    api.include_router(
+        partners.router, prefix="/api/v1/partners", tags=["partners"], dependencies=admin_deps
+    )
+    api.include_router(
+        attachments.router,
+        prefix="/api/attachments",
+        tags=["attachments"],
+        dependencies=auth_deps,
+    )
 
-app.include_router(chat.router, prefix="/api/v1", tags=["chat"], dependencies=_auth)
-app.include_router(
-    question.router, prefix="/api/v1/question", tags=["question"], dependencies=_auth
-)
-app.include_router(
-    knowledge.router, prefix="/api/v1/knowledge", tags=["knowledge"], dependencies=_auth
-)
-app.include_router(imports.router, prefix="/api/v1/imports", tags=["imports"], dependencies=_auth)
-app.include_router(
-    dashboard.router, prefix="/api/v1/dashboard", tags=["dashboard"], dependencies=_auth
-)
-app.include_router(
-    mastery_path.router,
-    prefix="/api/v1/learning",
-    tags=["mastery-path"],
-    dependencies=_auth,
-)
-app.include_router(
-    co_writer.router, prefix="/api/v1/co_writer", tags=["co_writer"], dependencies=_auth
-)
-app.include_router(
-    notebook.router, prefix="/api/v1/notebook", tags=["notebook"], dependencies=_auth
-)
-app.include_router(book.router, prefix="/api/v1/book", tags=["book"], dependencies=_auth)
-app.include_router(memory.router, prefix="/api/v1/memory", tags=["memory"], dependencies=_auth)
-app.include_router(
-    capabilities_settings.router,
-    prefix="/api/v1/capabilities",
-    tags=["capabilities"],
-    dependencies=_auth,
-)
-app.include_router(
-    sessions.router, prefix="/api/v1/sessions", tags=["sessions"], dependencies=_auth
-)
-app.include_router(
-    question_notebook.router,
-    prefix="/api/v1/question-notebook",
-    tags=["question-notebook"],
-    dependencies=_auth,
-)
-app.include_router(
-    settings.router, prefix="/api/v1/settings", tags=["settings"], dependencies=_auth
-)
-app.include_router(
-    mcp_settings.router,
-    prefix="/api/v1/settings/mcp",
-    tags=["mcp-settings"],
-    dependencies=_auth,
-)
-app.include_router(skills.router, prefix="/api/v1/skills", tags=["skills"], dependencies=_auth)
-app.include_router(
-    subagents.router, prefix="/api/v1/subagents", tags=["subagents"], dependencies=_auth
-)
-app.include_router(
-    personas.router, prefix="/api/v1/personas", tags=["personas"], dependencies=_auth
-)
-app.include_router(tools_router.router, prefix="/api/v1/tools", tags=["tools"], dependencies=_auth)
-app.include_router(system.router, prefix="/api/v1/system", tags=["system"], dependencies=_auth)
-app.include_router(voice.router, prefix="/api/v1/voice", tags=["voice"], dependencies=_auth)
-app.include_router(
-    plugins_api.router, prefix="/api/v1/plugins", tags=["plugins"], dependencies=_auth
-)
-app.include_router(
-    agent_config.router, prefix="/api/v1/agent-config", tags=["agent-config"], dependencies=_auth
-)
-app.include_router(
-    partners.router, prefix="/api/v1/partners", tags=["partners"], dependencies=_admin
-)
-app.include_router(
-    attachments.router,
-    prefix="/api/attachments",
-    tags=["attachments"],
-    dependencies=_auth,
-)
+    # WebSocket handlers check auth inside the handler because the upgrade path
+    # cannot use FastAPI dependencies in the standard HTTP style.
+    api.include_router(unified_ws.router, prefix="/api/v1", tags=["unified-ws"])
+    api.include_router(quiz_judge.router, prefix="/api/v1", tags=["quiz-judge"])
 
-# Unified WebSocket endpoint — auth is checked inside the handler (WebSockets
-# cannot use FastAPI dependencies in the standard way)
-app.include_router(unified_ws.router, prefix="/api/v1", tags=["unified-ws"])
 
-# Quiz AI-judge WebSocket — same caveat as unified_ws above; auth is checked
-# inside the handler so the WS upgrade isn't rejected by an HTTP-style dep.
-app.include_router(quiz_judge.router, prefix="/api/v1", tags=["quiz-judge"])
+_install_routers(app)
 
 
 @app.get("/")
@@ -492,10 +488,8 @@ async def root():
 
 @app.get("/health")
 async def health():
-    from deeptutor.api.routers.system import health_check
-
     response = JSONResponse(content={})
-    payload = await health_check(response)
+    payload = await system.health_check(response)
     return JSONResponse(status_code=response.status_code, content=payload)
 
 

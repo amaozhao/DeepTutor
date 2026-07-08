@@ -140,9 +140,11 @@ class TestToDictDefaultsAreSafe:
 @pytest.mark.asyncio
 async def test_reload_lock_serialises_concurrent_calls(monkeypatch):
     """Two concurrent reload_channels calls must not run their bodies in parallel."""
-    import asyncio
+    asyncio = __import__("asyncio")
 
-    from deeptutor.services.partners.manager import PartnerManager
+    PartnerManager = __import__(
+        "deeptutor.services.partners.manager", fromlist=["PartnerManager"]
+    ).PartnerManager
 
     mgr = PartnerManager()
     inst = _make_instance()
@@ -185,9 +187,11 @@ async def test_reload_lock_serialises_concurrent_calls(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_reload_failure_records_last_reload_error(monkeypatch):
-    import asyncio
+    asyncio = __import__("asyncio")
 
-    from deeptutor.services.partners.manager import PartnerManager
+    PartnerManager = __import__(
+        "deeptutor.services.partners.manager", fromlist=["PartnerManager"]
+    ).PartnerManager
 
     mgr = PartnerManager()
     inst = _make_instance()

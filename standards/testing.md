@@ -47,6 +47,7 @@ Run the narrowest useful command first, then broaden when shared behavior
 changed.
 
 ```bash
+python scripts/imports.py
 pytest -q tests/path/to/test_file.py
 pytest -q
 ruff check .

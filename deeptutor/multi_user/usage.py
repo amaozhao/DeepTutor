@@ -9,50 +9,22 @@ import json
 import threading
 from typing import Any
 
+try:
+    import fcntl as fcntl_module
+except ImportError:  # pragma: no cover - Windows
+    fcntl_module = None
+
 from . import paths
 from .context import get_current_user
+from .grants import load_grant
+from .quota import normalize_quota
+from .shared_state import postgres_enabled, record_usage_event, usage_events
 
 _LOCK = threading.Lock()
-
-QUOTA_KEYS = (
-    "daily_token_limit",
-    "monthly_token_limit",
-    "daily_call_limit",
-    "monthly_call_limit",
-    "daily_cost_limit_usd",
-    "monthly_cost_limit_usd",
-)
 
 
 class UsageQuotaExceeded(RuntimeError):
     """Raised before a turn starts when the user's quota is already spent."""
-
-
-def empty_quota() -> dict[str, int | float]:
-    return {
-        "daily_token_limit": 0,
-        "monthly_token_limit": 0,
-        "daily_call_limit": 0,
-        "monthly_call_limit": 0,
-        "daily_cost_limit_usd": 0.0,
-        "monthly_cost_limit_usd": 0.0,
-    }
-
-
-def normalize_quota(value: Any) -> dict[str, int | float]:
-    quota = empty_quota()
-    if not isinstance(value, dict):
-        return quota
-    for key in QUOTA_KEYS:
-        raw = value.get(key, 0)
-        try:
-            number = float(raw)
-        except (TypeError, ValueError):
-            number = 0
-        if number < 0:
-            number = 0
-        quota[key] = round(number, 6) if key.endswith("_usd") else int(number)
-    return quota
 
 
 def normalize_usage_summary(value: Any) -> dict[str, int | float]:
@@ -96,14 +68,12 @@ def usage_ledger_lock() -> Iterator[None]:
     lock_path = target.with_suffix(".lock")
     with _LOCK:
         with lock_path.open("a+", encoding="utf-8") as handle:
-            fcntl_module = None
             locked = False
             try:
-                import fcntl as fcntl_module
-
-                fcntl_module.flock(handle.fileno(), fcntl_module.LOCK_EX)
-                locked = True
-            except (ImportError, OSError):
+                if fcntl_module is not None:
+                    fcntl_module.flock(handle.fileno(), fcntl_module.LOCK_EX)
+                    locked = True
+            except OSError:
                 pass
             try:
                 yield
@@ -160,8 +130,6 @@ def record_usage(
         "usage": metrics,
     }
     if _postgres_enabled():
-        from .shared_state import record_usage_event
-
         record_usage_event(event)
         return event
     with usage_ledger_lock():
@@ -182,8 +150,6 @@ def _empty_metrics() -> dict[str, int | float]:
 
 def _read_events() -> list[dict[str, Any]]:
     if _postgres_enabled():
-        from .shared_state import usage_events
-
         return usage_events()
     target = _usage_file()
     events: list[dict[str, Any]] = []
@@ -202,7 +168,6 @@ def _read_events() -> list[dict[str, Any]]:
 
 
 def _postgres_enabled() -> bool:
-    from .shared_state import postgres_enabled
 
     return postgres_enabled()
 
@@ -236,7 +201,6 @@ def enforce_current_user_quota() -> None:
     user = get_current_user()
     if user.is_admin:
         return
-    from .grants import load_grant
 
     quota = normalize_quota(load_grant(user.id).get("quota"))
     usage = usage_summary(user.id)

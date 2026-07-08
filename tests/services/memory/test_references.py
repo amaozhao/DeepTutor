@@ -97,7 +97,9 @@ def test_refs_in_chunk_l3_returns_surface_names_visible_in_chunk() -> None:
 def test_refs_in_span_l3_keeps_surface_when_chunk_starts_mid_block() -> None:
     """Chunker may start a chunk inside a surface block (overlap window);
     that surface should still be in the allowed pool."""
-    from deeptutor.services.memory.consolidator.references import refs_in_span_l3
+    refs_in_span_l3 = __import__(
+        "deeptutor.services.memory.consolidator.references", fromlist=["refs_in_span_l3"]
+    ).refs_in_span_l3
 
     entries = {
         "chat": [Entry(id="m_01A", section="S", text="alpha", refs=[])],

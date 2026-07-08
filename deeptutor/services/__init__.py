@@ -42,6 +42,8 @@ Usage:
 
 # Keep service package import side-effects minimal.
 # Modules are lazy-loaded in __getattr__ to avoid circular imports.
+import importlib
+
 from .path_service import PathService, get_path_service
 
 __all__ = [
@@ -61,7 +63,6 @@ __all__ = [
 
 def __getattr__(name: str):
     """Lazy import for modules that depend on heavy libraries."""
-    import importlib
 
     if name == "llm":
         return importlib.import_module(f"{__name__}.llm")
@@ -80,7 +81,5 @@ def __getattr__(name: str):
     if name == "embedding":
         return importlib.import_module(f"{__name__}.embedding")
     if name == "BaseSessionManager":
-        from .session import BaseSessionManager
-
-        return BaseSessionManager
+        return importlib.import_module(f"{__name__}.session").BaseSessionManager
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

@@ -24,9 +24,10 @@ from deeptutor.services.rag.index_versioning import (
     resolve_storage_dir_for_rebuild,
 )
 from deeptutor.services.rag.kb_paths import resolve_kb_dir
+from deeptutor.services.rag.pipelines.modes import resolve_kb_mode
 
 from . import config as gr_config
-from . import ingestion, storage
+from . import engine, ingestion, storage
 
 logger = logging.getLogger(__name__)
 
@@ -50,8 +51,6 @@ class GraphRagPipeline:
             )
 
     def _resolve_mode(self, kb_name: str, kwargs: dict[str, Any]) -> str:
-        from ..modes import resolve_kb_mode
-
         return resolve_kb_mode(
             self.kb_base_dir,
             kb_name,
@@ -128,8 +127,6 @@ class GraphRagPipeline:
             raise
 
     async def _build(self, root_dir: Path, *, is_update: bool) -> None:
-        from . import engine
-
         await engine.build(root_dir, is_update=is_update)
 
     # ----- retrieval ------------------------------------------------------
@@ -153,8 +150,6 @@ class GraphRagPipeline:
         mode = self._resolve_mode(kb_name, kwargs)
         try:
             self._ensure_available()
-            from . import engine
-
             response, context_data = await engine.search(root_dir, query, mode)
         except gr_config.GraphRagNotAvailableError as exc:
             return self._error_result(query, exc, error_type="not_configured")

@@ -3,21 +3,23 @@
 from __future__ import annotations
 
 import importlib
+from importlib.metadata import entry_points
 import pkgutil
 from typing import TYPE_CHECKING
 
 from loguru import logger
 
+import deeptutor.partners.channels as pkg
+
 if TYPE_CHECKING:
     from deeptutor.partners.channels.base import BaseChannel
+from deeptutor.partners.channels.base import BaseChannel as _Base
 
 _INTERNAL = frozenset({"base", "manager", "registry"})
 
 
 def discover_channel_names() -> list[str]:
     """Return all built-in channel module names by scanning the package (zero imports)."""
-    import deeptutor.partners.channels as pkg
-
     return [
         name
         for _, name, ispkg in pkgutil.iter_modules(pkg.__path__)
@@ -27,8 +29,6 @@ def discover_channel_names() -> list[str]:
 
 def load_channel_class(module_name: str) -> type[BaseChannel]:
     """Import *module_name* and return the first BaseChannel subclass found."""
-    from deeptutor.partners.channels.base import BaseChannel as _Base
-
     mod = importlib.import_module(f"deeptutor.partners.channels.{module_name}")
     for attr in dir(mod):
         obj = getattr(mod, attr)
@@ -39,7 +39,6 @@ def load_channel_class(module_name: str) -> type[BaseChannel]:
 
 def discover_plugins() -> dict[str, type[BaseChannel]]:
     """Discover external channel plugins registered via entry_points."""
-    from importlib.metadata import entry_points
 
     plugins: dict[str, type[BaseChannel]] = {}
     for ep in entry_points(group="deeptutor.partners.channels"):

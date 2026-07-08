@@ -22,7 +22,10 @@ data/user/
         └── _detached_code_execution/
 """
 
+import importlib
+import logging as _logging
 from pathlib import Path
+import shutil
 from typing import Literal, cast
 
 from deeptutor.runtime.home import PACKAGE_ROOT, get_runtime_data_root
@@ -264,8 +267,6 @@ class PathService:
                 if f.is_file() and f.suffix == ".md":
                     target = new_dir / f.name
                     if not target.exists():
-                        import shutil
-
                         shutil.copy2(f, target)
         return new_dir
 
@@ -423,12 +424,8 @@ class PathService:
 
 def get_path_service() -> PathService:
     try:
-        from deeptutor.multi_user.paths import get_current_path_service
-
-        return get_current_path_service()
+        return importlib.import_module("deeptutor.multi_user.paths").get_current_path_service()
     except Exception:
-        import logging as _logging
-
         _logging.getLogger(__name__).warning(
             "get_path_service() fell back to default instance; multi-user path resolution failed",
             exc_info=True,

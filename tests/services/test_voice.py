@@ -126,7 +126,9 @@ async def test_tts_adapter_azure_uses_api_key_header(monkeypatch: pytest.MonkeyP
 
 @pytest.mark.asyncio
 async def test_tts_adapter_raises_on_http_error(monkeypatch: pytest.MonkeyPatch) -> None:
-    from deeptutor.services.voice.base import VoiceProviderError
+    VoiceProviderError = __import__(
+        "deeptutor.services.voice.base", fromlist=["VoiceProviderError"]
+    ).VoiceProviderError
 
     _capture_post(monkeypatch, httpx.Response(401, text="bad key"))
     config = TTSConfig(model="m", base_url="https://x/v1", api_key="k", voice="alloy")
@@ -200,7 +202,9 @@ async def test_openrouter_tts_falls_back_to_chat_audio_stream(
 async def test_openrouter_gemini_tts_openai_voice_gets_clear_hint(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from deeptutor.services.voice.base import VoiceProviderError
+    VoiceProviderError = __import__(
+        "deeptutor.services.voice.base", fromlist=["VoiceProviderError"]
+    ).VoiceProviderError
 
     _capture_post(
         monkeypatch,

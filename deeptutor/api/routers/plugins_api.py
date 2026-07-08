@@ -11,6 +11,7 @@ import contextlib
 import json
 import logging
 import re
+import sys
 import time
 from typing import Any, AsyncGenerator
 
@@ -18,6 +19,12 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
 
+from deeptutor.api.routers.partners import (
+    ChatMessageRequest,
+    _ensure_running_partner,
+    _partner_chat_stream,
+)
+from deeptutor.core.context import Attachment, UnifiedContext
 from deeptutor.core.i18n import t
 from deeptutor.i18n.metadata_i18n import tool_description_i18n
 from deeptutor.logging import (
@@ -26,8 +33,14 @@ from deeptutor.logging import (
     capture_process_logs,
     current_log_context,
 )
+from deeptutor.runtime.orchestrator import ChatOrchestrator
 from deeptutor.runtime.registry.capability_registry import get_capability_registry
 from deeptutor.runtime.registry.tool_registry import get_tool_registry
+
+try:
+    from deeptutor.plugins.loader import discover_plugins
+except Exception:  # pragma: no cover - optional plugin surface
+    discover_plugins = None
 
 logger = logging.getLogger(__name__)
 
@@ -36,12 +49,13 @@ ANSI_ESCAPE_RE = re.compile(r"\x1B\[[0-?]*[ -/]*[@-~]")
 
 
 def _discover_plugins() -> list[Any]:
+    if discover_plugins is None:
+        return []
     try:
-        from deeptutor.plugins.loader import discover_plugins
+        return discover_plugins()
     except Exception:
         logger.debug("Plugin loader unavailable; returning no plugins.", exc_info=True)
         return []
-    return discover_plugins()
 
 
 class ToolExecuteRequest(BaseModel):
@@ -228,8 +242,6 @@ async def _execute_stream(tool_name: str, params: dict[str, Any]) -> AsyncGenera
 
     async def _run():
         try:
-            import sys
-
             stdout_stream._stream = sys.stdout
             stderr_stream._stream = sys.stderr
             with bind_log_context(task_id=task_id, capability="playground", sink="ui"):
@@ -295,12 +307,6 @@ async def _execute_capability_stream(
     """Run a capability while streaming process logs, trace events, and the result."""
     partner_id = (body.partner_id or "").strip()
     if capability_name == "chat" and partner_id:
-        from deeptutor.api.routers.partners import (
-            ChatMessageRequest,
-            _ensure_running_partner,
-            _partner_chat_stream,
-        )
-
         if not body.content.strip():
             yield _sse("error", {"detail": "content is required"})
             return
@@ -318,9 +324,6 @@ async def _execute_capability_stream(
         async for chunk in _partner_chat_stream(partner_id, request):
             yield chunk
         return
-
-    from deeptutor.core.context import Attachment, UnifiedContext
-    from deeptutor.runtime.orchestrator import ChatOrchestrator
 
     orch = ChatOrchestrator()
     if capability_name not in orch.list_capabilities():
@@ -365,8 +368,6 @@ async def _execute_capability_stream(
     async def _run():
         nonlocal final_result
         try:
-            import sys
-
             stdout_stream._stream = sys.stdout
             stderr_stream._stream = sys.stderr
             with bind_log_context(

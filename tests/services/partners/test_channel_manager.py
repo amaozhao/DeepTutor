@@ -235,8 +235,15 @@ class TestStreamDispatch:
 
 
 def test_channel_registry_discovers_builtin_channels() -> None:
-    from deeptutor.partners.channels.base import BaseChannel
-    from deeptutor.partners.channels.registry import discover_all, discover_channel_names
+    BaseChannel = __import__(
+        "deeptutor.partners.channels.base", fromlist=["BaseChannel"]
+    ).BaseChannel
+    discover_all = __import__(
+        "deeptutor.partners.channels.registry", fromlist=["discover_all"]
+    ).discover_all
+    discover_channel_names = __import__(
+        "deeptutor.partners.channels.registry", fromlist=["discover_channel_names"]
+    ).discover_channel_names
 
     names = set(discover_channel_names())
     assert {"telegram", "slack", "discord", "zulip"} <= names

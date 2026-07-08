@@ -1,5 +1,5 @@
-import type { Action, MessageItem } from "./state";
-import { buildVisiblePath, tipMessageId } from "../../lib/message-branches";
+import type { Action, MessageItem } from "@/context/chat/state";
+import { buildVisiblePath, tipMessageId } from "@/lib/message-branches";
 
 export type NextMessageParentIds = {
   localParentId: number | null;

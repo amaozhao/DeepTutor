@@ -23,11 +23,13 @@ import traceback
 from typing import Any, Dict, List, Optional
 
 from deeptutor.runtime.home import get_runtime_data_root
+import deeptutor.services.parsing as parsing_service
 from deeptutor.services.rag.index_versioning import (
     resolve_storage_dir_for_read,
     resolve_storage_dir_for_rebuild,
 )
 from deeptutor.services.rag.kb_paths import resolve_kb_dir
+import deeptutor.services.rag.pipelines.modes as pipeline_modes
 
 from . import config as lr_config
 from . import engine, storage
@@ -54,9 +56,7 @@ class LightRagPipeline:
             )
 
     def _resolve_mode(self, kb_name: str, kwargs: dict[str, Any]) -> str:
-        from ..modes import resolve_kb_mode
-
-        return resolve_kb_mode(
+        return pipeline_modes.resolve_kb_mode(
             self.kb_base_dir,
             kb_name,
             storage.PROVIDER,
@@ -78,15 +78,13 @@ class LightRagPipeline:
         Returns the number of documents successfully inserted. Per-file failures
         are logged and skipped so one bad document doesn't abort the batch.
         """
-        from deeptutor.services.parsing import ParserError, get_parse_service
-
-        parse_service = get_parse_service()
+        parse_service = parsing_service.get_parse_service()
         inserted = 0
         for file_path in file_paths:
             path = Path(file_path)
             try:
                 doc = parse_service.parse(path)
-            except ParserError as exc:
+            except parsing_service.ParserError as exc:
                 self.logger.warning("LightRAG: parse failed for %s: %s", path.name, exc)
                 continue
 

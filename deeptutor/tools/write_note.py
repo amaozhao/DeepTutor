@@ -27,6 +27,9 @@ from dataclasses import dataclass
 import logging
 from typing import Any, Iterable
 
+from deeptutor.services.notebook import get_notebook_manager
+from deeptutor.services.notebook.service import RecordType
+
 logger = logging.getLogger(__name__)
 
 # Length sanity caps. Generous because the tool now legitimately needs
@@ -94,8 +97,6 @@ def write_note(
 
     manager = notebook_manager
     if manager is None:
-        from deeptutor.services.notebook import get_notebook_manager
-
         manager = get_notebook_manager()
 
     notebooks = manager.list_notebooks()
@@ -208,8 +209,6 @@ def _do_append(
     cleaned_content = "\n\n---\n\n".join(body_parts).strip()
     if len(cleaned_content) > MAX_CONTENT_CHARS:
         cleaned_content = cleaned_content[:MAX_CONTENT_CHARS].rstrip() + "\n…[truncated]"
-
-    from deeptutor.services.notebook.service import RecordType
 
     user_query_for_record = current_user_message or _last_user_message(conversation_history)
 

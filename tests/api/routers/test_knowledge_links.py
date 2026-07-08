@@ -99,7 +99,9 @@ def test_probe_folder_endpoint_rejects_pageindex(tmp_path: Path) -> None:
 
 
 def _patch_server_probe(monkeypatch, *, ok: bool, error: str | None = None) -> None:
-    from deeptutor.services.rag.pipelines.lightrag_server import probe as probe_module
+    probe_module = __import__(
+        "deeptutor.services.rag.pipelines.lightrag_server", fromlist=["probe"]
+    ).probe
 
     async def _fake_probe(server_url: str, api_key: str = "", **_kwargs):
         result = probe_module.ServerProbe(base_url=server_url.rstrip("/"))

@@ -32,6 +32,7 @@ import asyncio
 import logging
 import os
 from pathlib import Path
+import shutil
 from typing import Protocol, runtime_checkable
 from urllib.parse import quote
 
@@ -198,7 +199,6 @@ class LocalDiskAttachmentStore:
 
     @staticmethod
     def _rmtree_sync(path: Path) -> None:
-        import shutil
 
         try:
             shutil.rmtree(path)

@@ -11,6 +11,7 @@ import zipfile
 
 from fastapi import HTTPException, UploadFile
 
+from deeptutor.services.pocketbase_client import get_pb_client, is_pocketbase_enabled
 from deeptutor.utils.archive_extractor import ArchiveTooLargeError, safe_extract_zip
 from deeptutor.utils.document_validator import DocumentValidator
 from deeptutor.utils.error_utils import format_exception_message
@@ -139,8 +140,6 @@ def save_uploaded_files(
     uploaded_files: list[str] = []
     uploaded_file_paths: list[str] = []
     written_file_paths: list[Path] = []
-
-    from deeptutor.services.pocketbase_client import is_pocketbase_enabled
 
     pb_sync = is_pocketbase_enabled() and bool(kb_name)
 
@@ -302,8 +301,6 @@ def validate_upload_batch(
 def upload_file_to_pb(kb_name: str, filename: str, file_path: Path) -> None:
     """Upload a single file to the PocketBase knowledge_bases record."""
     try:
-        from deeptutor.services.pocketbase_client import get_pb_client
-
         pb = get_pb_client()
         records = pb.collection("knowledge_bases").get_full_list(
             query_params={"filter": f'kb_name="{kb_name}"'}

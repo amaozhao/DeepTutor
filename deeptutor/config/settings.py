@@ -12,6 +12,8 @@ Examples:
     export LLM_RETRY__EXPONENTIAL_BACKOFF=false
 """
 
+import warnings
+
 from pydantic import BaseModel, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -31,7 +33,6 @@ class Settings(BaseSettings):
     # Deprecated: use retry instead
     @property
     def llm_retry(self):
-        import warnings
 
         warnings.warn(
             "settings.llm_retry is deprecated, use settings.retry instead",

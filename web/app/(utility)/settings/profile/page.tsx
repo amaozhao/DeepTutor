@@ -1,3 +1,3 @@
-import ProfilePage from "../../profile/page";
+import ProfilePage from "@/app/(utility)/profile/page";
 
 export default ProfilePage;

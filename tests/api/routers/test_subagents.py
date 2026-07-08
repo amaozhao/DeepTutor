@@ -77,7 +77,9 @@ def client(monkeypatch, tmp_path):
     )
 
     async def fake_detect():
-        from deeptutor.services.subagent.types import DetectResult
+        DetectResult = __import__(
+            "deeptutor.services.subagent.types", fromlist=["DetectResult"]
+        ).DetectResult
 
         return [
             DetectResult("claude_code", "Claude Code", available=True, version="2.x"),
@@ -137,7 +139,7 @@ class _FakePartnerManagerForConnect:
 
 
 def _patch_partner_existence(monkeypatch, known: set[str]) -> None:
-    import deeptutor.services.partners as partners_pkg
+    partners_pkg = __import__("deeptutor.services.partners", fromlist=["*"])
 
     monkeypatch.setattr(
         partners_pkg, "get_partner_manager", lambda: _FakePartnerManagerForConnect(known)
@@ -176,7 +178,7 @@ def test_list_visible_partners(client, monkeypatch):
 def test_connect_partner_denied_when_not_assigned(client, monkeypatch):
     # A non-admin connecting an unassigned partner is rejected by the
     # assignment guard before the connection is created.
-    from fastapi import HTTPException
+    HTTPException = __import__("fastapi", fromlist=["HTTPException"]).HTTPException
 
     _patch_partner_existence(monkeypatch, {"paul"})
 
@@ -217,8 +219,13 @@ def test_disconnect_unknown_is_404(client):
 
 
 def test_backend_options_endpoint_shape(client, monkeypatch):
-    from deeptutor.services.subagent import models as models_mod
-    from deeptutor.services.subagent.models import BackendOptions, ModelOption
+    models_mod = __import__("deeptutor.services.subagent", fromlist=["models"]).models
+    BackendOptions = __import__(
+        "deeptutor.services.subagent.models", fromlist=["BackendOptions"]
+    ).BackendOptions
+    ModelOption = __import__(
+        "deeptutor.services.subagent.models", fromlist=["ModelOption"]
+    ).ModelOption
 
     async def fake_options():
         return [
@@ -255,8 +262,13 @@ def test_message_connection_streams_and_persists(client, monkeypatch, tmp_path):
         json={"name": "MyClaude", "agent_kind": "claude_code"},
     )
 
-    from deeptutor.services.subagent import sessions as sess
-    from deeptutor.services.subagent.types import ConsultResult, SubagentEvent
+    sess = __import__("deeptutor.services.subagent", fromlist=["sessions"]).sessions
+    ConsultResult = __import__(
+        "deeptutor.services.subagent.types", fromlist=["ConsultResult"]
+    ).ConsultResult
+    SubagentEvent = __import__(
+        "deeptutor.services.subagent.types", fromlist=["SubagentEvent"]
+    ).SubagentEvent
 
     monkeypatch.setattr(sess, "_path", lambda: tmp_path / "sessions.json")
 
@@ -298,8 +310,13 @@ def test_message_connection_unknown_is_404(client):
 
 
 def test_backend_sync_endpoint(client, monkeypatch):
-    from deeptutor.services.subagent import models as models_mod
-    from deeptutor.services.subagent.models import BackendOptions, ModelOption
+    models_mod = __import__("deeptutor.services.subagent", fromlist=["models"]).models
+    BackendOptions = __import__(
+        "deeptutor.services.subagent.models", fromlist=["BackendOptions"]
+    ).BackendOptions
+    ModelOption = __import__(
+        "deeptutor.services.subagent.models", fromlist=["ModelOption"]
+    ).ModelOption
 
     async def fake_sync(kind):
         return BackendOptions(

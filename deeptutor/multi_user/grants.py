@@ -10,9 +10,18 @@ from pathlib import Path
 import threading
 from typing import Any
 
+try:
+    import fcntl as fcntl_module
+except ImportError:  # pragma: no cover - Windows
+    fcntl_module = None
+
 from .identity import get_user_by_id
 from .paths import SYSTEM_ROOT, ensure_system_dirs
-from .usage import empty_quota, normalize_quota
+from .quota import empty_quota, normalize_quota
+from .shared_state import delete_grant as _postgres_delete_grant
+from .shared_state import load_grant as _postgres_load_grant
+from .shared_state import postgres_enabled
+from .shared_state import save_grant as _postgres_save_grant
 
 GRANTS_DIR = SYSTEM_ROOT / "grants"
 _GRANTS_WRITE_LOCK = threading.Lock()
@@ -68,15 +77,11 @@ def _grant_write_lock(user_id: str):
     lock_path = path.with_suffix(".lock")
     with _GRANTS_WRITE_LOCK:
         with lock_path.open("a+", encoding="utf-8") as handle:
-            fcntl_module = None
             locked = False
             try:
-                import fcntl as fcntl_module
-
-                fcntl_module.flock(handle.fileno(), fcntl_module.LOCK_EX)
-                locked = True
-            except ImportError:
-                pass
+                if fcntl_module is not None:
+                    fcntl_module.flock(handle.fileno(), fcntl_module.LOCK_EX)
+                    locked = True
             except OSError as exc:
                 logger.warning("Grant write lock unavailable for %s: %s", lock_path, exc)
             try:
@@ -115,8 +120,6 @@ def normalize_grant(user_id: str, payload: dict[str, Any] | None) -> dict[str, A
 
 def load_grant(user_id: str) -> dict[str, Any]:
     if _postgres_enabled():
-        from .shared_state import load_grant as _postgres_load_grant
-
         payload = _postgres_load_grant(user_id)
         return normalize_grant(user_id, payload)
     path = grant_path(user_id)
@@ -139,8 +142,6 @@ def save_grant(user_id: str, payload: dict[str, Any]) -> dict[str, Any]:
     grant = normalize_grant(user_id, payload)
     validate_grant(grant)
     if _postgres_enabled():
-        from .shared_state import save_grant as _postgres_save_grant
-
         _postgres_save_grant(user_id, grant)
         return grant
     with _grant_write_lock(user_id) as path:
@@ -152,8 +153,6 @@ def save_grant(user_id: str, payload: dict[str, Any]) -> dict[str, Any]:
 
 def delete_grant(user_id: str) -> None:
     if _postgres_enabled():
-        from .shared_state import delete_grant as _postgres_delete_grant
-
         _postgres_delete_grant(user_id)
         return
     with _grant_write_lock(user_id) as path:
@@ -161,7 +160,6 @@ def delete_grant(user_id: str) -> None:
 
 
 def _postgres_enabled() -> bool:
-    from .shared_state import postgres_enabled
 
     return postgres_enabled()
 

@@ -1,11 +1,10 @@
 """Services-layer provider runtime used by both llm.factory and TutorBot."""
 
-from .anthropic_provider import AnthropicProvider
-from .azure_openai_provider import AzureOpenAIProvider
+from __future__ import annotations
+
+import importlib
+
 from .base import GenerationSettings, LLMProvider, LLMResponse, ToolCallRequest
-from .github_copilot_provider import GitHubCopilotProvider
-from .openai_codex_provider import OpenAICodexProvider
-from .openai_compat_provider import OpenAICompatProvider
 
 __all__ = [
     "AnthropicProvider",
@@ -18,3 +17,17 @@ __all__ = [
     "OpenAICompatProvider",
     "ToolCallRequest",
 ]
+
+
+def __getattr__(name: str):
+    if name == "AnthropicProvider":
+        return importlib.import_module(f"{__name__}.anthropic_provider").AnthropicProvider
+    if name == "AzureOpenAIProvider":
+        return importlib.import_module(f"{__name__}.azure_openai_provider").AzureOpenAIProvider
+    if name == "GitHubCopilotProvider":
+        return importlib.import_module(f"{__name__}.github_copilot_provider").GitHubCopilotProvider
+    if name == "OpenAICodexProvider":
+        return importlib.import_module(f"{__name__}.openai_codex_provider").OpenAICodexProvider
+    if name == "OpenAICompatProvider":
+        return importlib.import_module(f"{__name__}.openai_compat_provider").OpenAICompatProvider
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
