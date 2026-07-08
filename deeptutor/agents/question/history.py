@@ -25,6 +25,7 @@ import logging
 from typing import Any
 
 from deeptutor.agents.question.planning import QuizHistoryEntry
+import deeptutor.services.session.sqlite_store as sqlite_store
 
 logger = logging.getLogger(__name__)
 
@@ -51,9 +52,7 @@ async def load_session_quiz_history(
     if not session_id or max_entries <= 0:
         return []
     try:
-        from deeptutor.services.session.sqlite_store import get_sqlite_session_store
-
-        store = get_sqlite_session_store()
+        store = sqlite_store.get_sqlite_session_store()
         result = await store.list_notebook_entries(
             session_id=session_id,
             limit=max(1, int(max_entries)),

@@ -11,13 +11,16 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass
 from datetime import datetime, timezone
+import json
+import json as _json
 import logging
 from pathlib import Path
+import re
 import shutil
 from typing import Literal
 
 from deeptutor.services.memory import consolidator, paths, trace
-from deeptutor.services.memory.consolidator import ConsolidateResult, OnEvent
+from deeptutor.services.memory.consolidator import ConsolidateResult, OnEvent, _parse_ops_response
 from deeptutor.services.memory.document import Document, parse, serialize
 from deeptutor.services.memory.ops import AddOp, ApplyReport, EditOp, OpResult
 from deeptutor.services.memory.ops import apply as ops_apply
@@ -171,11 +174,8 @@ class MemoryStore:
         payload typically comes from a previous ``apply_ops=False``
         consolidate call surfaced to the user for review.
         """
-        from deeptutor.services.memory.consolidator import _parse_ops_response
-
         path = self._path(layer, key)
         json_like = {"ops": ops_payload}
-        import json as _json
 
         ops = _parse_ops_response(_json.dumps(json_like, ensure_ascii=False))
         async with self._lock_for(path):
@@ -370,8 +370,6 @@ def migrate_partner_surface_if_needed() -> bool:
     Idempotent: skips any target that already exists; a no-op when nothing
     tutorbot-shaped lives under the memory root.
     """
-    import json
-    import re
 
     root = paths.memory_root()
     if not root.exists():

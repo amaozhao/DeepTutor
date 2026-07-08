@@ -1,43 +1,16 @@
-"""Unified repository-backed session management."""
+"""
+Session Management Module
+=========================
 
-from .protocol import SessionStoreProtocol
-from .sqlite_store import (
-    SQLiteSessionStore,
-    get_sqlite_session_store,
-    make_imported_session_id,
-)
-from .turn_runtime import TurnRuntimeManager, get_turn_runtime_manager
+Provides unified session management for all agent modules.
+"""
 
-_pocketbase_store_instances: dict[str, SessionStoreProtocol] = {}
+from __future__ import annotations
 
-
-def get_session_store() -> SessionStoreProtocol:
-    """
-    Return the active session store backend.
-
-    When integrations.pocketbase_url is configured, returns a
-    PocketBaseSessionStore. Otherwise falls back to the local
-    SQLiteSessionStore (default, zero-config behaviour).
-    """
-    from deeptutor.services.pocketbase_client import is_pocketbase_enabled
-
-    if is_pocketbase_enabled():
-        from deeptutor.services.config import load_integrations_settings
-
-        from .pocketbase_store import PocketBaseSessionStore
-        from .scope import pocketbase_scope
-
-        url = str(load_integrations_settings().get("pocketbase_url") or "").rstrip("/")
-        scope = pocketbase_scope(url)
-        if scope.cache_key not in _pocketbase_store_instances:
-            store = PocketBaseSessionStore()
-            store.store_scope = scope
-            _pocketbase_store_instances[scope.cache_key] = store
-        return _pocketbase_store_instances[scope.cache_key]
-    return get_sqlite_session_store()
-
+import importlib
 
 __all__ = [
+    "BaseSessionManager",
     "SessionStoreProtocol",
     "SQLiteSessionStore",
     "TurnRuntimeManager",
@@ -46,3 +19,22 @@ __all__ = [
     "get_turn_runtime_manager",
     "make_imported_session_id",
 ]
+
+
+def __getattr__(name: str):
+    if name == "BaseSessionManager":
+        module = importlib.import_module(f"{__name__}.base_session_manager")
+        return module.BaseSessionManager
+    if name == "SessionStoreProtocol":
+        module = importlib.import_module(f"{__name__}.protocol")
+        return module.SessionStoreProtocol
+    if name in {"SQLiteSessionStore", "get_sqlite_session_store", "make_imported_session_id"}:
+        module = importlib.import_module(f"{__name__}.sqlite_store")
+        return getattr(module, name)
+    if name == "get_session_store":
+        module = importlib.import_module(f"{__name__}.store")
+        return module.get_session_store
+    if name in {"TurnRuntimeManager", "get_turn_runtime_manager"}:
+        module = importlib.import_module(f"{__name__}.turn_runtime")
+        return getattr(module, name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

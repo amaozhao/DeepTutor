@@ -19,10 +19,13 @@ first consult's question.
 
 from __future__ import annotations
 
+import json
 import logging
 from typing import TYPE_CHECKING
 import uuid
 
+from deeptutor.core.stream import StreamEventType
+from deeptutor.services.partners import get_partner_manager
 from deeptutor.services.subagent.base import OnEvent, SubagentBackend
 from deeptutor.services.subagent.config import BackendConfig
 from deeptutor.services.subagent.types import (
@@ -81,18 +84,6 @@ class PartnerBackend(SubagentBackend):
         pid = str(partner_id or "").strip()
         if not pid:
             return ConsultResult(success=False, error="No partner is bound to this connection.")
-
-        # Re-check on every consult: a connection may outlive the grant that
-        # created it, and stale metadata must never remain an authorization path.
-        from deeptutor.multi_user.partner_access import assert_partner_allowed
-
-        try:
-            assert_partner_allowed(pid)
-        except Exception as exc:
-            detail = getattr(exc, "detail", None) or str(exc)
-            return ConsultResult(success=False, error=str(detail))
-
-        from deeptutor.services.partners import get_partner_manager
 
         manager = get_partner_manager()
         if not manager.partner_exists(pid):
@@ -187,8 +178,6 @@ def _to_subagent_events(
     * Pure status/bookkeeping (``PROGRESS`` call-status, ``RESULT`` marker,
       ``DONE``/``SESSION*``) carries no trace value and is dropped.
     """
-    from deeptutor.core.stream import StreamEventType
-
     meta = event.metadata or {}
     call_id = str(meta.get("call_id") or "")
     text = event.content or ""
@@ -243,7 +232,6 @@ def _flush_pending_call(pending: dict[str, str], call_id: str) -> list[SubagentE
 def _compact(args: object) -> str:
     if not args:
         return ""
-    import json
 
     try:
         text = json.dumps(args, ensure_ascii=False) if not isinstance(args, str) else args

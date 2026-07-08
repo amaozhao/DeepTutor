@@ -1,9 +1,9 @@
-import type { DeepQuestionFormConfig } from "../quiz-types";
-import { buildQuizWSConfig } from "../quiz-types";
-import type { DeepResearchFormConfig } from "../research-types";
-import { buildResearchWSConfig } from "../research-types";
-import type { VisualizeFormConfig } from "../visualize-types";
-import { buildVisualizeWSConfig } from "../visualize-types";
+import type { DeepQuestionFormConfig } from "@/lib/quiz-types";
+import { buildQuizWSConfig } from "@/lib/quiz-types";
+import type { DeepResearchFormConfig } from "@/lib/research-types";
+import { buildResearchWSConfig } from "@/lib/research-types";
+import type { VisualizeFormConfig } from "@/lib/visualize-types";
+import { buildVisualizeWSConfig } from "@/lib/visualize-types";
 
 type Counted = { length: number };
 type Translate = (key: string) => string;

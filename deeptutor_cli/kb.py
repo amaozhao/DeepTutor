@@ -16,11 +16,14 @@ from rich.console import Console
 from rich.table import Table
 import typer
 
+from deeptutor.knowledge.add_documents import add_documents
+from deeptutor.knowledge.initializer import initialize_knowledge_base
 from deeptutor.knowledge.manager import KnowledgeBaseManager
 from deeptutor.knowledge.naming import validate_knowledge_base_name
 from deeptutor.services.path_service import get_path_service
 from deeptutor.services.rag.factory import DEFAULT_PROVIDER
 from deeptutor.services.rag.file_routing import FileTypeRouter
+from deeptutor.tools.rag_tool import rag_search
 
 console = Console()
 
@@ -167,7 +170,6 @@ def register(app: typer.Typer) -> None:
         console.print(
             f"Creating KB [bold]{name}[/] with {len(doc_paths)} document(s) via [bold]LlamaIndex[/]..."
         )
-        from deeptutor.knowledge.initializer import initialize_knowledge_base
 
         try:
             asyncio.run(
@@ -205,7 +207,6 @@ def register(app: typer.Typer) -> None:
             raise typer.Exit(code=1)
 
         console.print(f"Adding {len(doc_paths)} document(s) to [bold]{name}[/]...")
-        from deeptutor.knowledge.add_documents import add_documents
 
         try:
             processed_count = asyncio.run(
@@ -256,7 +257,6 @@ def register(app: typer.Typer) -> None:
         fmt: str = typer.Option("rich", "--format", "-f", help="Output format: rich | json."),
     ) -> None:
         """Search a knowledge base."""
-        from deeptutor.tools.rag_tool import rag_search
 
         mgr = _get_kb_manager()
         if name not in mgr.list_knowledge_bases():

@@ -16,6 +16,8 @@ from unittest.mock import patch
 
 import pytest
 
+from deeptutor.agents.question import mimic_source
+from deeptutor.agents.question.history import load_session_quiz_history
 from deeptutor.agents.question.pipeline import (
     CALL_KIND_QUIZ_QUESTION,
     STAGE_QUIZZING,
@@ -24,6 +26,7 @@ from deeptutor.agents.question.pipeline import (
     QuizPlan,
     QuizTemplate,
 )
+from deeptutor.services.session.sqlite_store import SQLiteSessionStore
 
 # ---------------------------------------------------------------------------
 # Test helpers
@@ -291,8 +294,6 @@ def test_emit_quiz_question_structures_metadata() -> None:
 def tmp_sqlite_store(tmp_path: Path):
     """Spin up an isolated SQLite session store + force the global getter
     to return it for the duration of the test."""
-    from deeptutor.services.session.sqlite_store import SQLiteSessionStore
-
     store = SQLiteSessionStore(db_path=tmp_path / "session.db")
     with patch(
         "deeptutor.services.session.sqlite_store.get_sqlite_session_store",
@@ -305,8 +306,6 @@ def test_history_loader_returns_session_scoped_entries(tmp_sqlite_store) -> None
     """Insert two sessions' worth of quiz answers; loader returns only the
     target session's entries, oldest first, with is_correct=None when the
     learner never answered."""
-    from deeptutor.agents.question.history import load_session_quiz_history
-
     store = tmp_sqlite_store
 
     async def setup() -> None:
@@ -385,8 +384,6 @@ def test_history_loader_returns_session_scoped_entries(tmp_sqlite_store) -> None
 
 
 def test_history_loader_returns_empty_for_unknown_session(tmp_sqlite_store) -> None:
-    from deeptutor.agents.question.history import load_session_quiz_history
-
     entries = asyncio.run(load_session_quiz_history(""))
     assert entries == []
     entries = asyncio.run(load_session_quiz_history("does-not-exist"))
@@ -405,7 +402,9 @@ def test_tool_schemas_populated_when_kb_attached() -> None:
     schemas the LLM receives must include it with the right ``kb_name``
     enum. A regression here means the explore loop runs schema-less and
     the model fakes tool calls in text."""
-    from deeptutor.core.context import UnifiedContext
+    UnifiedContext = __import__(
+        "deeptutor.core.context", fromlist=["UnifiedContext"]
+    ).UnifiedContext
 
     pipeline = QuestionPipeline(
         language="en",
@@ -442,7 +441,9 @@ def test_use_native_tools_false_when_no_tools_resolved() -> None:
     has every tool disabled), ``_use_native_tools`` must return False so
     we don't pass an empty tools array while the prompt still mentions
     tools. Otherwise the model invents calls in text."""
-    from deeptutor.core.context import UnifiedContext
+    UnifiedContext = __import__(
+        "deeptutor.core.context", fromlist=["UnifiedContext"]
+    ).UnifiedContext
 
     pipeline = _make_pipeline()
     pipeline.kb_name = None
@@ -552,7 +553,9 @@ def test_run_with_templates_override_skips_explore_and_plan(monkeypatch) -> None
     so we can inspect *which* phases ran without the LLM client touching
     the network.
     """
-    from deeptutor.core.context import UnifiedContext
+    UnifiedContext = __import__(
+        "deeptutor.core.context", fromlist=["UnifiedContext"]
+    ).UnifiedContext
 
     pipeline = QuestionPipeline(language="en")
     ctx = UnifiedContext(
@@ -590,7 +593,9 @@ def test_run_with_templates_override_skips_explore_and_plan(monkeypatch) -> None
     async def _fake_emit(**kwargs: Any) -> None:
         return None
 
-    from contextlib import asynccontextmanager
+    asynccontextmanager = __import__(
+        "contextlib", fromlist=["asynccontextmanager"]
+    ).asynccontextmanager
 
     bus = _StubStreamBus()
 
@@ -770,10 +775,12 @@ def test_runtime_config_overrides_max_iterations_and_summarizer_tokens() -> None
 def test_runtime_config_falls_back_to_defaults_when_missing() -> None:
     """A missing / empty ``exploring`` block must not crash __init__; the
     module-level defaults take over."""
-    from deeptutor.agents.question.pipeline import (
-        DEFAULT_MAX_EXPLORE_ITERATIONS,
-        DEFAULT_TOOL_SUMMARIZER_MAX_TOKENS,
-    )
+    DEFAULT_MAX_EXPLORE_ITERATIONS = __import__(
+        "deeptutor.agents.question.pipeline", fromlist=["DEFAULT_MAX_EXPLORE_ITERATIONS"]
+    ).DEFAULT_MAX_EXPLORE_ITERATIONS
+    DEFAULT_TOOL_SUMMARIZER_MAX_TOKENS = __import__(
+        "deeptutor.agents.question.pipeline", fromlist=["DEFAULT_TOOL_SUMMARIZER_MAX_TOKENS"]
+    ).DEFAULT_TOOL_SUMMARIZER_MAX_TOKENS
 
     pipeline = QuestionPipeline(language="en", runtime_config={})
     assert pipeline.max_explore_iterations == DEFAULT_MAX_EXPLORE_ITERATIONS
@@ -782,9 +789,9 @@ def test_runtime_config_falls_back_to_defaults_when_missing() -> None:
 
 
 def test_build_question_runtime_config_reads_capabilities_section() -> None:
-    from deeptutor.agents.question.request_config import (
-        build_question_runtime_config,
-    )
+    build_question_runtime_config = __import__(
+        "deeptutor.agents.question.request_config", fromlist=["build_question_runtime_config"]
+    ).build_question_runtime_config
 
     rc = build_question_runtime_config(
         base_config={
@@ -804,9 +811,9 @@ def test_build_question_runtime_config_reads_capabilities_section() -> None:
 
 
 def test_build_question_runtime_config_defaults_when_unconfigured() -> None:
-    from deeptutor.agents.question.request_config import (
-        build_question_runtime_config,
-    )
+    build_question_runtime_config = __import__(
+        "deeptutor.agents.question.request_config", fromlist=["build_question_runtime_config"]
+    ).build_question_runtime_config
 
     rc = build_question_runtime_config(base_config=None)
     assert rc["exploring"]["max_iterations"] == 8
@@ -938,8 +945,6 @@ def test_parse_exam_paper_to_templates_happy_path(monkeypatch, tmp_path: Path) -
     extractor. Verifies that the JSON payload becomes a list of
     ``QuizTemplate`` with ``source="mimic"`` and the reference fields
     populated."""
-    from deeptutor.agents.question import mimic_source
-
     parsed_dir = tmp_path / "parsed-001"
     parsed_dir.mkdir()
     questions_file = parsed_dir / "exam_questions.json"

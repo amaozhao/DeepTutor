@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import asyncio
 from http import HTTPStatus
+import importlib
 import logging
 from typing import Any, Dict, List
 
@@ -31,6 +32,16 @@ from deeptutor.services.config.embedding_endpoint import (
 from .base import BaseEmbeddingAdapter, EmbeddingRequest, EmbeddingResponse
 
 logger = logging.getLogger(__name__)
+
+
+def _get_dashscope_surface(name: str) -> Any:
+    try:
+        return getattr(importlib.import_module("dashscope"), name)
+    except (ImportError, AttributeError) as exc:
+        raise ImportError(
+            "dashscope SDK not installed. Run `pip install dashscope` "
+            "(or add to your project deps) to enable Aliyun DashScope."
+        ) from exc
 
 
 class DashScopeMultiModalEmbeddingAdapter(BaseEmbeddingAdapter):
@@ -101,14 +112,7 @@ class DashScopeMultiModalEmbeddingAdapter(BaseEmbeddingAdapter):
     async def _embed_multimodal(
         self, request: EmbeddingRequest, model_name: str
     ) -> EmbeddingResponse:
-        try:
-            from dashscope import MultiModalEmbedding
-        except ImportError as exc:
-            raise ImportError(
-                "dashscope SDK not installed. Run `pip install dashscope` "
-                "(or add to your project deps) to enable Aliyun DashScope."
-            ) from exc
-
+        embedding_surface = _get_dashscope_surface("MultiModalEmbedding")
         contents = self._build_contents(request)
         parameters = self._build_parameters(request)
 
@@ -124,7 +128,7 @@ class DashScopeMultiModalEmbeddingAdapter(BaseEmbeddingAdapter):
         # pass ``{"contents": contents}`` here — that produces a double-wrap
         # and the API responds with HTTP 400 ("Input should be a valid list").
         resp = await asyncio.to_thread(
-            MultiModalEmbedding.call,
+            embedding_surface.call,
             api_key=self.api_key,
             model=model_name,
             input=contents,
@@ -135,14 +139,7 @@ class DashScopeMultiModalEmbeddingAdapter(BaseEmbeddingAdapter):
         return self._parse_response(resp, model_name, request)
 
     async def _embed_text(self, request: EmbeddingRequest, model_name: str) -> EmbeddingResponse:
-        try:
-            from dashscope import TextEmbedding
-        except ImportError as exc:
-            raise ImportError(
-                "dashscope SDK not installed. Run `pip install dashscope` "
-                "(or add to your project deps) to enable Aliyun DashScope."
-            ) from exc
-
+        embedding_surface = _get_dashscope_surface("TextEmbedding")
         inputs = self._build_text_inputs(request)
         parameters = self._build_text_parameters(request)
 
@@ -155,7 +152,7 @@ class DashScopeMultiModalEmbeddingAdapter(BaseEmbeddingAdapter):
         # accepts a flat list of strings for `input`. Response/usage/error shape
         # matches MultiModalEmbedding, so we reuse the shared parsers below.
         resp = await asyncio.to_thread(
-            TextEmbedding.call,
+            embedding_surface.call,
             api_key=self.api_key,
             model=model_name,
             input=inputs,

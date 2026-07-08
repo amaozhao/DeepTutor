@@ -6,6 +6,11 @@ from dataclasses import dataclass
 import json
 from typing import Any, Awaitable, Callable
 
+try:
+    import tiktoken
+except Exception:  # pragma: no cover - optional dependency
+    tiktoken = None
+
 from deeptutor.agents.base_agent import BaseAgent
 from deeptutor.core.stream import StreamEvent, StreamEventType
 from deeptutor.core.trace import build_trace_metadata, merge_trace_metadata, new_call_id
@@ -42,8 +47,8 @@ def count_tokens(text: str) -> int:
     if not text:
         return 0
     try:
-        import tiktoken
-
+        if tiktoken is None:
+            raise ModuleNotFoundError("tiktoken")
         encoding = tiktoken.get_encoding("cl100k_base")
         return len(encoding.encode(text))
     except Exception:

@@ -12,13 +12,9 @@ import logging
 from typing import Any
 
 from deeptutor.core.tool_protocol import BaseTool, ToolDefinition, ToolPromptHints
-from deeptutor.tools.builtin_specs import (
-    BUILTIN_TOOL_NAMES,
-    BUILTIN_TOOL_SPEC_BY_NAME,
-    TOOL_ALIASES,
-    BuiltinToolSpec,
-)
-from deeptutor.tools.prompting import compose_prompt_text
+from deeptutor.tools.builtin.names import TOOL_ALIASES
+from deeptutor.tools.builtin.registry import BUILTIN_TOOL_TYPES
+from deeptutor.tools.prompting import ToolPromptComposer
 
 logger = logging.getLogger(__name__)
 
@@ -37,7 +33,6 @@ class ToolRegistry:
 
     def __init__(self) -> None:
         self._tools: dict[str, BaseTool] = {}
-        self._builtin_specs: dict[str, BuiltinToolSpec] = {}
 
     def register(self, tool: BaseTool) -> None:
         name = tool.name
@@ -53,24 +48,16 @@ class ToolRegistry:
         return [t for t in self._tools.values() if getattr(t, "deferred", False)]
 
     def load_builtins(self) -> None:
-        """Register import-cheap descriptors for all built-in tools."""
-        self._builtin_specs.update(BUILTIN_TOOL_SPEC_BY_NAME)
-
-    def _load_builtin(self, name: str) -> BaseTool | None:
-        spec = self._builtin_specs.get(name)
-        if spec is None:
-            return None
-        try:
-            tool = spec.create()
-        except Exception:
-            logger.warning("Failed to instantiate built-in tool %s", spec.class_path, exc_info=True)
-            return None
-        existing = self._tools.get(name)
-        if existing is not None:
-            return existing
-        self._tools[name] = tool
-        logger.debug("Loaded built-in tool: %s", name)
-        return tool
+        """Instantiate and register all built-in tools."""
+        for tool_type in BUILTIN_TOOL_TYPES:
+            try:
+                tool = tool_type()
+            except Exception:
+                logger.warning("Failed to instantiate built-in tool %s", tool_type, exc_info=True)
+                continue
+            if tool.name in self._tools:
+                continue
+            self.register(tool)
 
     def _resolve_request(
         self,
@@ -87,11 +74,10 @@ class ToolRegistry:
 
     def get(self, name: str) -> BaseTool | None:
         resolved_name, _ = self._resolve_request(name)
-        return self._tools.get(resolved_name) or self._load_builtin(resolved_name)
+        return self._tools.get(resolved_name)
 
     def list_tools(self) -> list[str]:
-        builtin = [name for name in BUILTIN_TOOL_NAMES if name in self._builtin_specs]
-        return [*builtin, *(name for name in self._tools if name not in self._builtin_specs)]
+        return list(self._tools.keys())
 
     def get_enabled(self, names: list[str]) -> list[BaseTool]:
         """Return tool instances for the given names (skipping unknown)."""
@@ -107,7 +93,7 @@ class ToolRegistry:
 
     def get_definitions(self, names: list[str] | None = None) -> list[ToolDefinition]:
         """Return definitions for *names* (or all if None)."""
-        tools = self.get_enabled(self.list_tools()) if names is None else self.get_enabled(names)
+        tools = self._tools.values() if names is None else self.get_enabled(names)
         return [t.get_definition() for t in tools]
 
     def get_prompt_hints(
@@ -129,12 +115,19 @@ class ToolRegistry:
         **opts: Any,
     ) -> str:
         """Compose prompt text for the given tools."""
-        return compose_prompt_text(
-            self.get_prompt_hints(names, language=language),
-            format=format,
-            language=language,
-            **opts,
-        )
+        composer = ToolPromptComposer(language=language)
+        hints = self.get_prompt_hints(names, language=language)
+        if format == "list":
+            return composer.format_list(hints)
+        if format == "list_with_usage":
+            return composer.format_list_with_usage(hints)
+        if format == "table":
+            return composer.format_table(hints, control_actions=opts.get("control_actions"))
+        if format == "aliases":
+            return composer.format_aliases(hints)
+        if format == "phased":
+            return composer.format_phased(hints)
+        raise ValueError(f"Unsupported prompt format: {format}")
 
     def build_openai_schemas(self, names: list[str] | None = None) -> list[dict[str, Any]]:
         """Build OpenAI function-calling tool schemas."""
@@ -150,7 +143,7 @@ class ToolRegistry:
         positionally.
         """
         resolved_name, resolved_kwargs = self._resolve_request(name, kwargs)
-        tool = self._tools.get(resolved_name) or self._load_builtin(resolved_name)
+        tool = self._tools.get(resolved_name)
         if tool is None:
             raise KeyError(f"Unknown tool: {name}")
         return await tool.execute(**resolved_kwargs)

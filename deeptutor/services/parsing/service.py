@@ -9,6 +9,7 @@ content; nothing is parsed implicitly.
 
 from __future__ import annotations
 
+import importlib
 import logging
 from pathlib import Path
 from typing import Callable, Optional
@@ -25,19 +26,8 @@ from .types import ParsedDocument, ParserError
 logger = logging.getLogger(__name__)
 
 
-def _matches_supported_format(source_path: str | Path, supported: frozenset[str]) -> bool:
-    """Match simple or compound parser suffixes case-insensitively."""
-    name = Path(source_path).name.lower()
-    return any(name.endswith(str(extension).lower()) for extension in supported)
-
-
-def _display_extension(source_path: str | Path, supported: frozenset[str]) -> str:
-    """Return the most specific advertised suffix for an error message."""
-    name = Path(source_path).name.lower()
-    matches = [extension for extension in supported if name.endswith(extension.lower())]
-    if matches:
-        return max(matches, key=len)
-    return Path(source_path).suffix.lower() or "this"
+def _get_path_service():
+    return importlib.import_module("deeptutor.services.path_service").get_path_service()
 
 
 class ParseService:
@@ -51,24 +41,12 @@ class ParseService:
             return self._cache_root_override
         # Resolve lazily per call so the cache root tracks the active
         # user/workspace (multi-user safety), like get_path_service().
-        from deeptutor.services.path_service import get_path_service
-
-        return get_path_service().get_parse_cache_root()
+        return _get_path_service().get_parse_cache_root()
 
     def active_engine(self) -> str:
         return str(
             load_document_parsing_settings().get("engine") or _DEFAULT_DOCUMENT_PARSING_ENGINE
         )
-
-    def supports(self, source_path: str | Path, *, engine: Optional[str] = None) -> bool:
-        """Return whether the selected engine advertises support for this path.
-
-        This is a cheap routing check only: it does not require the file to
-        exist, initialize models, or evaluate engine readiness.
-        """
-        engine_name = (engine or self.active_engine()).strip().lower()
-        supported = get_parser(engine_name).supported_formats()
-        return not supported or _matches_supported_format(source_path, supported)
 
     def parse(
         self,
@@ -92,11 +70,11 @@ class ParseService:
         parser = get_parser(engine_name)
         config = parser.resolve_config()
 
+        suffix = source_path.suffix.lower()
         supported = parser.supported_formats()
-        if supported and not _matches_supported_format(source_path, supported):
-            suffix = _display_extension(source_path, supported)
+        if supported and suffix not in supported:
             raise ParserError(
-                f"The '{engine_name}' parsing engine doesn't support {suffix} "
+                f"The '{engine_name}' parsing engine doesn't support {suffix or 'this'} "
                 f"files. Choose a different engine in Settings → Document Parsing."
             )
 

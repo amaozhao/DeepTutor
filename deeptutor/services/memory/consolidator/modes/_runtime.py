@@ -20,9 +20,10 @@ from typing import Any, Awaitable, Callable
 
 import yaml
 
-from deeptutor.services.llm import clean_thinking_tags
+from deeptutor.services.llm import clean_thinking_tags, get_llm_config
 from deeptutor.services.llm import complete as llm_complete
 from deeptutor.services.llm import stream as llm_stream
+from deeptutor.services.memory.consolidator.runs import push_undo_checkpoint
 from deeptutor.services.memory.document import Document, parse, serialize
 
 logger = logging.getLogger(__name__)
@@ -105,8 +106,6 @@ async def call_llm(
     model. Emits ``llm_io_start`` / ``llm_io_end`` events for the
     workbench trace.
     """
-    from deeptutor.services.llm import get_llm_config
-
     model_label = get_llm_config().model or None
     if on_event is not None:
         await on_event(
@@ -240,8 +239,6 @@ async def write_doc_checkpoint(
     existed = path.exists()
     previous = path.read_text(encoding="utf-8") if existed else ""
     await write_doc_atomic(path, doc)
-    from deeptutor.services.memory.consolidator.runs import push_undo_checkpoint
-
     undo_depth = push_undo_checkpoint(
         layer=layer,
         key=key,

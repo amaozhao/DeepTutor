@@ -1,9 +1,9 @@
 import type {
   RegenerateMessage,
   SubmitUserReplyMessage,
-} from "../../lib/unified-ws";
-import { hasPendingAskUserInMessages } from "../../lib/ask-user-state";
-import type { Action, MessageItem, SessionEntry } from "./state";
+} from "@/lib/unified-ws";
+import { hasPendingAskUserInMessages } from "@/lib/ask-user-state";
+import type { Action, MessageItem, SessionEntry } from "@/context/chat/state";
 
 export type AskUserReply =
   | string

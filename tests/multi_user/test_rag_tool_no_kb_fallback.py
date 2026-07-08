@@ -20,7 +20,7 @@ def _rag_search():
 
 
 def test_rag_search_no_kb_raises_value_error(mu_isolated_root, as_user):
-    import pytest
+    pytest = __import__("pytest")
 
     rag_search = _rag_search()
     with as_user("u_alice", role="user"):
@@ -29,7 +29,7 @@ def test_rag_search_no_kb_raises_value_error(mu_isolated_root, as_user):
 
 
 def test_rag_search_admin_also_requires_kb_name(mu_isolated_root, as_user):
-    import pytest
+    pytest = __import__("pytest")
 
     rag_search = _rag_search()
     with as_user("u_admin", role="admin"):

@@ -3,35 +3,26 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from contextlib import contextmanager
-from contextvars import ContextVar
 from pathlib import Path
 from typing import Any
 
 from deeptutor.partners.bus.events import InboundMessage, OutboundMessage
 from deeptutor.partners.bus.queue import MessageBus
 
-#: Owning Partner of the channel currently being constructed. Channels that
-#: resolve paths in ``__init__`` need the id *then*, but ``ChannelManager``
-#: builds the instance before it can assign an attribute — and threading the
-#: id through every subclass signature would break external plugins, which
-#: are constructed the same way.
-_constructing_for: ContextVar[str] = ContextVar("partner_channel_owner", default="")
+try:
+    from loguru import logger as _log
+except ImportError:  # pragma: no cover - optional logging backend
+    import logging as _logging
 
+    _log = _logging.getLogger(__name__)
 
-@contextmanager
-def constructing_for(partner_id: str):
-    """Mark whose channel is being built, so ``__init__`` can resolve paths."""
-    token = _constructing_for.set(str(partner_id or ""))
-    try:
-        yield
-    finally:
-        _constructing_for.reset(token)
+try:
+    from deeptutor.partners.transcription import GroqTranscriptionProvider
+except Exception:  # pragma: no cover - optional transcription backend
+    GroqTranscriptionProvider = None
 
 
 def _logger():
-    from loguru import logger as _log
-
     return _log
 
 
@@ -50,7 +41,6 @@ class BaseChannel(ABC):
     # them from the channel's own config at init time.
     send_progress: bool = True
     send_tool_hints: bool = True
-    partner_id: str = ""
 
     def __init__(self, config: Any, bus: MessageBus):
         """
@@ -63,71 +53,14 @@ class BaseChannel(ABC):
         self.config = config
         self.bus = bus
         self._running = False
-        self.partner_id = _constructing_for.get()
-        # User-actionable setup/runtime output belongs in the WebUI. Channels
-        # may publish a small, deliberately non-secret status payload here
-        # instead of printing QR codes, login URLs or setup instructions to
-        # the backend terminal.
-        self._setup_state: dict[str, str] = {}
-        self._setup_revision = 0
-
-    def set_setup_state(
-        self,
-        status: str,
-        *,
-        message: str = "",
-        qr_payload: str = "",
-    ) -> None:
-        """Publish sanitized channel setup state for the Partner WebUI."""
-        self._setup_revision += 1
-        self._setup_state = {
-            "status": str(status or ""),
-            **({"message": str(message)} if message else {}),
-            **({"qr_payload": str(qr_payload)} if qr_payload else {}),
-        }
-
-    @property
-    def setup_state(self) -> dict[str, str]:
-        """A copy of the current user-facing setup state (never credentials)."""
-        return dict(self._setup_state)
-
-    @property
-    def setup_revision(self) -> int:
-        """Monotonic marker used to detect channel-owned status updates."""
-        return self._setup_revision
-
-    def media_dir(self, channel: str | None = None) -> Path:
-        """Download directory isolated to this channel's owning Partner."""
-        from deeptutor.partners.config.paths import get_media_dir, get_partner_media_dir
-
-        if self.partner_id:
-            return get_partner_media_dir(self.partner_id, channel or self.name)
-        # Plugin/tests may construct a channel outside PartnerManager. Preserve
-        # the legacy location in that standalone case.
-        return get_media_dir(channel or self.name)
-
-    def state_dir(self) -> Path:
-        """Runtime state directory isolated to this channel's owning Partner.
-
-        Channel state is an *account identity* (bot tokens, poll cursors), so
-        it must never be shared: two Partners on the same channel would read
-        each other's credentials and overwrite each other's cursor. Resolve
-        lazily — ``PartnerManager`` sets ``partner_id`` after construction.
-        """
-        from deeptutor.partners.config.paths import get_partner_channel_dir, get_runtime_subdir
-
-        if self.partner_id:
-            return get_partner_channel_dir(self.partner_id, self.name)
-        # Standalone construction (plugins/tests): keep the legacy location.
-        return get_runtime_subdir(self.name)
 
     async def transcribe_audio(self, file_path: str | Path) -> str:
         """Transcribe an audio file via Groq Whisper. Returns empty string on failure."""
         if not self.transcription_api_key:
             return ""
+        if GroqTranscriptionProvider is None:
+            return ""
         try:
-            from deeptutor.partners.transcription import GroqTranscriptionProvider
-
             provider = GroqTranscriptionProvider(api_key=self.transcription_api_key)
             return await provider.transcribe(file_path)
         except Exception as e:

@@ -67,11 +67,15 @@ async def test_update_l2_appends_facts_from_chunk(memory_dir, monkeypatch):
         patch("deeptutor.services.memory.consolidator.modes.update.call_llm", side_effect=fake_llm),
         patch.object(update_mod, "load_memory_settings") as mock_settings,
     ):
-        from deeptutor.services.memory.settings import (
-            ChunkingSettings,
-            DedupSettings,
-            MemorySettings,
-        )
+        ChunkingSettings = __import__(
+            "deeptutor.services.memory.settings", fromlist=["ChunkingSettings"]
+        ).ChunkingSettings
+        DedupSettings = __import__(
+            "deeptutor.services.memory.settings", fromlist=["DedupSettings"]
+        ).DedupSettings
+        MemorySettings = __import__(
+            "deeptutor.services.memory.settings", fromlist=["MemorySettings"]
+        ).MemorySettings
 
         mock_settings.return_value = MemorySettings(
             chunking=ChunkingSettings(min_chunk_chars=200, max_chunk_chars=400, overlap_ratio=0.0),
@@ -105,7 +109,12 @@ async def test_update_l2_idempotent_when_no_new_entities(memory_dir, monkeypatch
         ),
         patch.object(update_mod, "load_memory_settings") as mock_settings,
     ):
-        from deeptutor.services.memory.settings import DedupSettings, MemorySettings
+        DedupSettings = __import__(
+            "deeptutor.services.memory.settings", fromlist=["DedupSettings"]
+        ).DedupSettings
+        MemorySettings = __import__(
+            "deeptutor.services.memory.settings", fromlist=["MemorySettings"]
+        ).MemorySettings
 
         mock_settings.return_value = MemorySettings(dedup=DedupSettings(auto_after_update=False))
         first = await update_mod.run_update("L2", "chat", language="en")
@@ -126,7 +135,12 @@ async def test_update_l2_idempotent_when_no_new_entities(memory_dir, monkeypatch
         ),
         patch.object(update_mod, "load_memory_settings") as mock_settings,
     ):
-        from deeptutor.services.memory.settings import DedupSettings, MemorySettings
+        DedupSettings = __import__(
+            "deeptutor.services.memory.settings", fromlist=["DedupSettings"]
+        ).DedupSettings
+        MemorySettings = __import__(
+            "deeptutor.services.memory.settings", fromlist=["MemorySettings"]
+        ).MemorySettings
 
         mock_settings.return_value = MemorySettings(dedup=DedupSettings(auto_after_update=False))
         second = await update_mod.run_update("L2", "chat", language="en")
@@ -152,11 +166,15 @@ async def test_update_l2_drops_facts_with_out_of_pool_refs(memory_dir, monkeypat
         patch("deeptutor.services.memory.consolidator.modes.update.call_llm", side_effect=fake_llm),
         patch.object(update_mod, "load_memory_settings") as mock_settings,
     ):
-        from deeptutor.services.memory.settings import (
-            DedupSettings,
-            MemorySettings,
-            ReferenceSettings,
-        )
+        DedupSettings = __import__(
+            "deeptutor.services.memory.settings", fromlist=["DedupSettings"]
+        ).DedupSettings
+        MemorySettings = __import__(
+            "deeptutor.services.memory.settings", fromlist=["MemorySettings"]
+        ).MemorySettings
+        ReferenceSettings = __import__(
+            "deeptutor.services.memory.settings", fromlist=["ReferenceSettings"]
+        ).ReferenceSettings
 
         mock_settings.return_value = MemorySettings(
             dedup=DedupSettings(auto_after_update=False),
@@ -244,7 +262,12 @@ async def test_dedup_early_stop_when_no_edits(memory_dir, monkeypatch):
         patch("deeptutor.services.memory.consolidator.modes.dedup.call_llm", side_effect=fake_llm),
         patch.object(dedup_mod, "load_memory_settings") as mock_settings,
     ):
-        from deeptutor.services.memory.settings import DedupSettings, MemorySettings
+        DedupSettings = __import__(
+            "deeptutor.services.memory.settings", fromlist=["DedupSettings"]
+        ).DedupSettings
+        MemorySettings = __import__(
+            "deeptutor.services.memory.settings", fromlist=["MemorySettings"]
+        ).MemorySettings
 
         mock_settings.return_value = MemorySettings(
             dedup=DedupSettings(iterations=5, auto_after_update=False)
@@ -303,7 +326,12 @@ async def test_dedup_applies_delete_then_stops(memory_dir, monkeypatch):
         patch("deeptutor.services.memory.consolidator.modes.dedup.call_llm", side_effect=fake_llm),
         patch.object(dedup_mod, "load_memory_settings") as mock_settings,
     ):
-        from deeptutor.services.memory.settings import DedupSettings, MemorySettings
+        DedupSettings = __import__(
+            "deeptutor.services.memory.settings", fromlist=["DedupSettings"]
+        ).DedupSettings
+        MemorySettings = __import__(
+            "deeptutor.services.memory.settings", fromlist=["MemorySettings"]
+        ).MemorySettings
 
         mock_settings.return_value = MemorySettings(
             dedup=DedupSettings(iterations=3, auto_after_update=False)

@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from deeptutor.services.llm.usage_frame import token_counts
+from deeptutor.logging.stats.llm_stats import get_pricing
 
 logger = logging.getLogger(__name__)
 
@@ -32,13 +32,15 @@ class UsageTracker:
         self.model: str | None = model
 
     def add_from_response(self, response_or_usage: Any) -> None:
-        counts = token_counts(getattr(response_or_usage, "usage", None) or response_or_usage)
-        if not counts:
-            return
-        self.prompt_tokens += counts["prompt_tokens"]
-        self.completion_tokens += counts["completion_tokens"]
-        self.total_tokens += counts["total_tokens"]
-        self.calls += 1
+        usage = getattr(response_or_usage, "usage", None) or response_or_usage
+        prompt = int(getattr(usage, "prompt_tokens", 0) or 0)
+        completion = int(getattr(usage, "completion_tokens", 0) or 0)
+        total = int(getattr(usage, "total_tokens", prompt + completion) or 0)
+        if prompt or completion or total:
+            self.prompt_tokens += prompt
+            self.completion_tokens += completion
+            self.total_tokens += total
+            self.calls += 1
 
     def add_estimated(self, *, input_chars: int, output_chars: int) -> None:
         est_input = int(input_chars / 3.5)
@@ -82,9 +84,6 @@ class UsageTracker:
             return None
         cost_usd = 0.0
         if self.model:
-            # Local import keeps ``core.agentic`` import-light at module load.
-            from deeptutor.logging.stats.llm_stats import get_pricing
-
             pricing = get_pricing(self.model)
             cost_usd = (self.prompt_tokens / 1000.0) * pricing.get("input", 0.0) + (
                 self.completion_tokens / 1000.0

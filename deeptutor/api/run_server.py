@@ -9,11 +9,15 @@ import os
 from pathlib import Path
 import sys
 
-from deeptutor.runtime.home import get_runtime_home
-
 # Windows: uvicorn defaults to SelectorEventLoop which does not support
 # asyncio.create_subprocess_exec.  Switch to ProactorEventLoop so that
 # child-process APIs (used by Math Animator renderer, etc.) work correctly.
+from deeptutor.logging import configure_logging
+from deeptutor.runtime.home import get_runtime_home
+from deeptutor.runtime.mode import RunMode, set_mode
+from deeptutor.services.config import HTTP_KEEP_ALIVE_TIMEOUT, get_ws_max_size
+from deeptutor.services.setup import get_backend_port
+
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
 
@@ -33,15 +37,6 @@ def main() -> None:
     os.chdir(str(project_root))
 
     # Get port from configuration
-    from deeptutor.logging import configure_logging
-    from deeptutor.runtime.mode import RunMode, set_mode
-    from deeptutor.services.config import (
-        HTTP_KEEP_ALIVE_TIMEOUT,
-        get_ws_max_size,
-        load_system_settings,
-    )
-    from deeptutor.services.setup import get_backend_port
-
     set_mode(RunMode.SERVER)
     configure_logging()
     backend_port = get_backend_port(project_root)
@@ -71,18 +66,11 @@ def main() -> None:
         "yes",
         "on",
     }
-    backend_workers = max(1, int(load_system_settings().get("backend_workers") or 1))
-    if dev_reload and backend_workers > 1:
-        raise SystemExit(
-            "Development reload and backend_workers > 1 are mutually exclusive. "
-            "Set backend_workers=1 or disable DEEPTUTOR_DEV_RELOAD."
-        )
     uvicorn.run(
         "deeptutor.api.main:app",
         host="0.0.0.0",
         port=backend_port,
         reload=dev_reload,
-        workers=backend_workers,
         reload_excludes=reload_excludes if dev_reload else None,
         log_level="info",
         access_log=False,

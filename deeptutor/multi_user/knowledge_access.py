@@ -16,6 +16,7 @@ from deeptutor.knowledge.manifest import (
     document_root,
 )
 
+from .audit import log_usage
 from .context import get_current_user
 from .grants import load_grant
 from .models import KnowledgeResource
@@ -230,8 +231,6 @@ def resolve_for_rag(kb_ref: str | None) -> KnowledgeResource | None:
         return None
     resource = resolve_kb(kb_ref, require_write=False)
     if resource.assigned:
-        from .audit import log_usage
-
         log_usage("knowledge_base", resource.id, "rag_query")
     return resource
 

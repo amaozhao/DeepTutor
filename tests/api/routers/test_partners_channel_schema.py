@@ -26,18 +26,33 @@ from deeptutor.api.routers._partners_channel_schema import (
 class TestResolveConfigModel:
     def test_telegram_pairs_with_telegram_config(self) -> None:
         pytest.importorskip("telegram")
-        from deeptutor.partners.channels.telegram import TelegramChannel, TelegramConfig
+        TelegramChannel = __import__(
+            "deeptutor.partners.channels.telegram", fromlist=["TelegramChannel"]
+        ).TelegramChannel
+        TelegramConfig = __import__(
+            "deeptutor.partners.channels.telegram", fromlist=["TelegramConfig"]
+        ).TelegramConfig
 
         assert resolve_config_model(TelegramChannel) is TelegramConfig
 
     def test_slack_pairs_with_slack_config(self) -> None:
         pytest.importorskip("slack_sdk")
-        from deeptutor.partners.channels.slack import SlackChannel, SlackConfig
+        SlackChannel = __import__(
+            "deeptutor.partners.channels.slack", fromlist=["SlackChannel"]
+        ).SlackChannel
+        SlackConfig = __import__(
+            "deeptutor.partners.channels.slack", fromlist=["SlackConfig"]
+        ).SlackConfig
 
         assert resolve_config_model(SlackChannel) is SlackConfig
 
     def test_discord_pairs_with_discord_config(self) -> None:
-        from deeptutor.partners.channels.discord import DiscordChannel, DiscordConfig
+        DiscordChannel = __import__(
+            "deeptutor.partners.channels.discord", fromlist=["DiscordChannel"]
+        ).DiscordChannel
+        DiscordConfig = __import__(
+            "deeptutor.partners.channels.discord", fromlist=["DiscordConfig"]
+        ).DiscordConfig
 
         assert resolve_config_model(DiscordChannel) is DiscordConfig
 
@@ -119,7 +134,9 @@ class TestCollectSecretFields:
 class TestChannelSchemaPayload:
     def test_telegram_payload_shape(self) -> None:
         pytest.importorskip("telegram")
-        from deeptutor.partners.channels.telegram import TelegramChannel
+        TelegramChannel = __import__(
+            "deeptutor.partners.channels.telegram", fromlist=["TelegramChannel"]
+        ).TelegramChannel
 
         payload = channel_schema_payload(TelegramChannel)
         assert payload is not None
@@ -133,7 +150,9 @@ class TestChannelSchemaPayload:
 
     def test_slack_dm_subtree_inlined(self) -> None:
         pytest.importorskip("slack_sdk")
-        from deeptutor.partners.channels.slack import SlackChannel
+        SlackChannel = __import__(
+            "deeptutor.partners.channels.slack", fromlist=["SlackChannel"]
+        ).SlackChannel
 
         payload = channel_schema_payload(SlackChannel)
         assert payload is not None
@@ -151,9 +170,9 @@ class TestEndpoint:
         # Build a minimal FastAPI app with just the partners router; the
         # ``/channels/schema`` endpoint doesn't touch the manager so no
         # fixturing of ``get_partner_manager`` is needed.
-        from fastapi import FastAPI
+        FastAPI = __import__("fastapi", fromlist=["FastAPI"]).FastAPI
 
-        from deeptutor.api.routers import partners as partners_router
+        partners_router = __import__("deeptutor.api.routers", fromlist=["partners"]).partners
 
         app = FastAPI()
         app.include_router(partners_router.router, prefix="/api/v1/partners")

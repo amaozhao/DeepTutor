@@ -12,7 +12,9 @@ import pytest
 @pytest.fixture
 def tmp_sqlite_store(tmp_path: Path):
     """Spin up an isolated SQLite session store for history loading."""
-    from deeptutor.services.session.sqlite_store import SQLiteSessionStore
+    SQLiteSessionStore = __import__(
+        "deeptutor.services.session.sqlite_store", fromlist=["SQLiteSessionStore"]
+    ).SQLiteSessionStore
 
     store = SQLiteSessionStore(db_path=tmp_path / "session.db")
     with patch(
@@ -23,7 +25,9 @@ def tmp_sqlite_store(tmp_path: Path):
 
 
 def test_history_loader_returns_session_scoped_entries(tmp_sqlite_store) -> None:
-    from deeptutor.agents.question.history import load_session_quiz_history
+    load_session_quiz_history = __import__(
+        "deeptutor.agents.question.history", fromlist=["load_session_quiz_history"]
+    ).load_session_quiz_history
 
     store = tmp_sqlite_store
 
@@ -100,7 +104,9 @@ def test_history_loader_returns_session_scoped_entries(tmp_sqlite_store) -> None
 
 
 def test_history_loader_returns_empty_for_unknown_session(tmp_sqlite_store) -> None:
-    from deeptutor.agents.question.history import load_session_quiz_history
+    load_session_quiz_history = __import__(
+        "deeptutor.agents.question.history", fromlist=["load_session_quiz_history"]
+    ).load_session_quiz_history
 
     entries = asyncio.run(load_session_quiz_history(""))
     assert entries == []

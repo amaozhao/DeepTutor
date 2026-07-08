@@ -11,6 +11,10 @@ from typing import Any, Literal
 import zipfile
 
 from . import paths
+from .audit import _audit_write_lock
+from .grants import _grant_write_lock, delete_grant, load_grant
+from .identity import delete_avatar_file, get_avatar_file, get_user
+from .usage import _read_events, usage_ledger_lock
 
 logger = logging.getLogger(__name__)
 
@@ -156,8 +160,6 @@ def apply_data_retention_policy() -> dict[str, Any]:
     """Prune data covered by the configured retention windows."""
     paths.ensure_system_dirs()
     settings = load_data_governance_settings()
-    from .audit import _audit_write_lock
-    from .usage import usage_ledger_lock
 
     with usage_ledger_lock():
         usage_result = _prune_jsonl(
@@ -219,9 +221,6 @@ def export_user_data(user_id: str, username: str) -> Path:
     target = export_dir / f"{user_id}-{_stamp()}.zip"
     workspace = paths.USERS_ROOT / user_id
     audit_file = paths.SYSTEM_ROOT / "audit" / "usage.jsonl"
-    from .grants import load_grant
-    from .identity import get_avatar_file, get_user
-    from .usage import _read_events
 
     avatar_file = get_avatar_file(user_id)
     record = get_user(username) or {}
@@ -292,9 +291,6 @@ def apply_user_delete_policy(user_id: str, action: DeleteDataAction) -> dict[str
         return {"action": "keep", "workspace": "kept", "grant": "kept"}
     if action not in {"archive", "delete"}:
         raise ValueError(f"Unknown delete data action: {action}")
-
-    from .grants import _grant_write_lock, delete_grant, load_grant
-    from .identity import delete_avatar_file, get_avatar_file
 
     workspace = paths.USERS_ROOT / user_id
     avatar_file = get_avatar_file(user_id)

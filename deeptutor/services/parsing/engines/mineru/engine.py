@@ -1,7 +1,8 @@
 """MinerU engine adapter implementing the ``Parser`` protocol.
 
-The readiness gate (``readiness.py``) enforces "no silent model download"
-before a local parse runs.
+Thin wrapper over the existing ``parse_pdf_to_workdir`` (local CLI / cloud
+dispatch). The readiness gate (``readiness.py``) enforces "no silent model
+download" before a local parse runs.
 """
 
 from __future__ import annotations
@@ -12,13 +13,13 @@ from typing import Callable, Optional
 from ...base import ReadinessReport
 from ...signature import ParserSignature
 from .._versions import package_version
+from .backend import parse_pdf_to_workdir
 from .config import MinerUConfig, resolve_mineru_config
-from .formats import MINERU_SUPPORTED_FORMATS
 from .readiness import mineru_readiness
 
 
 class MinerUParser:
-    """Documents/images → multimodal IR via the MinerU CLI or cloud API."""
+    """PDF → multimodal ``content_list`` via the MinerU CLI or cloud API."""
 
     name = "mineru"
     needs_local_models = True
@@ -34,7 +35,7 @@ class MinerUParser:
         return resolve_mineru_config()
 
     def supported_formats(self) -> frozenset[str]:
-        return MINERU_SUPPORTED_FORMATS
+        return frozenset({".pdf"})
 
     def signature(self, config: MinerUConfig) -> ParserSignature:
         version = f"cloud:{config.api_base_url}" if config.is_cloud else package_version("mineru")
@@ -62,11 +63,9 @@ class MinerUParser:
         config: MinerUConfig,
         on_output: Optional[Callable[[str], None]] = None,
     ) -> None:
-        from .backend import parse_document_to_workdir
-
         # Writes ``<workdir>/<stem>/...`` (markdown + content_list + images);
         # ParseService loads the IR from ``workdir`` afterwards.
-        parse_document_to_workdir(source_path, workdir, config=config, on_output=on_output)
+        parse_pdf_to_workdir(source_path, workdir, config=config, on_output=on_output)
 
 
 __all__ = ["MinerUParser"]

@@ -12,10 +12,12 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import StreamingResponse
 
+from deeptutor.api.routers.auth import ws_auth_failed, ws_require_auth
 from deeptutor.api.utils.progress_broadcaster import ProgressBroadcaster
 from deeptutor.api.utils.task_log_stream import get_task_stream_manager
 from deeptutor.knowledge.manager import KnowledgeBaseManager
 from deeptutor.knowledge.progress_tracker import ProgressTracker
+from deeptutor.multi_user.context import reset_current_user
 from deeptutor.multi_user.knowledge_access import resolve_kb
 
 logger = logging.getLogger(__name__)
@@ -96,8 +98,6 @@ async def clear_progress(kb_name: str):
 @router.websocket("/{kb_name}/progress/ws")
 async def websocket_progress(websocket: WebSocket, kb_name: str):
     """WebSocket endpoint for real-time progress updates."""
-    from deeptutor.api.routers.auth import ws_auth_failed, ws_require_auth
-    from deeptutor.multi_user.context import reset_current_user
 
     user_token = await ws_require_auth(websocket)
     if user_token is ws_auth_failed:

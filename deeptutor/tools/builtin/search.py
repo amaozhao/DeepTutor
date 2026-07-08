@@ -6,7 +6,15 @@ import asyncio
 from typing import Any
 
 from deeptutor.core.tool_protocol import BaseTool, ToolDefinition, ToolParameter, ToolResult
+from deeptutor.tools.brainstorm import brainstorm
 from deeptutor.tools.builtin.common import _PromptHintsMixin
+from deeptutor.tools.reason import reason
+from deeptutor.tools.web_search import web_search
+
+try:
+    from deeptutor.tools.paper_search_tool import ArxivSearchTool
+except ModuleNotFoundError:  # pragma: no cover - optional arxiv dependency
+    ArxivSearchTool = None
 
 
 class BrainstormTool(_PromptHintsMixin, BaseTool):
@@ -30,8 +38,6 @@ class BrainstormTool(_PromptHintsMixin, BaseTool):
         )
 
     async def execute(self, **kwargs: Any) -> ToolResult:
-        from deeptutor.tools.brainstorm import brainstorm
-
         result = await brainstorm(
             topic=kwargs.get("topic", ""),
             context=kwargs.get("context", ""),
@@ -55,8 +61,6 @@ class WebSearchTool(_PromptHintsMixin, BaseTool):
         )
 
     async def execute(self, **kwargs: Any) -> ToolResult:
-        from deeptutor.tools.web_search import web_search
-
         query = kwargs.get("query", "")
         output_dir = kwargs.get("output_dir")
         verbose = kwargs.get("verbose", False)
@@ -108,8 +112,6 @@ class ReasonTool(_PromptHintsMixin, BaseTool):
         )
 
     async def execute(self, **kwargs: Any) -> ToolResult:
-        from deeptutor.tools.reason import reason
-
         result = await reason(
             query=kwargs.get("query", ""),
             context=kwargs.get("context", ""),
@@ -155,7 +157,12 @@ class PaperSearchToolWrapper(_PromptHintsMixin, BaseTool):
         )
 
     async def execute(self, **kwargs: Any) -> ToolResult:
-        from deeptutor.tools.paper_search_tool import ArxivSearchTool
+        if ArxivSearchTool is None:
+            return ToolResult(
+                content="arXiv search is unavailable because the arxiv dependency is not installed.",
+                sources=[],
+                metadata={"provider": "arxiv", "papers": [], "error": True},
+            )
 
         try:
             papers = await ArxivSearchTool().search_papers(

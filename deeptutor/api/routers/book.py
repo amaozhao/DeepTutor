@@ -15,6 +15,8 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, Field
 
+from deeptutor.api.routers.auth import ws_auth_failed, ws_require_auth
+from deeptutor.api.security import require_ws_turn_rate_limit
 from deeptutor.book import (
     BlockType,
     BookProposal,
@@ -25,6 +27,7 @@ from deeptutor.book.models import ContentType
 from deeptutor.book.streaming import SOURCE as BOOK_SOURCE
 from deeptutor.core.stream import StreamEventType
 from deeptutor.core.stream_bus import StreamBus
+from deeptutor.multi_user.context import get_current_user, reset_current_user
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -499,9 +502,6 @@ async def book_websocket(ws: WebSocket) -> None:
         {"type": "compile_page",     "book_id": "...", "page_id": "..."}
         {"type": "regenerate_block", "book_id": "...", "page_id": "...", "block_id": "...", "params_override": {}}
     """
-    from deeptutor.api.routers.auth import ws_auth_failed, ws_require_auth
-    from deeptutor.api.security import require_ws_turn_rate_limit
-    from deeptutor.multi_user.context import get_current_user, reset_current_user
 
     user_token = await ws_require_auth(ws)
     if user_token is ws_auth_failed:

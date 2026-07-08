@@ -10,6 +10,7 @@ This is the single source of truth for agent base functionality across:
 """
 
 from abc import ABC, abstractmethod
+from dataclasses import asdict
 import inspect
 import logging
 import time
@@ -115,8 +116,6 @@ class BaseAgent(ABC):
         llm_cfg = self.config.get("llm", {})
         # Ensure llm_config is always a dict (handle case where LLMConfig object is passed)
         if hasattr(llm_cfg, "__dataclass_fields__"):
-            from dataclasses import asdict
-
             self.llm_config = asdict(llm_cfg)
         else:
             self.llm_config = llm_cfg if isinstance(llm_cfg, dict) else {}

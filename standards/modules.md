@@ -39,6 +39,11 @@ the owning boundary is better than repeated guards in routers, pages, and tools.
   bounded job and return `ToolResult`.
 - Do not add a registry/factory/plugin layer unless an existing registry
   pattern already covers the need or the task explicitly requires extension.
+- Keep Python imports at module top unless the dependency is optional, the
+  import breaks a real cycle, or the path is deliberately cold. Never use
+  wildcard imports in project code.
+- In `web/`, use `@/` for cross-directory imports. Relative imports are fine
+  inside the same local folder and in tests.
 
 ## Invariant Owners
 
@@ -59,3 +64,4 @@ the owning boundary is better than repeated guards in routers, pages, and tools.
 - Did it reuse existing services/helpers before adding new structure?
 - Are API, CLI, WebSocket, and frontend callers still aligned?
 - Are tests placed near the behavior they protect?
+- Does `python scripts/imports.py` still pass?

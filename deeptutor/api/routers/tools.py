@@ -16,16 +16,13 @@ from typing import Any, Literal
 from fastapi import APIRouter
 from pydantic import BaseModel
 
+from deeptutor.api.routers.settings import get_enabled_optional_tools
+from deeptutor.capabilities import capability_tool_owners
 from deeptutor.core.tool_protocol import BaseTool, ToolDefinition, ToolPromptHints
 from deeptutor.i18n.metadata_i18n import tool_description_i18n
-from deeptutor.services.config import resolve_search_runtime_config
-from deeptutor.services.settings.interface_settings import get_enabled_optional_tools
-from deeptutor.tools.builtin import (
-    BUILTIN_TOOL_TYPES,
-    COMING_SOON_TOOL_TYPES,
-    TOOL_ALIASES,
-    USER_TOGGLEABLE_TOOL_NAMES,
-)
+from deeptutor.multi_user.tool_access import allowed_optional_tools
+from deeptutor.tools.builtin.names import TOOL_ALIASES, USER_TOGGLEABLE_TOOL_NAMES
+from deeptutor.tools.builtin.registry import BUILTIN_TOOL_TYPES, COMING_SOON_TOOL_TYPES
 
 logger = logging.getLogger(__name__)
 
@@ -85,11 +82,6 @@ class BuiltinToolPayload(BaseModel):
     # capability on top of the shared built-in surface; the settings UI groups
     # them under their owner, below the built-in section.
     capability: str | None = None
-    # Runtime readiness is separate from the saved on/off preference.  A tool
-    # may be enabled in the composer while its backing service still needs
-    # configuration (notably web_search with provider="none").
-    available: bool = True
-    unavailable_reason: str | None = None
 
 
 class ToolsListResponse(BaseModel):
@@ -155,7 +147,6 @@ def _build_tool_payload(
         enabled = name in enabled_optional
     else:
         enabled = True
-    available, unavailable_reason = _runtime_availability(name, coming_soon=coming_soon)
     return BuiltinToolPayload(
         name=name,
         description=descriptions.get("en") or description,
@@ -170,35 +161,13 @@ def _build_tool_payload(
         enabled=enabled,
         coming_soon=coming_soon,
         capability=capability,
-        available=available,
-        unavailable_reason=unavailable_reason,
     )
-
-
-def _runtime_availability(name: str, *, coming_soon: bool = False) -> tuple[bool, str | None]:
-    if coming_soon:
-        return False, "coming_soon"
-    if name != "web_search":
-        return True, None
-    try:
-        config = resolve_search_runtime_config()
-    except Exception:
-        logger.exception("Failed to resolve web_search runtime availability")
-        return False, "search_configuration_error"
-    if config.provider == "none":
-        return False, "search_provider_not_configured"
-    if config.unsupported_provider or config.deprecated_provider:
-        return False, "search_provider_unsupported"
-    if config.missing_credentials:
-        return False, "search_credentials_missing"
-    return True, None
 
 
 @router.get("", response_model=ToolsListResponse)
 async def list_builtin_tools() -> ToolsListResponse:
     """Return all built-in tools the chat agent can invoke, plus any
     coming-soon placeholders for the settings page."""
-    from deeptutor.capabilities import capability_tool_owners
 
     enabled_optional = set(get_enabled_optional_tools())
     owners = capability_tool_owners()
@@ -239,7 +208,6 @@ async def list_builtin_tools() -> ToolsListResponse:
     # Toggleable tools outside the user's admin grant don't exist for them:
     # hidden here so the settings page and composer match what turn_runtime
     # will actually allow.
-    from deeptutor.multi_user.tool_access import allowed_optional_tools
 
     allowed = allowed_optional_tools()
     if allowed is not None:

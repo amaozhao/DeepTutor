@@ -11,6 +11,8 @@ from pydantic import BaseModel
 
 from deeptutor.services.rag.factory import DEFAULT_PROVIDER
 from deeptutor.services.rag.linked_kb import assert_path_allowed, probe_linked_folder
+from deeptutor.services.rag.pipelines.lightrag_server.config import SUPPORTED_MODES
+from deeptutor.services.rag.pipelines.lightrag_server.probe import probe_server
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -141,7 +143,6 @@ class ConnectLightRagServerRequest(BaseModel):
 @router.post("/probe-lightrag-server")
 async def probe_lightrag_server_route(payload: ProbeLightRagServerRequest):
     """Test-connect to an external LightRAG server before binding a KB to it."""
-    from deeptutor.services.rag.pipelines.lightrag_server.probe import probe_server
 
     server_url = (payload.server_url or "").strip()
     if not server_url:
@@ -153,8 +154,6 @@ async def probe_lightrag_server_route(payload: ProbeLightRagServerRequest):
 @router.post("/connect-lightrag-server")
 async def connect_lightrag_server_route(payload: ConnectLightRagServerRequest):
     """Connect an external LightRAG server as a retrieval-only knowledge base."""
-    from deeptutor.services.rag.pipelines.lightrag_server.config import SUPPORTED_MODES
-    from deeptutor.services.rag.pipelines.lightrag_server.probe import probe_server
 
     name = (payload.name or "").strip()
     server_url = (payload.server_url or "").strip()

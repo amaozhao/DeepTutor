@@ -5,12 +5,15 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+try:
+    from loguru import logger as loguru_logger
+except Exception:  # pragma: no cover - optional dependency
+    loguru_logger = None
+
 
 def install_loguru_bridge(level: int = logging.DEBUG) -> bool:
     """Forward loguru logs to stdlib if loguru is installed."""
-    try:
-        from loguru import logger as loguru_logger
-    except Exception:
+    if loguru_logger is None:
         return False
 
     def sink(message: Any) -> None:

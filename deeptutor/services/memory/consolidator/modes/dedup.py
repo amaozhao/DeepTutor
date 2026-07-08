@@ -35,7 +35,12 @@ from deeptutor.services.memory.consolidator.modes._runtime import (
     today_iso,
     write_doc_checkpoint,
 )
+from deeptutor.services.memory.consolidator.modes.merge import run_merge
 from deeptutor.services.memory.settings import load_memory_settings
+from deeptutor.services.model_selection.runtime import (
+    activate_llm_selection,
+    reset_llm_selection,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -59,11 +64,6 @@ async def run_dedup(
     llm_selection: dict | None = None,
     on_event: OnEvent | None = None,
 ) -> DedupResult:
-    from deeptutor.services.model_selection.runtime import (
-        activate_llm_selection,
-        reset_llm_selection,
-    )
-
     settings = load_memory_settings()
     iters = iterations if iterations is not None else settings.dedup.iterations
 
@@ -179,8 +179,6 @@ async def _run_dedup_inner(
     )
 
     if load_memory_settings().merge.auto_after_dedup:
-        from deeptutor.services.memory.consolidator.modes.merge import run_merge
-
         await run_merge(
             layer,
             key,

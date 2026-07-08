@@ -20,6 +20,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import os
+import shutil
+import sys
 
 from deeptutor.services.sandbox.backends import (
     BwrapBackend,
@@ -70,13 +72,10 @@ def build_backend(settings: SandboxSettings) -> SandboxBackend | None:
     bwrap actually create namespaces here) is confirmed lazily via the
     backend's ``health()`` — see :mod:`deeptutor.services.sandbox.service`.
     """
-    import sys
 
     if settings.runner_url:
         return RunnerSidecarBackend(settings.runner_url)
     if sys.platform.startswith("linux"):
-        import shutil
-
         if shutil.which("bwrap"):
             return BwrapBackend()
     if settings.allow_subprocess:

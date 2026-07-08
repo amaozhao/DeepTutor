@@ -68,7 +68,7 @@ def test_resolve_mineru_config_preserves_token_array(monkeypatch: pytest.MonkeyP
 def test_parse_pdf_to_workdir_dispatches_local(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from deeptutor.services.parsing.engines.mineru import local as pdf_parser
+    pdf_parser = __import__("deeptutor.services.parsing.engines.mineru", fromlist=["local"]).local
 
     pdf = tmp_path / "exam.pdf"
     pdf.write_bytes(b"%PDF-1.4")
@@ -87,7 +87,7 @@ def test_parse_pdf_to_workdir_dispatches_local(
 def test_parse_pdf_to_workdir_local_failure_raises(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from deeptutor.services.parsing.engines.mineru import local as pdf_parser
+    pdf_parser = __import__("deeptutor.services.parsing.engines.mineru", fromlist=["local"]).local
 
     pdf = tmp_path / "exam.pdf"
     pdf.write_bytes(b"%PDF-1.4")
@@ -255,7 +255,7 @@ def test_local_cli_version_rejects_unknown_command() -> None:
 
 
 def test_pdf_parser_streams_output_lines(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    from deeptutor.services.parsing.engines.mineru import local as pdf_parser
+    pdf_parser = __import__("deeptutor.services.parsing.engines.mineru", fromlist=["local"]).local
 
     pdf = tmp_path / "exam.pdf"
     pdf.write_bytes(b"%PDF-1.4")
@@ -452,7 +452,7 @@ class _Resp:
 
 
 def _install_fake_httpx(monkeypatch: pytest.MonkeyPatch, *, submit, poll, download) -> None:
-    from types import SimpleNamespace
+    SimpleNamespace = __import__("types", fromlist=["SimpleNamespace"]).SimpleNamespace
 
     class FakeClient:
         def __init__(self, *a, **k):  # noqa: ANN002, ANN003

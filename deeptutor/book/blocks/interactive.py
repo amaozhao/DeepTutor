@@ -16,10 +16,11 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from deeptutor.services.keypool import primary_api_key
+from deeptutor.agents.visualize.pipeline import VisualizePipeline
+from deeptutor.agents.visualize.utils import validate_visualization
+from deeptutor.services.llm.config import get_llm_config
 
 from ..models import BlockType, SourceAnchor
-from ._prompts import get_book_prompt, load_book_prompts
 from .base import BlockContext, BlockGenerator, GenerationFailure
 
 logger = logging.getLogger(__name__)
@@ -37,42 +38,28 @@ class InteractiveGenerator(BlockGenerator):
         objectives = params.get("objectives") or ctx.chapter.learning_objectives
         focus = str(params.get("focus") or "")
         interaction = str(params.get("interaction") or "interactive")
-        prompts = load_book_prompts("interactive", ctx.language)
 
         history_lines: list[str] = []
         if chapter_summary:
-            history_lines.append(
-                get_book_prompt(prompts, "context_summary")
-                .strip()
-                .format(chapter_summary=chapter_summary)
-            )
+            history_lines.append(f"Chapter summary: {chapter_summary}")
         if objectives:
-            history_lines.append(get_book_prompt(prompts, "context_objectives").strip())
+            history_lines.append("Learning objectives:")
             for obj in objectives:
                 history_lines.append(f"- {obj}")
         history_context = "\n".join(history_lines)
 
-        focus_clause = (
-            get_book_prompt(prompts, "focus_clause").rstrip().format(focus=focus) if focus else ""
-        )
+        focus_clause = f" focusing on {focus}" if focus else ""
         user_input = (
-            get_book_prompt(prompts, "brief")
-            .strip()
-            .format(
-                interaction=interaction,
-                chapter_title=chapter_title,
-                focus_clause=focus_clause,
-            )
+            f"Build an {interaction} HTML page for the chapter "
+            f'"{chapter_title}"{focus_clause}. The page should let the learner '
+            "manipulate state, drag/click controls, or step through a guided "
+            "demo to internalise the concept."
         )
 
         try:
-            from deeptutor.agents.visualize.pipeline import VisualizePipeline
-            from deeptutor.agents.visualize.utils import validate_visualization
-            from deeptutor.services.llm.config import get_llm_config
-
             llm_config = get_llm_config()
             pipeline = VisualizePipeline(
-                api_key=primary_api_key(llm_config.api_key),
+                api_key=llm_config.api_key,
                 base_url=llm_config.base_url,
                 api_version=llm_config.api_version,
                 language=ctx.language,

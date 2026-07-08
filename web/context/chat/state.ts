@@ -1,13 +1,9 @@
-import { readStoredLanguage } from '../app-shell-storage'
-import type { BookReferencePayload } from '../../lib/book-references'
-import {
-  isNarrationMarker,
-  recomputeAnswerContent,
-  shouldAppendEventContent,
-} from '../../lib/stream'
-import { nextOptimisticId } from '../../lib/optimistic-id'
-import { reconcileTurnIds } from '../../lib/turn-reconcile'
-import type { LLMSelection, StreamEvent } from '../../lib/unified-ws'
+import { readStoredLanguage } from '@/context/app-shell-storage'
+import type { BookReferencePayload } from '@/lib/book-references'
+import { isNarrationMarker, recomputeAnswerContent, shouldAppendEventContent } from '@/lib/stream'
+import { nextOptimisticId } from '@/lib/optimistic-id'
+import { reconcileTurnIds } from '@/lib/turn-reconcile'
+import type { LLMSelection, StreamEvent } from '@/lib/unified-ws'
 
 export type SessionRuntimeStatus =
   'idle' | 'running' | 'completed' | 'failed' | 'cancelled' | 'rejected'

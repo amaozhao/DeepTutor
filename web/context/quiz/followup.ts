@@ -1,5 +1,5 @@
-import { shouldAppendEventContent } from "../../lib/stream";
-import type { StreamEvent } from "../../lib/unified-ws";
+import { shouldAppendEventContent } from "@/lib/stream";
+import type { StreamEvent } from "@/lib/unified-ws";
 
 export interface FollowupMessage {
   role: "user" | "assistant" | "system";

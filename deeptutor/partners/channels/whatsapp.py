@@ -8,6 +8,7 @@ from typing import Any
 
 from loguru import logger
 from pydantic import Field
+import websockets
 
 from deeptutor.partners.bus.events import OutboundMessage
 from deeptutor.partners.bus.queue import MessageBus
@@ -49,8 +50,6 @@ class WhatsAppChannel(BaseChannel):
 
     async def start(self) -> None:
         """Start the WhatsApp channel by connecting to the bridge."""
-        import websockets
-
         bridge_url = self.config.bridge_url
 
         logger.info("Connecting to WhatsApp bridge at {}...", bridge_url)

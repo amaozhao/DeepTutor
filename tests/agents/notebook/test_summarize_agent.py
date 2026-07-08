@@ -28,7 +28,9 @@ def test_summarize_agent_stores_extra_headers(monkeypatch) -> None:
         lambda: cfg,
     )
 
-    from deeptutor.agents.notebook.summarize_agent import NotebookSummarizeAgent
+    NotebookSummarizeAgent = __import__(
+        "deeptutor.agents.notebook.summarize_agent", fromlist=["NotebookSummarizeAgent"]
+    ).NotebookSummarizeAgent
 
     agent = NotebookSummarizeAgent(language="en")
     assert agent.extra_headers == {"X-Gateway": "prod"}
@@ -42,7 +44,9 @@ def test_summarize_agent_empty_extra_headers(monkeypatch) -> None:
         lambda: cfg,
     )
 
-    from deeptutor.agents.notebook.summarize_agent import NotebookSummarizeAgent
+    NotebookSummarizeAgent = __import__(
+        "deeptutor.agents.notebook.summarize_agent", fromlist=["NotebookSummarizeAgent"]
+    ).NotebookSummarizeAgent
 
     agent = NotebookSummarizeAgent(language="en")
     assert agent.extra_headers == {}
@@ -67,7 +71,9 @@ async def test_summarize_agent_forwards_extra_headers(monkeypatch) -> None:
         _fake_llm_stream,
     )
 
-    from deeptutor.agents.notebook.summarize_agent import NotebookSummarizeAgent
+    NotebookSummarizeAgent = __import__(
+        "deeptutor.agents.notebook.summarize_agent", fromlist=["NotebookSummarizeAgent"]
+    ).NotebookSummarizeAgent
 
     agent = NotebookSummarizeAgent(language="en")
     chunks: list[str] = []
@@ -102,7 +108,9 @@ async def test_summarize_agent_omits_extra_headers_when_empty(monkeypatch) -> No
         _fake_llm_stream,
     )
 
-    from deeptutor.agents.notebook.summarize_agent import NotebookSummarizeAgent
+    NotebookSummarizeAgent = __import__(
+        "deeptutor.agents.notebook.summarize_agent", fromlist=["NotebookSummarizeAgent"]
+    ).NotebookSummarizeAgent
 
     agent = NotebookSummarizeAgent(language="en")
     async for _ in agent.stream_summary(

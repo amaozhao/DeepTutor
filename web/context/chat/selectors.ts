@@ -4,7 +4,7 @@ import {
   type ProviderState,
   type SessionEntry,
   type SessionStatusSnapshot,
-} from "./state";
+} from "@/context/chat/state";
 
 export type SelectedSessionRecord = {
   key: string;

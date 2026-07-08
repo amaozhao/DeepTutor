@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import importlib
 from typing import Any
 
 __all__ = [
@@ -14,15 +15,9 @@ __all__ = [
 
 def __getattr__(name: str) -> Any:
     if name == "DocumentAdder":
-        from .add_documents import DocumentAdder
-
-        return DocumentAdder
+        return importlib.import_module(f"{__name__}.add_documents").DocumentAdder
     if name == "KnowledgeBaseInitializer":
-        from .initializer import KnowledgeBaseInitializer
-
-        return KnowledgeBaseInitializer
+        return importlib.import_module(f"{__name__}.initializer").KnowledgeBaseInitializer
     if name == "KnowledgeBaseManager":
-        from .manager import KnowledgeBaseManager
-
-        return KnowledgeBaseManager
+        return importlib.import_module(f"{__name__}.manager").KnowledgeBaseManager
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

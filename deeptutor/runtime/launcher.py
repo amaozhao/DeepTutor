@@ -8,7 +8,6 @@ import hashlib
 import json
 import os
 from pathlib import Path
-import secrets
 import shutil
 import signal
 import socket
@@ -16,21 +15,30 @@ import subprocess
 import sys
 import threading
 import time
-from typing import Any, Callable
+from typing import Callable
 from urllib import error as urlerror
 from urllib import parse as urlparse
 from urllib import request as urlrequest
 
 from deeptutor.runtime.banner import labels_for, print_banner, resolve_language
-from deeptutor.runtime.home import (
-    DEEPTUTOR_HOME_ENV,
-    PACKAGE_ROOT,
-    get_runtime_home,
-    validate_runtime_home,
+from deeptutor.runtime.home import DEEPTUTOR_HOME_ENV, PACKAGE_ROOT, get_runtime_home
+from deeptutor.services.config import (
+    HTTP_KEEP_ALIVE_TIMEOUT,
+    ensure_runtime_settings_files,
+    export_runtime_settings_to_env,
+    get_ws_max_size,
+    load_auth_settings,
+    load_launch_settings,
 )
-from deeptutor.runtime.memory_probe import SUPERVISOR_PID_ENV
-from deeptutor.runtime.process import is_process_alive
-from deeptutor.services.app_update import LAUNCHER_PID_ENV
+from deeptutor.services.config.model_catalog import ModelCatalogService
+from deeptutor.services.config.runtime_settings import RuntimeSettingsService
+from deeptutor.services.path_service import PathService
+from deeptutor.services.setup import init_user_directories
+
+try:
+    import deeptutor_web
+except ImportError:  # pragma: no cover - packaged web assets optional
+    deeptutor_web = None
 
 BACKEND_READY_TIMEOUT = 60
 FRONTEND_READY_TIMEOUT = 120
@@ -46,10 +54,6 @@ SOURCE_BUILD_EXCLUDED_DIRS = {
     "test-results",
     "coverage",
 }
-LOOPBACK_HOSTS = ("127.0.0.1", "::1")
-DETACHED_WORKER_ENV = "DEEPTUTOR_DETACHED_WORKER"
-DETACHED_TOKEN_ENV = "DEEPTUTOR_DETACHED_TOKEN"
-DETACHED_RUNTIME_DIR = Path("data") / "user" / "runtime"
 
 
 def _apply_single_user_allocator_env(env: dict[str, str]) -> None:
@@ -96,13 +100,6 @@ class ExistingFrontendRuntime:
     lock_path: Path
 
 
-@dataclass(frozen=True, slots=True)
-class DetachedLauncherPaths:
-    state: Path
-    stop: Path
-    log: Path
-
-
 def _log(message: str) -> None:
     print(message, flush=True)
 
@@ -110,20 +107,14 @@ def _log(message: str) -> None:
 def _reset_runtime_singletons() -> None:
     """Make a just-selected DEEPTUTOR_HOME visible to path/config singletons."""
     try:
-        from deeptutor.services.path_service import PathService
-
         PathService.reset_instance()
     except Exception:
         pass
     try:
-        from deeptutor.services.config.runtime_settings import RuntimeSettingsService
-
         RuntimeSettingsService._instances.clear()
     except Exception:
         pass
     try:
-        from deeptutor.services.config.model_catalog import ModelCatalogService
-
         ModelCatalogService._instances.clear()
     except Exception:
         pass
@@ -139,46 +130,15 @@ def _get_pgid(pid: int | None) -> int | None:
 
 
 def _is_pid_alive(pid: int | None) -> bool:
-    return is_process_alive(pid)
-
-
-def _detached_launcher_paths(runtime_home: Path) -> DetachedLauncherPaths:
-    root = runtime_home / DETACHED_RUNTIME_DIR
-    return DetachedLauncherPaths(
-        state=root / "launcher.json",
-        stop=root / "launcher.stop",
-        log=root / "launcher.log",
-    )
-
-
-def _read_detached_state(paths: DetachedLauncherPaths) -> dict[str, Any] | None:
+    if pid is None:
+        return False
     try:
-        payload = json.loads(paths.state.read_text(encoding="utf-8"))
-    except (OSError, ValueError, TypeError, json.JSONDecodeError):
-        return None
-    return payload if isinstance(payload, dict) else None
-
-
-def _write_detached_state(paths: DetachedLauncherPaths, payload: dict[str, Any]) -> None:
-    from deeptutor.services.file_io import atomic_write_json
-
-    paths.state.parent.mkdir(parents=True, exist_ok=True)
-    atomic_write_json(paths.state, payload)
-
-
-def _detached_stop_requested(paths: DetachedLauncherPaths, token: str) -> bool:
-    try:
-        return paths.stop.read_text(encoding="utf-8").strip() == token
+        os.kill(pid, 0)
+    except PermissionError:
+        return True
     except OSError:
         return False
-
-
-def _clear_detached_runtime(paths: DetachedLauncherPaths, token: str) -> None:
-    state = _read_detached_state(paths)
-    if state is not None and state.get("token") == token:
-        paths.state.unlink(missing_ok=True)
-    if _detached_stop_requested(paths, token):
-        paths.stop.unlink(missing_ok=True)
+    return True
 
 
 def _send_tree_signal(pid: int | None, pgid: int | None, sig: signal.Signals | int) -> None:
@@ -262,16 +222,12 @@ def _spawn(command: list[str], *, cwd: Path, env: dict[str, str], name: str) -> 
     return ManagedProcess(name=name, process=process, pgid=_get_pgid(process.pid))
 
 
-def _host_accepts_connection(host: str, port: int) -> bool:
+def _port_accepts_connection(port: int) -> bool:
     try:
-        with socket.create_connection((host, port), timeout=0.25):
+        with socket.create_connection(("127.0.0.1", port), timeout=0.25):
             return True
     except OSError:
         return False
-
-
-def _port_accepts_connection(port: int) -> bool:
-    return any(_host_accepts_connection(host, port) for host in LOOPBACK_HOSTS)
 
 
 def _port_listeners(port: int) -> list[tuple[int, str]]:
@@ -393,8 +349,6 @@ def _prompt_conflict_choice() -> str:
 
 
 def _persist_ports(settings_dir: Path, backend_port: int, frontend_port: int) -> Path:
-    from deeptutor.services.config.runtime_settings import RuntimeSettingsService
-
     service = RuntimeSettingsService.get_instance(settings_dir)
     system = service.load_system(include_process_overrides=False)
     system["backend_port"] = backend_port
@@ -538,9 +492,7 @@ def _http_ready(url: str, *, timeout: float) -> bool:
 
 
 def _packaged_web_dir() -> Path | None:
-    try:
-        import deeptutor_web
-    except ImportError:
+    if deeptutor_web is None:
         return None
     path = Path(deeptutor_web.__file__).resolve().parent
     return path if (path / "server.js").exists() else None
@@ -963,11 +915,7 @@ def _stop_unhealthy_source_frontend(frontend: ExistingFrontendRuntime) -> bool:
     return not _http_ready(frontend.url, timeout=0.5)
 
 
-def _install_signal_handlers(
-    request_shutdown: Callable[[str | None], None],
-    *,
-    ignore_sigint: bool = False,
-) -> None:
+def _install_signal_handlers(request_shutdown: Callable[[str | None], None]) -> None:
     def _handler(signum: int, _frame) -> None:
         try:
             signal_name = signal.Signals(signum).name
@@ -975,23 +923,7 @@ def _install_signal_handlers(
             signal_name = str(signum)
         request_shutdown(signal_name)
 
-    if ignore_sigint:
-        try:
-            signal.signal(signal.SIGINT, signal.SIG_IGN)
-        except (OSError, ValueError):
-            pass
-
-    sig_names = (
-        ("SIGTERM", "SIGHUP", "SIGBREAK")
-        if ignore_sigint
-        else (
-            "SIGINT",
-            "SIGTERM",
-            "SIGHUP",
-            "SIGBREAK",
-        )
-    )
-    for sig_name in sig_names:
+    for sig_name in ("SIGINT", "SIGTERM", "SIGHUP", "SIGBREAK"):
         sig = getattr(signal, sig_name, None)
         if sig is None:
             continue
@@ -1001,257 +933,26 @@ def _install_signal_handlers(
             continue
 
 
-def _open_frontend_in_browser(url: str) -> None:
-    """Best-effort browser launch; the printed URL remains the fallback."""
-
-    try:
-        import webbrowser
-
-        webbrowser.open(url)
-    except Exception:
-        return
-
-
-def _launch_detached(
-    runtime_home: Path,
-    *,
-    dev: bool,
-    open_browser: bool,
-) -> None:
-    """Start a launcher outside the caller's console process group."""
-
-    paths = _detached_launcher_paths(runtime_home)
-    existing = _read_detached_state(paths)
-    existing_pid = _coerce_pid(existing.get("pid")) if existing is not None else None
-    if _is_pid_alive(existing_pid):
-        _log(_t("start.detached_already_running", pid=existing_pid, log=paths.log))
-        return
-
-    paths.state.unlink(missing_ok=True)
-    paths.stop.unlink(missing_ok=True)
-    paths.state.parent.mkdir(parents=True, exist_ok=True)
-    token = secrets.token_hex(16)
-    command = [
-        sys.executable,
-        "-m",
-        "deeptutor_cli.main",
-        "start",
-        "--home",
-        str(runtime_home.resolve()),
-    ]
-    if dev:
-        command.append("--dev")
-    if not open_browser:
-        command.append("--no-browser")
-
-    env = os.environ.copy()
-    env[DEEPTUTOR_HOME_ENV] = str(runtime_home.resolve())
-    env[DETACHED_WORKER_ENV] = "1"
-    env[DETACHED_TOKEN_ENV] = token
-    kwargs: dict[str, Any] = {
-        "cwd": str(runtime_home),
-        "env": env,
-        "stdin": subprocess.DEVNULL,
-        "stderr": subprocess.STDOUT,
-        "close_fds": True,
-        "shell": False,
-    }
-    if sys.platform == "win32":
-        kwargs["creationflags"] = (
-            subprocess.CREATE_NEW_PROCESS_GROUP  # type: ignore[attr-defined]
-            | subprocess.DETACHED_PROCESS  # type: ignore[attr-defined]
-        )
-    else:
-        kwargs["start_new_session"] = True
-
-    with paths.log.open("a", encoding="utf-8") as log:
-        process = subprocess.Popen(command, stdout=log, **kwargs)  # nosec B603
-
-    _write_detached_state(
-        paths,
-        {
-            "version": 1,
-            "token": token,
-            "pid": process.pid,
-            "status": "starting",
-            "home": str(runtime_home.resolve()),
-            "log": str(paths.log.resolve()),
-            "dev": dev,
-            "started_at": time.time(),
-        },
-    )
-    _log(_t("start.detached_started", pid=process.pid))
-    _log(_t("start.detached_log", path=paths.log))
-    _log(_t("start.detached_stop_hint", home=runtime_home.resolve()))
-
-
-def _mark_detached_ready(
-    paths: DetachedLauncherPaths,
-    *,
-    token: str,
-    frontend_url: str,
-    backend_port: int,
-    frontend_port: int,
-) -> None:
-    state = _read_detached_state(paths)
-    if state is None or state.get("token") != token:
-        return
-    state.update(
-        {
-            "status": "ready",
-            "frontend_url": frontend_url,
-            "backend_port": backend_port,
-            "frontend_port": frontend_port,
-            "ready_at": time.time(),
-        }
-    )
-    _write_detached_state(paths, state)
-
-
-def stop(home: str | Path | None = None, *, timeout: float = 15) -> bool:
-    """Request a graceful stop from a detached DeepTutor launcher."""
-
-    runtime_home = get_runtime_home(home)
-    try:
-        validate_runtime_home(runtime_home)
-    except ValueError as exc:
-        raise SystemExit(str(exc)) from exc
-
-    global _ACTIVE_LABELS
-    _ACTIVE_LABELS = labels_for(resolve_language())
-    paths = _detached_launcher_paths(runtime_home)
-    state = _read_detached_state(paths)
-    token = str(state.get("token") or "") if state is not None else ""
-    pid = _coerce_pid(state.get("pid")) if state is not None else None
-    if not token or not _is_pid_alive(pid):
-        paths.state.unlink(missing_ok=True)
-        paths.stop.unlink(missing_ok=True)
-        _log(_t("stop.not_running"))
-        return False
-
-    paths.stop.parent.mkdir(parents=True, exist_ok=True)
-    paths.stop.write_text(token, encoding="utf-8")
-    _log(_t("stop.requested", pid=pid))
-    deadline = time.monotonic() + timeout
-    while time.monotonic() < deadline:
-        current = _read_detached_state(paths)
-        if current is None or current.get("token") != token or not _is_pid_alive(pid):
-            _clear_detached_runtime(paths, token)
-            _log(_t("stop.complete"))
-            return True
-        time.sleep(0.1)
-    raise SystemExit(_t("stop.timeout", pid=pid, log=paths.log))
-
-
-def _handoff_pending_update(
-    runtime_home: Path,
-    *,
-    restart_argv: list[str],
-    parent_pid: int | None = None,
-    worker_launcher: Callable[[Path], None] | None = None,
-) -> bool:
-    """Hand a pending Web update to a detached worker before shutdown."""
-
-    from deeptutor.services.app_update import (
-        UpdateJobStore,
-        launch_update_worker,
-        update_store_root,
-    )
-
-    store = UpdateJobStore(update_store_root(runtime_home))
-    try:
-        job = store.load()
-    except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError):
-        return False
-    if job.status != "pending":
-        return False
-    try:
-        store.prepare_handoff(
-            job.id,
-            home=runtime_home,
-            restart_argv=restart_argv,
-        )
-        if worker_launcher is not None:
-            worker_launcher(store.root)
-        else:
-            launch_update_worker(store.root, parent_pid=parent_pid or os.getpid())
-    except Exception as exc:
-        try:
-            store.mark_failed(job.id, f"Launcher handoff failed: {exc}")
-        except Exception:
-            pass
-        return False
-    return True
-
-
-def _complete_restarted_update(runtime_home: Path) -> bool:
-    """Mark an update successful only after both managed servers are ready."""
-
-    from deeptutor.services.app_update import UpdateJobStore, update_store_root
-
-    store = UpdateJobStore(update_store_root(runtime_home))
-    try:
-        job = store.load()
-    except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError):
-        return False
-    if job.status != "restarting" or job.restart_home != str(runtime_home.resolve()):
-        return False
-    store.mark_succeeded(job.id)
-    return True
-
-
-def start(
-    home: str | Path | None = None,
-    *,
-    dev: bool = False,
-    detach: bool = False,
-    open_browser: bool = True,
-) -> None:
+def start(home: str | Path | None = None, *, dev: bool = False) -> None:
     _relax_console_encoding()
     runtime_home = get_runtime_home(home)
-    try:
-        validate_runtime_home(runtime_home)
-    except ValueError as exc:
-        raise SystemExit(str(exc)) from exc
     runtime_home.mkdir(parents=True, exist_ok=True)
-
-    global _ACTIVE_LABELS
-    language = resolve_language()
-    _ACTIVE_LABELS = labels_for(language)
-    if detach:
-        _launch_detached(runtime_home, dev=dev, open_browser=open_browser)
-        return
-
-    detached_token = os.getenv(DETACHED_TOKEN_ENV, "").strip()
-    detached_worker = os.getenv(DETACHED_WORKER_ENV) == "1" and bool(detached_token)
-    detached_paths = _detached_launcher_paths(runtime_home) if detached_worker else None
-    restart_argv = ["start", "--home", str(runtime_home.resolve())]
-    if dev:
-        restart_argv.append("--dev")
     os.environ[DEEPTUTOR_HOME_ENV] = str(runtime_home)
     _reset_runtime_singletons()
-
-    from deeptutor.services.config import (
-        HTTP_KEEP_ALIVE_TIMEOUT,
-        ensure_runtime_settings_files,
-        export_runtime_settings_to_env,
-        get_ws_max_size,
-        load_auth_settings,
-        load_launch_settings,
-        load_system_settings,
-    )
-    from deeptutor.services.setup import init_user_directories
 
     init_user_directories(runtime_home)
     ensure_runtime_settings_files()
     settings = load_launch_settings(runtime_home)
-    backend_workers = max(1, int(load_system_settings().get("backend_workers") or 1))
     runtime_env = export_runtime_settings_to_env(overwrite=True)
     auth_enabled = bool(load_auth_settings()["enabled"])
 
+    global _ACTIVE_LABELS
+    language = resolve_language()
+    _ACTIVE_LABELS = labels_for(language)
+
     backend_port = settings.backend_port
     frontend_port = settings.frontend_port
-    backend_url = f"http://127.0.0.1:{backend_port}"
+    backend_url = f"http://localhost:{backend_port}"
     api_base = (
         runtime_env.get("NEXT_PUBLIC_API_BASE_EXTERNAL")
         or runtime_env.get("NEXT_PUBLIC_API_BASE")
@@ -1287,7 +988,7 @@ def start(
     if (resolved_backend, resolved_frontend) != (backend_port, frontend_port):
         backend_port, frontend_port = resolved_backend, resolved_frontend
         runtime_env = export_runtime_settings_to_env(overwrite=True)
-        backend_url = f"http://127.0.0.1:{backend_port}"
+        backend_url = f"http://localhost:{backend_port}"
         api_base = (
             runtime_env.get("NEXT_PUBLIC_API_BASE_EXTERNAL")
             or runtime_env.get("NEXT_PUBLIC_API_BASE")
@@ -1328,29 +1029,15 @@ def start(
     # The Next.js middleware (web/proxy.ts) runs in the frontend's Node runtime
     # and reads these at request time to forward /api/* and /ws/* to the backend
     # and to gate the login redirect. The browser uses relative paths, so the
-    # frontend server reaches the backend on the IPv4 loopback at the resolved port —
+    # frontend server reaches the backend on localhost at the resolved port —
     # use backend_url (not api_base, which may be an external browser URL).
     common_env["DEEPTUTOR_API_BASE_URL"] = backend_url
     common_env["DEEPTUTOR_AUTH_ENABLED"] = "true" if auth_enabled else "false"
     common_env["PYTHONUNBUFFERED"] = "1"
     common_env["PYTHONIOENCODING"] = "utf-8:replace"
-    # Anchor for deeptutor.runtime.memory_probe: the backend and the frontend
-    # are siblings under this process, so only the supervisor's pid identifies
-    # the tree that is "DeepTutor". Without it the probe can only measure the
-    # backend itself.
-    common_env[SUPERVISOR_PID_ENV] = str(os.getpid())
-    common_env[LAUNCHER_PID_ENV] = str(os.getpid())
-    common_env.pop(DETACHED_WORKER_ENV, None)
-    common_env.pop(DETACHED_TOKEN_ENV, None)
     _apply_single_user_allocator_env(common_env)
-    # ``DEEPTUTOR_NEXT_DIST_DIR`` is a build-only override.  In particular it
-    # must not leak into the backend: commands launched by agent tools inherit
-    # the backend environment, and an ordinary ``npm run build`` would then
-    # clean the live ``.next-deeptutor`` tree out from under the standalone
-    # server.  The generated server.js already embeds its distDir in
-    # ``__NEXT_PRIVATE_STANDALONE_CONFIG``, so neither long-running child needs
-    # this variable after the build has completed.
-    common_env.pop("DEEPTUTOR_NEXT_DIST_DIR", None)
+    if frontend.kind == "source-production":
+        common_env["DEEPTUTOR_NEXT_DIST_DIR"] = SOURCE_PRODUCTION_DIST_DIR
 
     backend_cmd = [
         sys.executable,
@@ -1365,7 +1052,7 @@ def start(
         "info",
         # Disable uvicorn's per-request access log. The selective_access_log
         # middleware (deeptutor/api/main.py) surfaces only non-200s, so routine
-        # 200 polling (/settings, /tools, /knowledge-bases, ...) stays out of the
+        # 200 polling (/settings, /tools, /knowledge/list, ...) stays out of the
         # logs — matching run_server.py's access_log=False.
         "--no-access-log",
         # Chat attachments ride the unified WS as base64 in one JSON message;
@@ -1381,8 +1068,6 @@ def start(
         # ECONNRESET ("Failed to proxy ... socket hang up" -> 500).
         "--timeout-keep-alive",
         str(HTTP_KEEP_ALIVE_TIMEOUT),
-        "--workers",
-        str(backend_workers),
     ]
 
     processes: list[ManagedProcess] = []
@@ -1400,15 +1085,6 @@ def start(
         if signal_name:
             _log(_t("start.received_signal", signal=signal_name))
 
-    def should_stop() -> bool:
-        if (
-            not shutdown_requested
-            and detached_paths is not None
-            and _detached_stop_requested(detached_paths, detached_token)
-        ):
-            request_shutdown("STOP")
-        return shutdown_requested
-
     def cleanup() -> None:
         nonlocal cleanup_started
         if cleanup_started:
@@ -1416,13 +1092,8 @@ def start(
         cleanup_started = True
         _terminate(web)
         _terminate(backend)
-        if detached_paths is not None:
-            _clear_detached_runtime(detached_paths, detached_token)
 
-    _install_signal_handlers(
-        request_shutdown,
-        ignore_sigint=detached_worker and sys.platform == "win32",
-    )
+    _install_signal_handlers(request_shutdown)
     atexit.register(cleanup)
 
     try:
@@ -1434,10 +1105,8 @@ def start(
             url=f"http://127.0.0.1:{backend_port}/",
             process=backend,
             timeout=BACKEND_READY_TIMEOUT,
-            should_stop=should_stop,
+            should_stop=lambda: shutdown_requested,
         )
-        if should_stop():
-            return
 
         if existing_frontend is not None:
             pid = existing_frontend.pid if existing_frontend.pid is not None else "unknown"
@@ -1447,7 +1116,7 @@ def start(
                 url=frontend_url,
                 process=None,
                 timeout=FRONTEND_READY_TIMEOUT,
-                should_stop=should_stop,
+                should_stop=lambda: shutdown_requested,
             )
         else:
             _log(_t("start.starting_frontend"))
@@ -1458,27 +1127,11 @@ def start(
                 url=f"http://127.0.0.1:{frontend_port}/",
                 process=web,
                 timeout=FRONTEND_READY_TIMEOUT,
-                should_stop=should_stop,
-            )
-        if should_stop():
-            return
-        _complete_restarted_update(runtime_home)
-        if detached_paths is not None:
-            _mark_detached_ready(
-                detached_paths,
-                token=detached_token,
-                frontend_url=frontend_url,
-                backend_port=backend_port,
-                frontend_port=frontend_port,
+                should_stop=lambda: shutdown_requested,
             )
         _log(_t("start.open_in_browser", url=frontend_url))
-        if open_browser:
-            _open_frontend_in_browser(frontend_url)
 
-        while not should_stop():
-            if _handoff_pending_update(runtime_home, restart_argv=restart_argv):
-                shutdown_requested = True
-                break
+        while not shutdown_requested:
             for proc in processes:
                 if proc.process.poll() is not None:
                     _log(_t("start.exited", name=proc.name, code=proc.process.returncode))
@@ -1495,4 +1148,4 @@ def start(
         raise SystemExit(exit_code)
 
 
-__all__ = ["start", "stop"]
+__all__ = ["start"]

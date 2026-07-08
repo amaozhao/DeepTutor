@@ -17,6 +17,7 @@ in place by :func:`migrate_legacy_multi_user_tree`.
 from __future__ import annotations
 
 from contextlib import contextmanager
+import importlib
 import logging
 import os
 from pathlib import Path
@@ -28,6 +29,7 @@ from typing import Iterator
 from deeptutor.runtime.home import get_runtime_home
 from deeptutor.services.path_service import PathService
 
+from .current import get_current_user_or_none, reset_current_user, set_current_user
 from .models import LOCAL_ADMIN_ID, LOCAL_ADMIN_USERNAME, CurrentUser, UserScope
 
 logger = logging.getLogger(__name__)
@@ -151,8 +153,6 @@ def get_admin_path_service() -> PathService:
 
 
 def get_current_path_service() -> PathService:
-    from .context import get_current_user_or_none
-
     user = get_current_user_or_none()
     if user is None:
         return PathService.get_instance()
@@ -173,10 +173,9 @@ def _resolve_owner() -> tuple[str, PathService]:
     "give up and assume admin" fallback fails open onto the most privileged
     account there is).
     """
-    from deeptutor.services.partners.scope import is_partner_user_id
-
-    from .context import get_current_user_or_none
-
+    is_partner_user_id = importlib.import_module(
+        "deeptutor.services.partners.scope"
+    ).is_partner_user_id
     user = get_current_user_or_none()
     if user is None:
         # No request scope: CLI runs and background jobs act as the deployment.
@@ -252,8 +251,6 @@ def current_owner_id() -> str:
 
 @contextmanager
 def user_context(user: CurrentUser) -> Iterator[None]:
-    from .context import reset_current_user, set_current_user
-
     token = set_current_user(user)
     try:
         yield

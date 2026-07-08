@@ -10,7 +10,11 @@ WEBP_BYTES = b"RIFF\x00\x00\x00\x00WEBP" + b"\x00" * 16
 
 
 def test_set_avatar_persists_through_normalisation(mu_isolated_root, seed_user):
-    from deeptutor.multi_user.identity import list_user_info, load_users, set_avatar
+    list_user_info = __import__(
+        "deeptutor.multi_user.identity", fromlist=["list_user_info"]
+    ).list_user_info
+    load_users = __import__("deeptutor.multi_user.identity", fromlist=["load_users"]).load_users
+    set_avatar = __import__("deeptutor.multi_user.identity", fromlist=["set_avatar"]).set_avatar
 
     seed_user("alice")
     assert set_avatar("alice", "icon:sparkles:violet")
@@ -23,7 +27,9 @@ def test_set_avatar_persists_through_normalisation(mu_isolated_root, seed_user):
 
 
 def test_save_user_preserves_existing_avatar(mu_isolated_root, seed_user):
-    from deeptutor.multi_user.identity import load_users, save_user, set_avatar
+    load_users = __import__("deeptutor.multi_user.identity", fromlist=["load_users"]).load_users
+    save_user = __import__("deeptutor.multi_user.identity", fromlist=["save_user"]).save_user
+    set_avatar = __import__("deeptutor.multi_user.identity", fromlist=["set_avatar"]).set_avatar
 
     seed_user("alice")
     set_avatar("alice", "img:3")
@@ -34,14 +40,16 @@ def test_save_user_preserves_existing_avatar(mu_isolated_root, seed_user):
 
 
 def test_set_avatar_unknown_user_returns_false(mu_isolated_root, seed_user):
-    from deeptutor.multi_user.identity import set_avatar
+    set_avatar = __import__("deeptutor.multi_user.identity", fromlist=["set_avatar"]).set_avatar
 
     seed_user("alice")
     assert not set_avatar("nobody", "icon:leaf:teal")
 
 
 def test_records_without_avatar_default_to_empty(mu_isolated_root, seed_user):
-    from deeptutor.multi_user.identity import list_user_info
+    list_user_info = __import__(
+        "deeptutor.multi_user.identity", fromlist=["list_user_info"]
+    ).list_user_info
 
     seed_user("alice")
     users = {u["username"]: u for u in list_user_info()}
@@ -49,11 +57,15 @@ def test_records_without_avatar_default_to_empty(mu_isolated_root, seed_user):
 
 
 def test_avatar_file_roundtrip_and_extension_replacement(mu_isolated_root):
-    from deeptutor.multi_user.identity import (
-        delete_avatar_file,
-        get_avatar_file,
-        save_avatar_file,
-    )
+    delete_avatar_file = __import__(
+        "deeptutor.multi_user.identity", fromlist=["delete_avatar_file"]
+    ).delete_avatar_file
+    get_avatar_file = __import__(
+        "deeptutor.multi_user.identity", fromlist=["get_avatar_file"]
+    ).get_avatar_file
+    save_avatar_file = __import__(
+        "deeptutor.multi_user.identity", fromlist=["save_avatar_file"]
+    ).save_avatar_file
 
     assert get_avatar_file("u_abc") is None
 
@@ -71,14 +83,16 @@ def test_avatar_file_roundtrip_and_extension_replacement(mu_isolated_root):
 
 
 def test_save_avatar_file_rejects_unknown_extension(mu_isolated_root):
-    from deeptutor.multi_user.identity import save_avatar_file
+    save_avatar_file = __import__(
+        "deeptutor.multi_user.identity", fromlist=["save_avatar_file"]
+    ).save_avatar_file
 
     with pytest.raises(ValueError):
         save_avatar_file("u_abc", b"<svg/>", "svg")
 
 
 def test_sniff_image_detects_supported_formats_only():
-    from deeptutor.api.routers.auth import _sniff_image
+    _sniff_image = __import__("deeptutor.api.routers.auth", fromlist=["_sniff_image"])._sniff_image
 
     assert _sniff_image(PNG_BYTES) == "png"
     assert _sniff_image(JPG_BYTES) == "jpg"
@@ -90,7 +104,9 @@ def test_sniff_image_detects_supported_formats_only():
 
 
 def test_update_profile_request_validates_marker():
-    from deeptutor.api.routers.auth import UpdateProfileRequest
+    UpdateProfileRequest = __import__(
+        "deeptutor.api.routers.auth", fromlist=["UpdateProfileRequest"]
+    ).UpdateProfileRequest
 
     assert UpdateProfileRequest(avatar="").avatar == ""
     assert UpdateProfileRequest(avatar="icon:sparkles:violet").avatar == "icon:sparkles:violet"

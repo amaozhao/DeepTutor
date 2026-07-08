@@ -37,15 +37,18 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 
+from deeptutor.api.routers.auth import ws_auth_failed, ws_require_auth
+from deeptutor.api.security import require_ws_turn_rate_limit
+from deeptutor.core.stream_bus import get_bus
+from deeptutor.multi_user.context import get_current_user, reset_current_user
+from deeptutor.services.session import get_turn_runtime_manager
+
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
 @router.websocket("/ws")
 async def unified_websocket(ws: WebSocket) -> None:
-    from deeptutor.api.routers.auth import ws_auth_failed, ws_require_auth
-    from deeptutor.api.security import require_ws_turn_rate_limit
-    from deeptutor.multi_user.context import get_current_user, reset_current_user
 
     user_token = await ws_require_auth(ws)
     if user_token is ws_auth_failed:
@@ -87,7 +90,6 @@ async def unified_websocket(ws: WebSocket) -> None:
         return True
 
     async def subscribe_turn(turn_id: str, after_seq: int = 0) -> None:
-        from deeptutor.services.session import get_turn_runtime_manager
 
         async def _forward() -> None:
             runtime = get_turn_runtime_manager()
@@ -98,7 +100,6 @@ async def unified_websocket(ws: WebSocket) -> None:
         subscription_tasks[turn_id] = asyncio.create_task(_forward())
 
     async def subscribe_session(session_id: str, after_seq: int = 0) -> None:
-        from deeptutor.services.session import get_turn_runtime_manager
 
         async def _forward() -> None:
             runtime = get_turn_runtime_manager()
@@ -123,7 +124,6 @@ async def unified_websocket(ws: WebSocket) -> None:
             if msg_type in {"message", "start_turn"}:
                 if not await allow_turn_start("start"):
                     continue
-                from deeptutor.services.session import get_turn_runtime_manager
 
                 runtime = get_turn_runtime_manager()
                 try:
@@ -174,7 +174,6 @@ async def unified_websocket(ws: WebSocket) -> None:
                 if not session_id:
                     await safe_send({"type": "error", "content": "Missing session_id."})
                     continue
-                from deeptutor.services.session import get_turn_runtime_manager
 
                 runtime = get_turn_runtime_manager()
                 active_turn = await runtime.store.get_active_turn(session_id)
@@ -226,7 +225,6 @@ async def unified_websocket(ws: WebSocket) -> None:
                 if not turn_id:
                     await safe_send({"type": "error", "content": "Missing turn_id."})
                     continue
-                from deeptutor.services.session import get_turn_runtime_manager
 
                 runtime = get_turn_runtime_manager()
                 cancelled = await runtime.cancel_turn(turn_id)
@@ -257,7 +255,6 @@ async def unified_websocket(ws: WebSocket) -> None:
                             continue
                         cleaned.append({"questionId": qid, "text": str(entry.get("text") or "")})
                     answers = cleaned or None
-                from deeptutor.services.session import get_turn_runtime_manager
 
                 runtime = get_turn_runtime_manager()
                 accepted = await runtime.submit_user_reply(turn_id, text=text_str, answers=answers)
@@ -277,7 +274,6 @@ async def unified_websocket(ws: WebSocket) -> None:
                 if not session_id:
                     await safe_send({"type": "error", "content": "Missing session_id."})
                     continue
-                from deeptutor.services.session import get_turn_runtime_manager
 
                 runtime = get_turn_runtime_manager()
                 overrides = msg.get("overrides") if isinstance(msg.get("overrides"), dict) else None
@@ -312,7 +308,6 @@ async def unified_websocket(ws: WebSocket) -> None:
                 if not turn_id:
                     await safe_send({"type": "error", "content": "Missing turn_id for user_input."})
                     continue
-                from deeptutor.core.stream_bus import get_bus
 
                 bus = get_bus(turn_id)
                 if bus is None:

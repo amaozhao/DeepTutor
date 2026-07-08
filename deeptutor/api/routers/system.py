@@ -13,6 +13,7 @@ from pydantic import BaseModel
 from deeptutor.api.security import configured_worker_count, production_security_warnings
 from deeptutor.multi_user import paths
 from deeptutor.multi_user.context import get_current_user
+from deeptutor.multi_user.shared_state import health_status
 from deeptutor.services.config import (
     load_integrations_settings,
     load_shared_state_settings,
@@ -121,8 +122,6 @@ def _container_health() -> tuple[int, dict[str, object]]:
     )
     shared_state_store: dict[str, str] = {"status": "file"}
     if external_state_configured:
-        from deeptutor.multi_user.shared_state import health_status
-
         shared_state_store = health_status()
     failures: list[str] = []
     if storage["status"] != "ok":
@@ -210,8 +209,6 @@ async def get_system_status():
         "deployment": _deployment_status(),
     }
     if result["deployment"]["shared_state"]["external_state_configured"]:
-        from deeptutor.multi_user.shared_state import health_status
-
         result["shared_state_store"] = health_status()
         result["auth_store"] = {"status": "external"}
         result["quota_store"] = {"status": "external"}

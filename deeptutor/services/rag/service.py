@@ -12,10 +12,22 @@ from pathlib import Path
 import shutil
 from typing import Any, Dict, List, Optional
 
+from deeptutor.logging import ProcessLogEvent, capture_process_logs
+from deeptutor.logging.formatters import ContextFilter
 from deeptutor.runtime.home import get_runtime_data_root
+from deeptutor.services.memory import get_memory_store
+from deeptutor.services.memory.trace import TraceEvent
+from deeptutor.services.path_service import get_path_service
 
-from .factory import DEFAULT_PROVIDER, get_pipeline, list_pipelines, normalize_provider_name
+from .factory import (
+    DEFAULT_PROVIDER,
+    KNOWN_PROVIDERS,
+    get_pipeline,
+    list_pipelines,
+    normalize_provider_name,
+)
 from .provider_binding import resolve_bound_provider
+from .smart_retriever import SmartRetriever
 
 DEFAULT_KB_BASE_DIR = str(get_runtime_data_root() / "knowledge_bases")
 
@@ -36,8 +48,6 @@ class RAGService:
         self.logger = logging.getLogger(__name__)
         if kb_base_dir is None:
             try:
-                from deeptutor.services.path_service import get_path_service
-
                 kb_base_dir = str(get_path_service().get_knowledge_bases_root())
             except Exception:
                 self.logger.warning(
@@ -164,9 +174,6 @@ class RAGService:
 
             # L1 memory trace — best-effort, never blocks the search path.
             try:
-                from deeptutor.services.memory import get_memory_store
-                from deeptutor.services.memory.trace import TraceEvent
-
                 await get_memory_store().emit(
                     TraceEvent.new(
                         "kb",
@@ -197,9 +204,6 @@ class RAGService:
     def _capture_raw_logs(self, event_sink):
         if event_sink is None:
             return contextlib.nullcontext()
-
-        from deeptutor.logging import ProcessLogEvent, capture_process_logs
-        from deeptutor.logging.formatters import ContextFilter
 
         try:
             target_loop = asyncio.get_running_loop()
@@ -313,8 +317,6 @@ class RAGService:
         query_hints: Optional[List[str]] = None,
         max_queries: int = 3,
     ) -> Dict[str, Any]:
-        from .smart_retriever import SmartRetriever
-
         return await SmartRetriever(self.search).retrieve(
             context=context,
             kb_name=kb_name,
@@ -333,6 +335,4 @@ class RAGService:
 
     @staticmethod
     def has_provider(name: str) -> bool:
-        from .factory import KNOWN_PROVIDERS
-
         return (name or "").strip().lower() in KNOWN_PROVIDERS

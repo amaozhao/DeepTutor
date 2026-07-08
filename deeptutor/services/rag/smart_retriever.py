@@ -6,6 +6,8 @@ import asyncio
 from collections.abc import Awaitable, Callable
 from typing import Any, Dict, List, Optional
 
+from deeptutor.services.llm import complete
+
 SearchFunc = Callable[..., Awaitable[Dict[str, Any]]]
 
 
@@ -48,8 +50,6 @@ class SmartRetriever:
 
     async def _generate_queries(self, context: str, n: int) -> list[str]:
         try:
-            from deeptutor.services.llm import complete
-
             prompt = (
                 f"Generate {n} diverse search queries to retrieve information relevant "
                 f"to the following context. Return ONLY the queries, one per line.\n\n"
@@ -67,8 +67,6 @@ class SmartRetriever:
 
     async def _aggregate(self, context: str, passages: list[str]) -> str:
         try:
-            from deeptutor.services.llm import complete
-
             combined = "\n---\n".join(passages)
             prompt = (
                 "Synthesise the following retrieved passages into a concise, "

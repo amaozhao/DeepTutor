@@ -140,7 +140,9 @@ def test_response_type_capped(tmp_path: Path) -> None:
 
 
 def test_preflight_shape_for_all_engines() -> None:
-    from deeptutor.services.rag.preflight import engine_preflight
+    engine_preflight = __import__(
+        "deeptutor.services.rag.preflight", fromlist=["engine_preflight"]
+    ).engine_preflight
 
     for provider in (
         "llamaindex",
@@ -176,7 +178,9 @@ def test_graphrag_static_preflight_does_not_guess_structured_output_support(
 
 
 def test_preflight_unknown_provider_falls_back_to_default() -> None:
-    from deeptutor.services.rag.preflight import engine_preflight
+    engine_preflight = __import__(
+        "deeptutor.services.rag.preflight", fromlist=["engine_preflight"]
+    ).engine_preflight
 
     # Unknown providers normalize to the default (llamaindex) engine.
     report = engine_preflight("does-not-exist")

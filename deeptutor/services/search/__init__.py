@@ -8,6 +8,8 @@ import logging
 from pathlib import Path
 from typing import Any
 
+from deeptutor.multi_user.context import get_current_user_or_none
+from deeptutor.multi_user.usage import enforce_current_user_quota, record_current_user_usage
 from deeptutor.services.config import (
     DEPRECATED_SEARCH_PROVIDERS,
     PROJECT_ROOT,
@@ -71,19 +73,13 @@ def _assert_provider_supported(provider_name: str) -> None:
 
 
 def _enforce_search_quota() -> None:
-    from deeptutor.multi_user.usage import enforce_current_user_quota
-
     enforce_current_user_quota()
 
 
 def _record_search_usage(provider_name: str) -> None:
-    from deeptutor.multi_user.context import get_current_user_or_none
-
     if get_current_user_or_none() is None:
         return
     try:
-        from deeptutor.multi_user.usage import record_current_user_usage
-
         record_current_user_usage(
             session_id="",
             turn_id="",

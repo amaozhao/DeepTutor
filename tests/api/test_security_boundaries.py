@@ -7,8 +7,10 @@ from fastapi.testclient import TestClient
 
 
 def test_cross_site_write_is_rejected_when_auth_enabled(monkeypatch):
-    from deeptutor.api import main as api_main
-    from deeptutor.api.security import reset_security_state
+    api_main = __import__("deeptutor.api", fromlist=["main"]).main
+    reset_security_state = __import__(
+        "deeptutor.api.security", fromlist=["reset_security_state"]
+    ).reset_security_state
 
     reset_security_state()
     monkeypatch.setattr(
@@ -47,7 +49,7 @@ def test_cross_site_write_is_rejected_when_auth_enabled(monkeypatch):
 
 
 def test_production_security_warnings_for_auth_without_secure_public_origin(monkeypatch):
-    from deeptutor.api import security
+    security = __import__("deeptutor.api", fromlist=["security"]).security
 
     monkeypatch.setattr(
         security,
@@ -82,7 +84,7 @@ def test_production_security_warnings_for_auth_without_secure_public_origin(monk
 
 
 def test_production_security_warnings_for_pocketbase_multi_user(monkeypatch):
-    from deeptutor.api import security
+    security = __import__("deeptutor.api", fromlist=["security"]).security
 
     monkeypatch.setattr(
         security,
@@ -116,7 +118,7 @@ def test_production_security_warnings_for_pocketbase_multi_user(monkeypatch):
 
 
 def test_production_security_warnings_for_multi_worker_auth(monkeypatch):
-    from deeptutor.api import security
+    security = __import__("deeptutor.api", fromlist=["security"]).security
 
     monkeypatch.setenv("WEB_CONCURRENCY", "2")
     monkeypatch.setattr(
@@ -152,7 +154,7 @@ def test_production_security_warnings_for_multi_worker_auth(monkeypatch):
 
 
 def test_production_security_warnings_allow_multi_worker_with_postgres_state(monkeypatch):
-    from deeptutor.api import security
+    security = __import__("deeptutor.api", fromlist=["security"]).security
 
     monkeypatch.setenv("WEB_CONCURRENCY", "2")
     monkeypatch.setattr(
@@ -183,7 +185,9 @@ def test_production_security_warnings_allow_multi_worker_with_postgres_state(mon
 
 
 def test_file_rate_limiter_shares_counts_across_instances(tmp_path: Path):
-    from deeptutor.api.security import FileSlidingWindowRateLimiter
+    FileSlidingWindowRateLimiter = __import__(
+        "deeptutor.api.security", fromlist=["FileSlidingWindowRateLimiter"]
+    ).FileSlidingWindowRateLimiter
 
     first = FileSlidingWindowRateLimiter(root=tmp_path)
     second = FileSlidingWindowRateLimiter(root=tmp_path)
@@ -194,7 +198,9 @@ def test_file_rate_limiter_shares_counts_across_instances(tmp_path: Path):
 
 
 def test_system_status_writable_dir_healthcheck(tmp_path: Path):
-    from deeptutor.api.routers.system import _writable_dir_status
+    _writable_dir_status = __import__(
+        "deeptutor.api.routers.system", fromlist=["_writable_dir_status"]
+    )._writable_dir_status
 
     result = _writable_dir_status(tmp_path / "usage")
 
@@ -203,7 +209,7 @@ def test_system_status_writable_dir_healthcheck(tmp_path: Path):
 
 
 def test_system_status_marks_file_backed_deployment_single_replica(monkeypatch):
-    from deeptutor.api.routers import system
+    system = __import__("deeptutor.api.routers", fromlist=["system"]).system
 
     monkeypatch.delenv("WEB_CONCURRENCY", raising=False)
     monkeypatch.delenv("UVICORN_WORKERS", raising=False)
@@ -228,7 +234,7 @@ def test_system_status_marks_file_backed_deployment_single_replica(monkeypatch):
 
 
 def test_system_status_reports_multi_worker_blocker(monkeypatch):
-    from deeptutor.api.routers import system
+    system = __import__("deeptutor.api.routers", fromlist=["system"]).system
 
     monkeypatch.setenv("UVICORN_WORKERS", "3")
     monkeypatch.setattr(system, "load_integrations_settings", lambda: {"pocketbase_url": ""})
@@ -246,7 +252,7 @@ def test_system_status_reports_multi_worker_blocker(monkeypatch):
 
 
 def test_system_status_reports_postgres_shared_state_ready(monkeypatch):
-    from deeptutor.api.routers import system
+    system = __import__("deeptutor.api.routers", fromlist=["system"]).system
 
     monkeypatch.setenv("UVICORN_WORKERS", "3")
     monkeypatch.setattr(system, "load_integrations_settings", lambda: {"pocketbase_url": ""})
@@ -271,7 +277,7 @@ def test_system_status_reports_postgres_shared_state_ready(monkeypatch):
 
 
 def test_container_health_allows_multi_worker_with_postgres_state(monkeypatch):
-    from deeptutor.api.routers import system
+    system = __import__("deeptutor.api.routers", fromlist=["system"]).system
 
     monkeypatch.setattr(system, "_writable_dir_status", lambda _path: {"status": "ok"})
     monkeypatch.setattr(
@@ -295,7 +301,7 @@ def test_container_health_allows_multi_worker_with_postgres_state(monkeypatch):
 
 
 def test_container_health_fails_when_postgres_state_unreachable(monkeypatch):
-    from deeptutor.api.routers import system
+    system = __import__("deeptutor.api.routers", fromlist=["system"]).system
 
     monkeypatch.setattr(system, "_writable_dir_status", lambda _path: {"status": "ok"})
     monkeypatch.setattr(
@@ -318,7 +324,7 @@ def test_container_health_fails_when_postgres_state_unreachable(monkeypatch):
 
 
 def test_container_health_allows_single_worker_beta(monkeypatch):
-    from deeptutor.api.routers import system
+    system = __import__("deeptutor.api.routers", fromlist=["system"]).system
 
     monkeypatch.setattr(system, "_writable_dir_status", lambda _path: {"status": "ok"})
     monkeypatch.setattr(
@@ -339,7 +345,7 @@ def test_container_health_allows_single_worker_beta(monkeypatch):
 
 
 def test_container_health_fails_for_multi_worker_without_shared_state(monkeypatch):
-    from deeptutor.api.routers import system
+    system = __import__("deeptutor.api.routers", fromlist=["system"]).system
 
     monkeypatch.setattr(system, "_writable_dir_status", lambda _path: {"status": "ok"})
     monkeypatch.setattr(
@@ -358,8 +364,8 @@ def test_container_health_fails_for_multi_worker_without_shared_state(monkeypatc
 
 
 def test_container_health_fails_when_rate_store_is_unwritable(monkeypatch):
-    from deeptutor.api.routers import system
-    from deeptutor.multi_user import paths
+    system = __import__("deeptutor.api.routers", fromlist=["system"]).system
+    paths = __import__("deeptutor.multi_user", fromlist=["paths"]).paths
 
     def fake_status(path):
         if path == paths.SYSTEM_ROOT / "rate":
@@ -380,8 +386,8 @@ def test_container_health_fails_when_rate_store_is_unwritable(monkeypatch):
 
 
 def test_container_health_fails_when_auth_store_is_unwritable(monkeypatch):
-    from deeptutor.api.routers import system
-    from deeptutor.multi_user import paths
+    system = __import__("deeptutor.api.routers", fromlist=["system"]).system
+    paths = __import__("deeptutor.multi_user", fromlist=["paths"]).paths
 
     def fake_status(path):
         if path == paths.SYSTEM_ROOT / "auth":
@@ -402,8 +408,8 @@ def test_container_health_fails_when_auth_store_is_unwritable(monkeypatch):
 
 
 def test_public_health_endpoint_uses_container_health(monkeypatch):
-    from deeptutor.api import main as api_main
-    from deeptutor.api.routers import system
+    api_main = __import__("deeptutor.api", fromlist=["main"]).main
+    system = __import__("deeptutor.api.routers", fromlist=["system"]).system
 
     monkeypatch.setattr(
         system,
@@ -418,7 +424,7 @@ def test_public_health_endpoint_uses_container_health(monkeypatch):
 
 
 def test_system_status_marks_pocketbase_unsupported_for_multi_user(monkeypatch):
-    from deeptutor.api.routers import system
+    system = __import__("deeptutor.api.routers", fromlist=["system"]).system
 
     monkeypatch.setattr(
         system,
@@ -446,12 +452,22 @@ def test_attachment_download_requires_session_in_current_store(
     tmp_path: Path,
     monkeypatch,
 ):
-    from deeptutor.api.routers import attachments
-    from deeptutor.multi_user import paths as mu_paths
-    from deeptutor.multi_user.audit import query_audit_events
-    from deeptutor.multi_user.context import reset_current_user, set_current_user
-    from deeptutor.multi_user.models import CurrentUser, UserScope
-    from deeptutor.services.storage.attachment_store import LocalDiskAttachmentStore
+    attachments = __import__("deeptutor.api.routers", fromlist=["attachments"]).attachments
+    mu_paths = __import__("deeptutor.multi_user", fromlist=["paths"]).paths
+    query_audit_events = __import__(
+        "deeptutor.multi_user.audit", fromlist=["query_audit_events"]
+    ).query_audit_events
+    reset_current_user = __import__(
+        "deeptutor.multi_user.context", fromlist=["reset_current_user"]
+    ).reset_current_user
+    set_current_user = __import__(
+        "deeptutor.multi_user.context", fromlist=["set_current_user"]
+    ).set_current_user
+    CurrentUser = __import__("deeptutor.multi_user.models", fromlist=["CurrentUser"]).CurrentUser
+    UserScope = __import__("deeptutor.multi_user.models", fromlist=["UserScope"]).UserScope
+    LocalDiskAttachmentStore = __import__(
+        "deeptutor.services.storage.attachment_store", fromlist=["LocalDiskAttachmentStore"]
+    ).LocalDiskAttachmentStore
 
     session_id = "sess1"
     attachment_id = "att1"
@@ -471,7 +487,7 @@ def test_attachment_download_requires_session_in_current_store(
             return {"id": _session_id}
 
     # Keep this test on FastAPI's real routing stack without importing api.main.
-    from fastapi import FastAPI
+    FastAPI = __import__("fastapi", fromlist=["FastAPI"]).FastAPI
 
     fastapi_app = FastAPI()
     fastapi_app.include_router(attachments.router, prefix="/api/attachments")
@@ -500,12 +516,14 @@ def test_attachment_download_requires_session_in_current_store(
 
 
 def test_unified_websocket_turn_start_is_rate_limited(monkeypatch):
-    from fastapi import FastAPI
+    FastAPI = __import__("fastapi", fromlist=["FastAPI"]).FastAPI
 
-    from deeptutor.api.routers import auth as auth_router
-    from deeptutor.api.routers import unified_ws
-    from deeptutor.api.security import reset_security_state
-    from deeptutor.services import session as session_module
+    auth_router = __import__("deeptutor.api.routers", fromlist=["auth"]).auth
+    unified_ws = __import__("deeptutor.api.routers", fromlist=["unified_ws"]).unified_ws
+    reset_security_state = __import__(
+        "deeptutor.api.security", fromlist=["reset_security_state"]
+    ).reset_security_state
+    session_module = __import__("deeptutor.services", fromlist=["session"]).session
 
     class _FakeRuntime:
         async def start_turn(self, msg):

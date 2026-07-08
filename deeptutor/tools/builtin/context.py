@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import asyncio
+import importlib
 from typing import Any
 
 from deeptutor.core.tool_protocol import BaseTool, ToolDefinition, ToolParameter, ToolResult
 from deeptutor.knowledge.manifest import KB_FILES_DEFAULT_LIMIT, KB_FILES_MAX_LIMIT
 from deeptutor.tools.builtin.common import _PromptHintsMixin
+from deeptutor.tools.rag_tool import rag_search
 
 
 def _rag_sources(result: dict[str, Any], *, query: str, kb_name: str) -> list[dict[str, Any]]:
@@ -37,8 +39,6 @@ class RAGTool(_PromptHintsMixin, BaseTool):
         )
 
     async def execute(self, **kwargs: Any) -> ToolResult:
-        from deeptutor.tools.rag_tool import rag_search
-
         query = str(kwargs.get("query") or "").strip()
         if not query:
             raise ValueError("RAG query must be a non-empty string.")
@@ -104,17 +104,15 @@ class KbFilesTool(_PromptHintsMixin, BaseTool):
         )
 
     async def execute(self, **kwargs: Any) -> ToolResult:
-        from deeptutor.knowledge.manifest import render_manifest_report
-        from deeptutor.multi_user.knowledge_access import resolve_kb_manifest
-
         kb_name = str(kwargs.get("kb_name") or "").strip()
         if not kb_name:
             raise ValueError("kb_files requires an explicit kb_name.")
         pattern = str(kwargs.get("pattern") or "").strip()
         language = str(kwargs.get("language") or "en")
 
+        knowledge_access = importlib.import_module("deeptutor.multi_user.knowledge_access")
         manifest = await asyncio.to_thread(
-            resolve_kb_manifest,
+            knowledge_access.resolve_kb_manifest,
             kb_name,
             limit=_kb_files_limit(kwargs.get("limit")),
             pattern=pattern,
@@ -123,7 +121,9 @@ class KbFilesTool(_PromptHintsMixin, BaseTool):
             raise ValueError(f"Knowledge base '{kb_name}' is not accessible.")
 
         return ToolResult(
-            content=render_manifest_report(manifest, language=language),
+            content=importlib.import_module("deeptutor.knowledge.manifest").render_manifest_report(
+                manifest, language=language
+            ),
             metadata={
                 "kb_name": manifest.name,
                 "total": manifest.total,

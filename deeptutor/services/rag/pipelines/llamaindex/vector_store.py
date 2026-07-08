@@ -14,8 +14,7 @@ CPU core and makes retrieval take minutes (issue #552).
 This seam swaps in a FAISS index instead:
 
 * New (and re-indexed) knowledge bases are persisted as a binary FAISS index
-  (exact ``IndexFlatIP`` by default, or opt-in HNSW for large corpora), loaded
-  once and searched without a Python-side scan.
+  (``IndexFlatIP``), loaded once and searched with vectorized BLAS.
 * Legacy ``SimpleVectorStore`` knowledge bases stay fully readable, so upgrading
   never breaks an existing index. Re-indexing one rebuilds it as FAISS for the
   full speed-up.
@@ -33,11 +32,23 @@ from pathlib import Path
 from typing import Any, Iterable, Optional
 
 from fsspec.implementations.local import LocalFileSystem
-from llama_index.core import StorageContext, load_index_from_storage
-from llama_index.core.vector_stores.simple import DEFAULT_VECTOR_STORE, NAMESPACE_SEP
 import numpy as np
 
-from .config import HNSW_VECTOR_INDEX, VectorIndexConfig
+try:
+    import faiss
+    from llama_index.vector_stores.faiss import FaissVectorStore
+except Exception:  # pragma: no cover - optional dependency
+    faiss = None
+    FaissVectorStore = None
+
+try:
+    from llama_index.core import StorageContext, load_index_from_storage
+    from llama_index.core.vector_stores.simple import DEFAULT_VECTOR_STORE, NAMESPACE_SEP
+except Exception:  # pragma: no cover - optional dependency
+    StorageContext = None
+    load_index_from_storage = None
+    DEFAULT_VECTOR_STORE = "default"
+    NAMESPACE_SEP = "__"
 
 logger = logging.getLogger(__name__)
 
@@ -54,10 +65,7 @@ _COSINE_FAISS_CLS: Optional[type] = None
 
 def _faiss_modules() -> tuple[Any, Any]:
     """Return ``(faiss, FaissVectorStore)`` or ``(None, None)`` when unavailable."""
-    try:
-        import faiss
-        from llama_index.vector_stores.faiss import FaissVectorStore
-    except Exception:  # pragma: no cover - exercised only without faiss installed
+    if faiss is None or FaissVectorStore is None:
         return None, None
     return faiss, FaissVectorStore
 
@@ -89,8 +97,6 @@ def faiss_write_index(index: Any, persist_path: str) -> None:
     API on Windows, so Unicode paths work. The byte payload is identical to
     ``write_index`` output, so indexes stay cross-readable with stock FAISS.
     """
-    import faiss
-
     payload = faiss.serialize_index(index)
     with open(persist_path, "wb") as handle:
         handle.write(payload.tobytes())
@@ -104,8 +110,6 @@ def faiss_read_index(persist_path: str) -> Any:
     Python ``open`` keeps the load path Unicode-safe on Windows, mirroring
     :func:`faiss_write_index`.
     """
-    import faiss
-
     with open(persist_path, "rb") as handle:
         buffer = np.frombuffer(handle.read(), dtype="uint8")
     return faiss.deserialize_index(buffer)
@@ -185,23 +189,7 @@ def _uniform_dimension(embeddings: Iterable[Any]) -> Optional[int]:
     return dimension if dimension and dimension > 0 else None
 
 
-def _new_faiss_index(faiss: Any, dimension: int, config: VectorIndexConfig) -> Any:
-    """Construct a cosine-compatible FAISS index for ``config``."""
-    if config.type == HNSW_VECTOR_INDEX:
-        index = faiss.IndexHNSWFlat(
-            dimension,
-            max(1, int(config.hnsw_m)),
-            faiss.METRIC_INNER_PRODUCT,
-        )
-        index.hnsw.efConstruction = max(1, int(config.hnsw_ef_construction))
-        index.hnsw.efSearch = max(1, int(config.hnsw_ef_search))
-        return index
-    return faiss.IndexFlatIP(dimension)
-
-
-def new_faiss_storage_context(
-    dimension: int, index_config: VectorIndexConfig | None = None
-) -> Optional[StorageContext]:
+def new_faiss_storage_context(dimension: int) -> Optional[StorageContext]:
     """Return a StorageContext whose default store is a fresh cosine FAISS index.
 
     Returns None when FAISS is unavailable or the dimension is invalid, so
@@ -209,17 +197,13 @@ def new_faiss_storage_context(
     """
     faiss, _ = _faiss_modules()
     cosine_cls = _cosine_faiss_cls()
-    if faiss is None or cosine_cls is None or dimension <= 0:
+    if faiss is None or cosine_cls is None or StorageContext is None or dimension <= 0:
         return None
-    store = cosine_cls(
-        faiss_index=_new_faiss_index(faiss, dimension, index_config or VectorIndexConfig())
-    )
+    store = cosine_cls(faiss_index=faiss.IndexFlatIP(dimension))
     return StorageContext.from_defaults(vector_store=store)
 
 
-def storage_context_for_nodes(
-    nodes: list[Any], index_config: VectorIndexConfig | None = None
-) -> Optional[StorageContext]:
+def storage_context_for_nodes(nodes: list[Any]) -> Optional[StorageContext]:
     """Choose the write-time StorageContext for a set of embedded nodes.
 
     Returns a FAISS-backed context when every node shares one embedding
@@ -232,7 +216,7 @@ def storage_context_for_nodes(
     dimension = _uniform_dimension(getattr(node, "embedding", None) for node in nodes)
     if dimension is None:
         return None
-    return new_faiss_storage_context(dimension, index_config)
+    return new_faiss_storage_context(dimension)
 
 
 def detect_backend(storage_dir: Path) -> str:
@@ -256,6 +240,8 @@ def load_index(storage_dir: Path) -> Any:
     storage_dir = Path(storage_dir)
 
     if detect_backend(storage_dir) == BACKEND_FAISS:
+        if StorageContext is None or load_index_from_storage is None:
+            raise RuntimeError("LlamaIndex is not installed.")
         cosine_cls = _cosine_faiss_cls()
         if cosine_cls is None:
             raise RuntimeError(

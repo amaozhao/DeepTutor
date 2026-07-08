@@ -16,17 +16,25 @@ from pathlib import Path
 import re
 from typing import Callable, Optional
 
+try:
+    from pymupdf4llm.helpers.pymupdf_rag import to_markdown as _pymupdf4llm_to_markdown
+except Exception:  # pragma: no cover - optional dependency / version fallback
+    _pymupdf4llm_to_markdown = None
+
+try:
+    import pymupdf4llm
+except Exception:  # pragma: no cover - optional dependency
+    pymupdf4llm = None
+
 from ...base import ReadinessReport
 from ...signature import ParserSignature
 from ...types import ParserError
 from .._versions import package_version
 from .config import PyMuPDF4LLMConfig, resolve_pymupdf4llm_config
-from .formats import (
-    MIN_PYMUPDF4LLM_VERSION,
-    PYMUPDF4LLM_1_28_2_FORMATS,
-    installed_pymupdf4llm_version,
-    pymupdf4llm_version_is_current,
-)
+
+# Document types PyMuPDF (fitz) opens and ``to_markdown`` handles. Kept to the
+# native document/e-book formats; bare image files go to other engines.
+_SUPPORTED = frozenset({".pdf", ".epub", ".xps", ".mobi", ".fb2", ".cbz"})
 
 # Markdown image links emitted by pymupdf4llm. We rewrite any link that points
 # at a file we actually extracted to a relative ``images/<name>`` so the cached
@@ -48,7 +56,7 @@ class PyMuPDF4LLMParser:
         return resolve_pymupdf4llm_config()
 
     def supported_formats(self) -> frozenset[str]:
-        return PYMUPDF4LLM_1_28_2_FORMATS
+        return _SUPPORTED
 
     def signature(self, config: PyMuPDF4LLMConfig) -> ParserSignature:
         return ParserSignature.build(
@@ -67,17 +75,6 @@ class PyMuPDF4LLMParser:
                 ready=False,
                 reason="not_configured",
                 message="pymupdf4llm isn't installed (pip install deeptutor[parse-pymupdf4llm]).",
-            )
-        version = installed_pymupdf4llm_version()
-        if not pymupdf4llm_version_is_current(version):
-            return ReadinessReport(
-                ready=False,
-                reason="update_required",
-                message=(
-                    f"Installed PyMuPDF4LLM {version or 'unknown'} is too old. DeepTutor needs "
-                    f"PyMuPDF4LLM >= {MIN_PYMUPDF4LLM_VERSION} for current layout, OCR, image "
-                    "and multi-format support. Update it under Settings → Document Parsing."
-                ),
             )
         return ReadinessReport(ready=True)
 
@@ -123,14 +120,19 @@ class PyMuPDF4LLMParser:
 
     @staticmethod
     def _resolve_to_markdown() -> Callable[..., object]:
-        """Return the current public converter.
+        """Return the classic pure-PyMuPDF Markdown converter.
 
-        PyMuPDF4LLM 1.28's layout path now supports OCR and image extraction,
-        so DeepTutor should use it instead of pinning the legacy helper and
-        silently bypassing upstream improvements.
+        pymupdf4llm 1.x defaults to an onnxruntime layout-AI path that downloads
+        a model on first use and (per its own docs) does NOT support image
+        extraction. We always bind the lightweight ``helpers.pymupdf_rag``
+        converter — the only path that extracts images and needs no model — so
+        the engine stays Pi-friendly regardless of the installed version. (Our
+        extra pins ``<1.0`` so onnxruntime is never even pulled.)
         """
-        import pymupdf4llm
-
+        if _pymupdf4llm_to_markdown is not None:
+            return _pymupdf4llm_to_markdown
+        if pymupdf4llm is None:
+            raise RuntimeError("pymupdf4llm is not installed")
         return pymupdf4llm.to_markdown
 
     @staticmethod

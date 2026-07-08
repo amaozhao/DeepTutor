@@ -22,12 +22,13 @@ data/user/
         └── _detached_code_execution/
 """
 
+import importlib
+import logging as _logging
 from pathlib import Path
 import shutil
 from typing import Literal, cast
 
 from deeptutor.runtime.home import PACKAGE_ROOT, get_runtime_data_root
-from deeptutor.utils.secret_files import ensure_private_directory, write_secret_text
 
 AgentModule = Literal[
     "solve",
@@ -55,8 +56,6 @@ WorkspaceFeature = Literal[
     "co-writer",
     "chat",
     "book",
-    "reading",
-    "timed_media",
 ]
 
 
@@ -136,14 +135,7 @@ class PathService:
     def get_public_outputs_root(self) -> Path:
         return self._user_data_dir
 
-    def resolve_public_output_path(self, path: str | Path) -> Path | None:
-        """Return a safe, public output file below this service's user root.
-
-        Resolving and authorizing the path in one operation gives callers the
-        exact canonical path they may read.  In particular, callers should not
-        validate against one workspace and then reconstruct the file path from
-        a different root.
-        """
+    def is_public_output_path(self, path: str | Path) -> bool:
         candidate = Path(path)
         if not candidate.is_absolute():
             candidate = (self.get_public_outputs_root() / candidate).resolve()
@@ -154,55 +146,52 @@ class PathService:
         try:
             relative = candidate.relative_to(root)
         except ValueError:
-            return None
+            return False
 
         if not candidate.is_file():
-            return None
+            return False
         if candidate.suffix.lower() in self._PRIVATE_SUFFIXES:
-            return None
+            return False
 
         parts = relative.parts
         if parts[:3] == ("workspace", "co-writer", "audio"):
-            return candidate
+            return True
 
         if (
             len(parts) >= 5
             and parts[:3] == ("workspace", "chat", "deep_solve")
             and "artifacts" in parts[4:]
         ):
-            return candidate
+            return True
 
         if (
             len(parts) >= 5
             and parts[:3] == ("workspace", "chat", "math_animator")
             and "artifacts" in parts[4:]
         ):
-            return candidate
+            return True
 
         if len(parts) >= 5 and parts[:2] == ("workspace", "chat") and "code_runs" in parts[3:]:
-            return candidate
+            return True
 
         # Generated media (imagegen / videogen tools write under <task>/media/).
         if len(parts) >= 5 and parts[:2] == ("workspace", "chat") and "media" in parts[3:]:
-            return candidate
+            return True
 
         if len(parts) >= 5 and parts[:3] == ("workspace", "chat", "chat") and parts[4] == "exec":
-            return candidate
+            return True
 
         # Files a CLI app produced. One directory per turn shared by every app,
         # not one per app, so a model can render with one and post-process with
         # another. Listed explicitly rather than folded into the ``exec`` branch:
         # what is publicly linkable is worth being able to read off this function.
         if len(parts) >= 5 and parts[:3] == ("workspace", "chat", "chat") and parts[4] == "cli":
-            return candidate
+            return True
 
         if len(parts) >= 4 and parts[:3] == ("workspace", "chat", "_detached_code_execution"):
-            return candidate
+            return True
 
-        return None
-
-    def is_public_output_path(self, path: str | Path) -> bool:
-        return self.resolve_public_output_path(path) is not None
+        return False
 
     def get_workspace_dir(self) -> Path:
         return self._user_data_dir / "workspace"
@@ -277,56 +266,16 @@ class PathService:
         return self.get_notebook_dir() / "notebooks_index.json"
 
     def get_memory_dir(self) -> Path:
-        return self.workspace_root / "memory"
-
-    def migrate_legacy_memory_markdown(self) -> bool:
-        """Move the old workspace memory files into the canonical memory root once.
-
-        Older versions stored loose Markdown files in
-        ``data/user/workspace/memory``.  Keeping this migration out of the path
-        getter is important: a read-only path lookup must never recreate files
-        that the v1-to-v2 migration has already archived.
-        """
-        new_dir = self.get_memory_dir()
+        new_dir = self.workspace_root / "memory"
         old_dir = self.get_workspace_feature_dir("memory")
-        default_root = (self.project_root / "data").resolve()
-        marker = old_dir / ".migrated-to-data-memory-v2"
-        if self.workspace_root != default_root or marker.exists() or not old_dir.exists():
-            return False
-
-        legacy_files = sorted(
-            path for path in old_dir.iterdir() if path.is_file() and path.suffix == ".md"
-        )
-        if not legacy_files:
-            return False
-
-        ensure_private_directory(new_dir)
-        conflict_dir = new_dir / "backup" / "legacy-workspace"
-        for source in legacy_files:
-            target = new_dir / source.name
-            if not target.exists():
-                shutil.move(str(source), str(target))
-                continue
-            if source.read_bytes() == target.read_bytes():
-                source.unlink()
-                continue
-
-            ensure_private_directory(conflict_dir)
-            conflict = conflict_dir / source.name
-            counter = 1
-            while conflict.exists() and conflict.read_bytes() != source.read_bytes():
-                conflict = conflict_dir / f"{source.stem}-{counter}{source.suffix}"
-                counter += 1
-            if conflict.exists():
-                source.unlink()
-            else:
-                shutil.move(str(source), str(conflict))
-
-        write_secret_text(
-            marker,
-            "Legacy workspace memory was migrated to data/memory.\n",
-        )
-        return True
+        if self.workspace_root == (self.project_root / "data").resolve() and old_dir.exists():
+            new_dir.mkdir(parents=True, exist_ok=True)
+            for f in old_dir.iterdir():
+                if f.is_file() and f.suffix == ".md":
+                    target = new_dir / f.name
+                    if not target.exists():
+                        shutil.copy2(f, target)
+        return new_dir
 
     def get_solve_dir(self) -> Path:
         return self.get_chat_feature_dir("deep_solve")
@@ -409,9 +358,6 @@ class PathService:
     def get_book_page_file(self, book_id: str, page_id: str) -> Path:
         return self.get_book_pages_dir(book_id) / f"{page_id}.json"
 
-    def get_book_learning_captures_file(self, book_id: str) -> Path:
-        return self.get_book_root(book_id) / "learning_captures.json"
-
     def get_book_assets_dir(self, book_id: str) -> Path:
         return self.get_book_root(book_id) / "assets"
 
@@ -440,7 +386,8 @@ class PathService:
 
     def ensure_workspace_dir(self) -> Path:
         path = self.get_workspace_dir()
-        return ensure_private_directory(path)
+        path.mkdir(parents=True, exist_ok=True)
+        return path
 
     def ensure_notebook_dir(self) -> Path:
         path = self.get_notebook_dir()
@@ -448,21 +395,21 @@ class PathService:
         return path
 
     def ensure_memory_dir(self) -> Path:
-        self.migrate_legacy_memory_markdown()
         path = self.get_memory_dir()
-        return ensure_private_directory(path)
+        path.mkdir(parents=True, exist_ok=True)
+        return path
 
     def ensure_settings_dir(self) -> Path:
         path = self.get_settings_dir()
-        return ensure_private_directory(path)
+        path.mkdir(parents=True, exist_ok=True)
+        return path
 
     def ensure_all_directories(self) -> None:
-        ensure_private_directory(self.get_user_root())
         self.ensure_settings_dir()
         self.ensure_workspace_dir()
         self.ensure_memory_dir()
         self.ensure_notebook_dir()
-        ensure_private_directory(self.get_logs_dir())
+        self.get_logs_dir().mkdir(parents=True, exist_ok=True)
         for workspace_feature in cast(tuple[WorkspaceFeature, ...], ("co-writer", "book")):
             self.get_workspace_feature_dir(workspace_feature).mkdir(parents=True, exist_ok=True)
         for chat_feature in cast(
@@ -484,12 +431,8 @@ class PathService:
 
 def get_path_service() -> PathService:
     try:
-        from deeptutor.multi_user.paths import get_current_path_service
-
-        return get_current_path_service()
+        return importlib.import_module("deeptutor.multi_user.paths").get_current_path_service()
     except Exception:
-        import logging as _logging
-
         _logging.getLogger(__name__).warning(
             "get_path_service() fell back to default instance; multi-user path resolution failed",
             exc_info=True,

@@ -42,6 +42,8 @@ Usage:
 
 # Keep service package import side-effects minimal.
 # Modules are lazy-loaded in __getattr__ to avoid circular imports.
+import importlib
+
 from .path_service import PathService, get_path_service
 
 __all__ = [
@@ -55,12 +57,12 @@ __all__ = [
     "config",
     "PathService",
     "get_path_service",
+    "BaseSessionManager",
 ]
 
 
 def __getattr__(name: str):
     """Lazy import for modules that depend on heavy libraries."""
-    import importlib
 
     if name == "llm":
         return importlib.import_module("deeptutor.services.llm")
@@ -78,4 +80,6 @@ def __getattr__(name: str):
         return importlib.import_module("deeptutor.services.rag")
     if name == "embedding":
         return importlib.import_module("deeptutor.services.embedding")
+    if name == "BaseSessionManager":
+        return importlib.import_module(f"{__name__}.session").BaseSessionManager
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

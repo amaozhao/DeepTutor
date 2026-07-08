@@ -121,7 +121,7 @@ def test_mimic_websocket_accepts_config_and_returns_messages(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     question_router_module = _load_question_router_module(monkeypatch)
-    import deeptutor.api.routers.auth as auth_router
+    auth_router = __import__("deeptutor.api.routers.auth", fromlist=["*"])
 
     monkeypatch.setattr(auth_router, "AUTH_ENABLED", False)
 
@@ -158,8 +158,10 @@ def test_mimic_websocket_generation_is_rate_limited(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     question_router_module = _load_question_router_module(monkeypatch)
-    import deeptutor.api.routers.auth as auth_router
-    from deeptutor.api.security import reset_security_state
+    auth_router = __import__("deeptutor.api.routers.auth", fromlist=["*"])
+    reset_security_state = __import__(
+        "deeptutor.api.security", fromlist=["reset_security_state"]
+    ).reset_security_state
 
     reset_security_state()
     monkeypatch.setattr(auth_router, "AUTH_ENABLED", False)

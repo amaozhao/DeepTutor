@@ -9,6 +9,7 @@ from typing import Any
 
 from . import paths
 from .identity import auth_store_write_lock
+from .shared_state import load_invites, postgres_enabled, update_invites
 
 
 def _invite_file():
@@ -21,8 +22,6 @@ def _utc_now() -> str:
 
 def _read() -> dict[str, dict[str, Any]]:
     if _postgres_enabled():
-        from .shared_state import load_invites
-
         return load_invites()
     try:
         target = _invite_file()
@@ -45,7 +44,6 @@ def _write(invites: dict[str, dict[str, Any]]) -> None:
 def create_invite(*, email: str = "", created_by: str = "") -> dict[str, Any]:
     """Create a one-use invite code, optionally bound to a lower-cased email."""
     if _postgres_enabled():
-        from .shared_state import update_invites
 
         def mutate(invites: dict[str, dict[str, Any]]) -> dict[str, Any]:
             code = secrets.token_urlsafe(18)
@@ -88,7 +86,6 @@ def list_invites() -> list[dict[str, Any]]:
 
 def delete_invite(code: str) -> bool:
     if _postgres_enabled():
-        from .shared_state import update_invites
 
         def mutate(invites: dict[str, dict[str, Any]]) -> bool:
             if code not in invites:
@@ -113,7 +110,6 @@ def consume_invite(code: str, *, email: str) -> dict[str, Any] | None:
     if not normalized_code or not normalized_email:
         return None
     if _postgres_enabled():
-        from .shared_state import update_invites
 
         def mutate(invites: dict[str, dict[str, Any]]) -> dict[str, Any] | None:
             record = invites.get(normalized_code)
@@ -150,7 +146,6 @@ def unconsume_invite(code: str, *, email: str) -> bool:
     if not normalized_code or not normalized_email:
         return False
     if _postgres_enabled():
-        from .shared_state import update_invites
 
         def mutate(invites: dict[str, dict[str, Any]]) -> bool:
             record = invites.get(normalized_code)
@@ -175,6 +170,5 @@ def unconsume_invite(code: str, *, email: str) -> bool:
 
 
 def _postgres_enabled() -> bool:
-    from .shared_state import postgres_enabled
 
     return postgres_enabled()

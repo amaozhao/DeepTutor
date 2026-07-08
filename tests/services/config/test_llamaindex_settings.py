@@ -108,7 +108,7 @@ def test_llamaindex_unknown_vector_index_falls_back_to_flat(tmp_path: Path) -> N
 
 
 def test_chunk_geometry_preserves_zero_overlap(monkeypatch) -> None:
-    from deeptutor.services.rag.pipelines.llamaindex import config
+    config = __import__("deeptutor.services.rag.pipelines.llamaindex", fromlist=["config"]).config
 
     monkeypatch.setattr(
         config,

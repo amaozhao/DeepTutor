@@ -32,7 +32,7 @@ def _run(coro):
 @pytest.fixture(autouse=True)
 def _fresh_memory_singleton(monkeypatch):
     """Each test gets a fresh MemoryStore so its write locks don't leak."""
-    from deeptutor.services.memory import store
+    store = __import__("deeptutor.services.memory", fromlist=["store"]).store
 
     monkeypatch.setattr(store, "_singleton", None)
 

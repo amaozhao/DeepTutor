@@ -8,11 +8,24 @@ Settings catalog UI.
 
 from __future__ import annotations
 
+import importlib
 from typing import Any
 
 from deeptutor.services.voice.adapters import get_stt_adapter, get_tts_adapter
 from deeptutor.services.voice.base import VoiceProviderError, strip_markdown_for_speech
 from deeptutor.services.voice.config import STTConfig, TTSConfig
+
+
+def _resolve_tts_runtime_config(*, catalog: dict[str, Any] | None = None):
+    return importlib.import_module(
+        "deeptutor.services.config.provider_runtime"
+    ).resolve_tts_runtime_config(catalog=catalog)
+
+
+def _resolve_stt_runtime_config(*, catalog: dict[str, Any] | None = None):
+    return importlib.import_module(
+        "deeptutor.services.config.provider_runtime"
+    ).resolve_stt_runtime_config(catalog=catalog)
 
 
 async def synthesize_speech(
@@ -28,9 +41,7 @@ async def synthesize_speech(
     Returns ``(audio_bytes, content_type)``. ``voice`` / ``response_format``
     override the catalog defaults for this call.
     """
-    from deeptutor.services.config.provider_runtime import resolve_tts_runtime_config
-
-    config = resolve_tts_runtime_config(catalog=catalog)
+    config = _resolve_tts_runtime_config(catalog=catalog)
     if voice:
         config.voice = voice
     if response_format:
@@ -55,9 +66,7 @@ async def transcribe_audio(
     language: str | None = None,
 ) -> str:
     """Transcribe ``audio`` using the active STT catalog selection."""
-    from deeptutor.services.config.provider_runtime import resolve_stt_runtime_config
-
-    config = resolve_stt_runtime_config(catalog=catalog)
+    config = _resolve_stt_runtime_config(catalog=catalog)
     if language:
         config.language = language
     adapter = get_stt_adapter(config.adapter)

@@ -9,6 +9,7 @@ from datetime import datetime
 import html
 import json
 from pathlib import Path
+import re
 from typing import Any
 
 from deeptutor.services.path_service import get_path_service
@@ -231,8 +232,6 @@ class CitationManager:
                 "is_valid": bool
             }
         """
-        import re
-
         # Find all citation references in the text
         pattern = r"\[\[([A-Z]+-\d+-?\d*)\]\]"
         found_refs = re.findall(pattern, text)
@@ -263,8 +262,6 @@ class CitationManager:
         Returns:
             Text with invalid citations removed or marked
         """
-        import re
-
         pattern = r"\[\[([A-Z]+-\d+-?\d*)\]\]\(#ref-[a-z]+-\d+-?\d*\)"
 
         def replace_invalid(match):

@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import binascii
+import importlib
 import json
 import logging
 from typing import Any, AsyncGenerator, Literal
@@ -21,14 +22,25 @@ from fastapi import APIRouter, HTTPException, Query, Response, WebSocket, WebSoc
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
+from deeptutor.api.routers._partners_channel_schema import all_channel_schemas
+from deeptutor.api.routers.auth import ws_auth_failed, ws_require_auth
+from deeptutor.api.security import require_ws_turn_rate_limit
+from deeptutor.api.utils.tool_options import build_tool_options
 from deeptutor.core.i18n import t
+from deeptutor.core.stream import StreamEventType
+from deeptutor.multi_user.context import get_current_user, reset_current_user
+from deeptutor.multi_user.paths import get_admin_path_service
 from deeptutor.partners.config.paths import get_partner_media_dir
+from deeptutor.partners.config.schema import ChannelsConfig
 from deeptutor.partners.helpers import safe_filename
+from deeptutor.services.config import get_model_catalog_service
+from deeptutor.services.model_selection import apply_llm_selection_to_catalog
 from deeptutor.services.partners import (
     get_partner_manager,
     slugify_partner_id,
     slugify_soul_id,
 )
+from deeptutor.services.partners.commands import partner_command_palette as list_partner_commands
 from deeptutor.services.partners.manager import (
     LEGACY_GLOBAL_DELIVERY_KEYS,
     PartnerConfig,
@@ -36,7 +48,9 @@ from deeptutor.services.partners.manager import (
     mask_channel_secrets,
     strip_legacy_global_delivery,
 )
+from deeptutor.services.partners.model_runtime import normalize_partner_llm_selection
 from deeptutor.services.partners.workspace import (
+    DEFAULT_SOUL,
     list_assets,
     provision_assets,
     read_soul,
@@ -44,6 +58,7 @@ from deeptutor.services.partners.workspace import (
     strip_frontmatter,
     write_soul,
 )
+from deeptutor.services.persona import PersonaService, get_persona_service
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -202,7 +217,6 @@ class SoulTemplateUpdateRequest(BaseModel):
 
 def _validate_channels_payload(channels: dict) -> None:
     """Reject malformed channel configs at the API boundary (422)."""
-    from deeptutor.partners.config.schema import ChannelsConfig
 
     legacy_keys = sorted(k for k in channels if k in LEGACY_GLOBAL_DELIVERY_KEYS)
     if legacy_keys:
@@ -253,9 +267,6 @@ def _validate_llm_selection_payload(
     value: dict[str, str] | None,
 ) -> dict[str, str] | None:
     """Validate a partner model selection against the shared LLM catalog."""
-    from deeptutor.services.config import get_model_catalog_service
-    from deeptutor.services.model_selection import apply_llm_selection_to_catalog
-    from deeptutor.services.partners.model_runtime import normalize_partner_llm_selection
 
     try:
         selection = normalize_partner_llm_selection(value)
@@ -268,7 +279,6 @@ def _validate_llm_selection_payload(
 
 def _resolve_soul_content(soul: SoulSpec | None) -> tuple[str, dict[str, str]]:
     """Resolve a SoulSpec into (markdown content, origin record)."""
-    from deeptutor.services.partners.workspace import DEFAULT_SOUL
 
     if soul is None or soul.source == "default":
         return DEFAULT_SOUL, {"type": "default", "id": ""}
@@ -301,9 +311,6 @@ def _resolve_soul_content(soul: SoulSpec | None) -> tuple[str, dict[str, str]]:
 
 
 def _load_persona_markdown(name: str) -> str:
-    from deeptutor.multi_user.context import get_current_user
-    from deeptutor.multi_user.paths import get_admin_path_service
-    from deeptutor.services.persona import PersonaService, get_persona_service
 
     try:
         detail = get_persona_service().get_detail(name)
@@ -367,9 +374,6 @@ async def delete_soul(soul_id: str):
 @router.get("/soul-sources")
 async def soul_sources():
     """Everything the create-wizard's soul step can start from."""
-    from deeptutor.multi_user.context import get_current_user
-    from deeptutor.multi_user.paths import get_admin_path_service
-    from deeptutor.services.persona import PersonaService, get_persona_service
 
     def _persona_entry(service: PersonaService, info: Any) -> dict[str, str]:
         # Content rides along so the wizard can preview the clone; creation
@@ -419,7 +423,6 @@ async def recent_partners(limit: int = 3):
 @router.get("/channels/schema")
 async def list_channel_schemas():
     """JSON-Schema metadata for every available channel (schema-driven UI)."""
-    from deeptutor.api.routers._partners_channel_schema import all_channel_schemas
 
     return {"channels": all_channel_schemas()}
 
@@ -436,7 +439,6 @@ async def tool_options():
     mandatory ``partner_read`` / ``partner_memorize`` / ``partner_search`` tools
     instead, which are always on and not owner-configurable.
     """
-    from deeptutor.api.utils.tool_options import build_tool_options
 
     return await build_tool_options(exclude_builtin={"read_memory", "write_memory"})
 
@@ -800,9 +802,7 @@ async def branch_partner_session(partner_id: str, payload: SessionBranchBody):
 
 @router.get("/commands/palette")
 async def partner_command_palette():
-    from deeptutor.services.partners.commands import partner_command_palette
-
-    return {"commands": partner_command_palette()}
+    return {"commands": list_partner_commands()}
 
 
 # ── Chat (HTTP / SSE / WebSocket) ──────────────────────────────
@@ -832,9 +832,9 @@ _PARTNER_UPLOAD_MAX_TOTAL_BYTES = 25 * 1024 * 1024
 
 def _partner_upload_caps() -> tuple[int, int]:
     try:
-        from deeptutor.services.config.runtime_settings import get_chat_attachment_limits
-
-        limits = get_chat_attachment_limits()
+        limits = importlib.import_module(
+            "deeptutor.services.config.runtime_settings"
+        ).get_chat_attachment_limits()
         return limits.max_file_bytes, limits.max_total_bytes
     except Exception:  # pragma: no cover - defensive fallback
         return _PARTNER_UPLOAD_MAX_BYTES, _PARTNER_UPLOAD_MAX_TOTAL_BYTES
@@ -928,7 +928,6 @@ async def _partner_chat_stream(
     partner_id: str,
     payload: ChatMessageRequest,
 ) -> AsyncGenerator[str, None]:
-    from deeptutor.core.stream import StreamEventType
 
     mgr = get_partner_manager()
     content = payload.content.strip()
@@ -1012,9 +1011,6 @@ async def partner_chat_ws(ws: WebSocket, partner_id: str):
     * ``{"type": "content", "content": str}`` — the final reply;
     * ``{"type": "done"}`` / ``{"type": "error"}`` / ``{"type": "proactive"}``.
     """
-    from deeptutor.api.routers.auth import ws_auth_failed, ws_require_auth
-    from deeptutor.api.security import require_ws_turn_rate_limit
-    from deeptutor.multi_user.context import get_current_user, reset_current_user
 
     user_token = await ws_require_auth(ws)
     if user_token is ws_auth_failed:

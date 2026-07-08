@@ -18,11 +18,23 @@ from ...signature import ParserSignature
 from ...types import ParserError
 from .._versions import package_version
 from .config import DoclingConfig, resolve_docling_config
-from .formats import (
-    MIN_DOCLING_VERSION,
-    docling_supported_formats,
-    docling_version_is_current,
-    installed_docling_version,
+
+try:
+    from docling.document_converter import DocumentConverter
+except Exception:  # pragma: no cover - optional dependency
+    DocumentConverter = None
+
+try:
+    from docling.datamodel.base_models import InputFormat
+    from docling.datamodel.pipeline_options import PdfPipelineOptions
+    from docling.document_converter import PdfFormatOption
+except Exception:  # pragma: no cover - version-dependent optional API
+    InputFormat = None
+    PdfPipelineOptions = None
+    PdfFormatOption = None
+
+_SUPPORTED = frozenset(
+    {".pdf", ".docx", ".pptx", ".xlsx", ".html", ".htm", ".md", ".png", ".jpg", ".jpeg"}
 )
 
 # HF cache dir-name substrings for Docling's layout/table models.
@@ -87,44 +99,21 @@ class DoclingParser:
         return resolve_docling_config()
 
     def supported_formats(self) -> frozenset[str]:
-        return docling_supported_formats()
+        return _SUPPORTED
 
     def signature(self, config: DoclingConfig) -> ParserSignature:
-        version = package_version("docling")
-        if config.is_remote:
-            version = f"remote-{MIN_DOCLING_VERSION}:{config.api_base_url}"
         return ParserSignature.build(
             "docling",
-            version,
+            package_version("docling"),
             {"do_ocr": config.do_ocr, "do_table_structure": config.do_table_structure},
         )
 
     def is_ready(self, config: DoclingConfig) -> ReadinessReport:
-        # Remote mode needs no local package or models.
-        if config.is_remote:
-            if not (config.api_base_url or "").strip():
-                return ReadinessReport(
-                    ready=False,
-                    reason="not_configured",
-                    message="Docling remote mode has no server URL configured.",
-                )
-            return ReadinessReport(ready=True)
         if not self.is_available():
             return ReadinessReport(
                 ready=False,
                 reason="not_configured",
                 message="Docling isn't installed (pip install deeptutor[parse-docling]).",
-            )
-        installed_version = installed_docling_version()
-        if not docling_version_is_current(installed_version):
-            return ReadinessReport(
-                ready=False,
-                reason="update_required",
-                message=(
-                    f"Docling {installed_version or 'unknown'} is too old. DeepTutor needs "
-                    f"Docling >= {MIN_DOCLING_VERSION} for the current document formats. "
-                    "Use the package update button below."
-                ),
             )
         if config.allow_local_model_download or _docling_models_ready():
             return ReadinessReport(ready=True)
@@ -138,15 +127,6 @@ class DoclingParser:
             ),
         )
 
-    def verify(self, config: DoclingConfig) -> tuple[bool, str]:
-        """Live connectivity check for the Settings “Test” button (remote only).
-        No-op for local mode."""
-        if config.is_remote:
-            from .remote import verify_remote
-
-            return verify_remote(config)
-        return self.is_ready(config).ready, ""
-
     def parse(
         self,
         source_path: Path,
@@ -155,19 +135,38 @@ class DoclingParser:
         config: DoclingConfig,
         on_output: Optional[Callable[[str], None]] = None,
     ) -> None:
-        if config.is_remote:
-            from .remote import parse_remote
-
-            parse_remote(source_path, workdir, config=config, on_output=on_output)
-            return
         if on_output:
             on_output(f"Converting {Path(source_path).name} via Docling…")
         try:
-            from .local_worker import parse_local
-
-            parse_local(source_path, workdir, config=config, on_output=on_output)
+            converter = self._build_converter(config)
+            result = converter.convert(str(source_path))
+            markdown = result.document.export_to_markdown()
         except Exception as exc:  # noqa: BLE001 - surface as a parser error
             raise ParserError(f"Docling failed to convert {Path(source_path).name}: {exc}")
+
+        stem = Path(source_path).stem
+        (workdir / f"{stem}.md").write_text(str(markdown), encoding="utf-8")
+
+    @staticmethod
+    def _build_converter(config: DoclingConfig):
+        """Build a converter, applying OCR/table options best-effort.
+
+        Docling's options API varies across versions; if option wiring fails we
+        fall back to the default converter rather than break the parse.
+        """
+        if DocumentConverter is None:
+            raise RuntimeError("Docling is not installed")
+        try:
+            if InputFormat is None or PdfPipelineOptions is None or PdfFormatOption is None:
+                raise RuntimeError("Docling PDF options API unavailable")
+            pipeline_options = PdfPipelineOptions()
+            pipeline_options.do_ocr = config.do_ocr
+            pipeline_options.do_table_structure = config.do_table_structure
+            return DocumentConverter(
+                format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options)}
+            )
+        except Exception:
+            return DocumentConverter()
 
 
 __all__ = ["DoclingParser"]

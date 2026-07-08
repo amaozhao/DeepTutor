@@ -12,16 +12,25 @@ from __future__ import annotations
 
 from typing import Any
 
+from deeptutor.services.config import resolve_llm_runtime_config
+from deeptutor.services.embedding import get_embedding_config
+from deeptutor.services.llm.capabilities import supports_vision
+
 from .factory import (
     DEFAULT_PROVIDER,
     GRAPHRAG_PROVIDER,
-    IMA_PROVIDER,
     LIGHTRAG_PROVIDER,
-    LIGHTRAG_SERVER_PROVIDER,
-    PAGEINDEX_OSS_PROVIDER,
     PAGEINDEX_PROVIDER,
     normalize_provider_name,
 )
+from .pipelines.graphrag.config import is_graphrag_available
+from .pipelines.lightrag.config import is_lightrag_available
+from .pipelines.pageindex.config import DEFAULT_API_BASE_URL, get_pageindex_config
+
+try:
+    from .pipelines.llamaindex.retrievers import _import_bm25_retriever
+except ModuleNotFoundError:  # pragma: no cover - optional llamaindex extra
+    _import_bm25_retriever = None
 
 
 def _check(key: str, label: str, ok: bool, detail: str = "", *, optional: bool = False) -> dict:
@@ -31,8 +40,6 @@ def _check(key: str, label: str, ok: bool, detail: str = "", *, optional: bool =
 def _active_chat_model() -> tuple[str | None, str]:
     """Return ``(model, binding)`` for the active chat LLM, or ``(None, "")``."""
     try:
-        from deeptutor.services.config import resolve_llm_runtime_config
-
         cfg = resolve_llm_runtime_config()
         return getattr(cfg, "model", None), str(getattr(cfg, "binding", "") or "")
     except Exception:
@@ -42,8 +49,6 @@ def _active_chat_model() -> tuple[str | None, str]:
 def _active_embedding() -> tuple[str | None, int]:
     """Return ``(model, dim)`` for the active embedding model, or ``(None, 0)``."""
     try:
-        from deeptutor.services.embedding import get_embedding_config
-
         cfg = get_embedding_config()
         return getattr(cfg, "model", None), int(getattr(cfg, "dim", 0) or 0)
     except Exception:
@@ -61,9 +66,7 @@ def _llamaindex_preflight() -> dict:
         )
     ]
     try:
-        from .pipelines.llamaindex.retrievers import _import_bm25_retriever
-
-        bm25_ok = _import_bm25_retriever() is not None
+        bm25_ok = _import_bm25_retriever is not None and _import_bm25_retriever() is not None
     except Exception:
         bm25_ok = False
     checks.append(
@@ -80,44 +83,25 @@ def _llamaindex_preflight() -> dict:
 
 def _pageindex_preflight() -> dict:
     try:
-        from .pipelines.pageindex.config import get_pageindex_config
-
         cfg = get_pageindex_config(require_key=False)
         configured = bool(cfg.api_key)
+        base = cfg.api_base_url or DEFAULT_API_BASE_URL
     except Exception:
-        configured = False
+        configured, base = False, ""
     return _finalize(
         [
             _check(
                 "api_key",
                 "API key configured",
                 configured,
-                "PageIndex Cloud" if configured else "Add a PageIndex API key under Credentials.",
+                base if configured else "Add a PageIndex API key under Credentials.",
             )
-        ]
-    )
-
-
-def _pageindex_oss_preflight() -> dict:
-    try:
-        from .pipelines.pageindex.client import resolve_oss_sdk_config
-
-        model, _backend = resolve_oss_sdk_config()
-        llm_ok, detail = bool(model), model
-    except Exception as exc:
-        llm_ok = False
-        detail = str(exc)
-    return _finalize(
-        [
-            _check("chat", "Active LLM for indexing", llm_ok, detail),
         ]
     )
 
 
 def _graphrag_preflight() -> dict:
     try:
-        from .pipelines.graphrag.config import is_graphrag_available
-
         installed = is_graphrag_available()
     except Exception:
         installed = False
@@ -148,19 +132,8 @@ def _graphrag_preflight() -> dict:
 
 
 def _lightrag_preflight() -> dict:
-    package_detail = "pip install 'deeptutor[rag-lightrag]'"
     try:
-        from .pipelines.lightrag.config import is_lightrag_available
-        from .pipelines.lightrag.engine import LIGHTRAG_VERSION, installed_version
-
-        current_version = installed_version() if is_lightrag_available() else ""
-        installed = current_version == LIGHTRAG_VERSION
-        if current_version:
-            package_detail = (
-                f"Installed {current_version}."
-                if installed
-                else f"Found {current_version}; required {LIGHTRAG_VERSION}."
-            )
+        installed = is_lightrag_available()
     except Exception:
         installed = False
     emb_model, emb_dim = _active_embedding()
@@ -168,8 +141,6 @@ def _lightrag_preflight() -> dict:
     vision_ok = False
     if chat_model:
         try:
-            from deeptutor.services.llm.capabilities import supports_vision
-
             vision_ok = supports_vision(binding, chat_model)
         except Exception:
             vision_ok = False
@@ -177,9 +148,9 @@ def _lightrag_preflight() -> dict:
         [
             _check(
                 "package",
-                "LightRAG package installed",
+                "RAG-Anything package installed",
                 installed,
-                package_detail,
+                "Installed." if installed else "pip install 'deeptutor[rag-lightrag]'",
             ),
             _check(
                 "chat",
@@ -199,53 +170,9 @@ def _lightrag_preflight() -> dict:
                 vision_ok,
                 "Active chat model supports vision."
                 if vision_ok
-                else "Active chat model has no vision — image analysis is disabled.",
+                else "Active chat model has no vision — multimodal documents fall back to text.",
                 optional=True,
             ),
-        ]
-    )
-
-
-def _lightrag_server_preflight() -> dict:
-    try:
-        from deeptutor.services.config import load_lightrag_server_settings
-
-        settings = load_lightrag_server_settings()
-        server_url = str(settings.get("server_url") or "").strip()
-    except Exception:
-        server_url = ""
-    return _finalize(
-        [
-            _check(
-                "server_url",
-                "Default server configured",
-                bool(server_url),
-                server_url or "Add a server URL under Connection defaults.",
-            )
-        ]
-    )
-
-
-def _ima_preflight() -> dict:
-    try:
-        from .pipelines.ima.config import get_account_credentials
-
-        credentials = get_account_credentials()
-    except Exception:
-        from .pipelines.ima.config import ImaCredentials
-
-        credentials = ImaCredentials()
-    return _finalize(
-        [
-            _check(
-                "credentials",
-                "IMA Client ID and API key configured",
-                credentials.complete,
-                credentials.client_id
-                if credentials.complete
-                else "Add them under Credentials, or supply a pair per knowledge base "
-                "when connecting one.",
-            )
         ]
     )
 
@@ -258,11 +185,8 @@ def _finalize(checks: list[dict]) -> dict:
 _PREFLIGHTS = {
     DEFAULT_PROVIDER: _llamaindex_preflight,
     PAGEINDEX_PROVIDER: _pageindex_preflight,
-    PAGEINDEX_OSS_PROVIDER: _pageindex_oss_preflight,
     GRAPHRAG_PROVIDER: _graphrag_preflight,
     LIGHTRAG_PROVIDER: _lightrag_preflight,
-    LIGHTRAG_SERVER_PROVIDER: _lightrag_server_preflight,
-    IMA_PROVIDER: _ima_preflight,
 }
 
 

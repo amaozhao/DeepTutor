@@ -6,7 +6,10 @@ from concurrent.futures import ThreadPoolExecutor
 
 
 def test_first_save_user_promotes_to_admin(mu_isolated_root):
-    from deeptutor.multi_user.identity import list_user_info, save_user
+    list_user_info = __import__(
+        "deeptutor.multi_user.identity", fromlist=["list_user_info"]
+    ).list_user_info
+    save_user = __import__("deeptutor.multi_user.identity", fromlist=["save_user"]).save_user
 
     save_user("alice", "$2b$12$placeholder", role="user")
     users = {u["username"]: u for u in list_user_info()}
@@ -14,7 +17,10 @@ def test_first_save_user_promotes_to_admin(mu_isolated_root):
 
 
 def test_second_save_user_keeps_user_role(mu_isolated_root):
-    from deeptutor.multi_user.identity import list_user_info, save_user
+    list_user_info = __import__(
+        "deeptutor.multi_user.identity", fromlist=["list_user_info"]
+    ).list_user_info
+    save_user = __import__("deeptutor.multi_user.identity", fromlist=["save_user"]).save_user
 
     save_user("alice", "$2b$12$placeholder", role="user")
     save_user("bob", "$2b$12$placeholder", role="user")
@@ -26,7 +32,10 @@ def test_second_save_user_keeps_user_role(mu_isolated_root):
 def test_concurrent_first_save_only_one_admin(mu_isolated_root):
     """``_USERS_WRITE_LOCK`` must serialise read-modify-write so only one
     concurrent first-time registration can flip the empty-store branch."""
-    from deeptutor.multi_user.identity import list_user_info, save_user
+    list_user_info = __import__(
+        "deeptutor.multi_user.identity", fromlist=["list_user_info"]
+    ).list_user_info
+    save_user = __import__("deeptutor.multi_user.identity", fromlist=["save_user"]).save_user
 
     def _save(name):
         try:

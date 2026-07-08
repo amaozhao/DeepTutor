@@ -37,6 +37,7 @@ from deeptutor.services.memory.consolidator.modes._runtime import (
     load_doc,
     write_doc_checkpoint,
 )
+from deeptutor.services.memory.document import parse, serialize
 from deeptutor.services.memory.ids import is_entry_id
 
 logger = logging.getLogger(__name__)
@@ -115,8 +116,6 @@ async def run_merge(
     # before == after, the act of re-serializing renormalizes whitespace
     # and migrates legacy entry-keyed layouts. Skip only when the file is
     # byte-equal to what :func:`serialize` would produce.
-    from deeptutor.services.memory.document import serialize
-
     expected = serialize(doc)
     rewrote = raw_before != expected
     if rewrote:
@@ -166,8 +165,6 @@ def _migrate_l3_legacy_refs(doc) -> int:
     ids (entry deleted, or never existed) are dropped silently — the
     next ``run_update`` round will re-synthesize from current L2 text.
     """
-    from deeptutor.services.memory.document import parse
-
     # Cache L2 entry-id → surface lookups: one scan per L2 md, reused
     # across every L3 ref in the doc.
     l2_owner: dict[str, str] = {}

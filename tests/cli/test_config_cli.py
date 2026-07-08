@@ -13,7 +13,7 @@ runner = CliRunner()
 
 def test_config_show_handles_missing_embedding(monkeypatch) -> None:
     """CLI-only defaults skip embedding setup, so config show must not traceback."""
-    import deeptutor.services.config as config
+    config = __import__("deeptutor.services.config", fromlist=["*"])
 
     monkeypatch.setattr(
         config,

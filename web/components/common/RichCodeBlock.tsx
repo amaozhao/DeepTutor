@@ -5,8 +5,8 @@ import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import {
   getCodeBlockTheme,
   getCodeBlockThemeBackground,
-} from "./code-block-themes";
-import { useAppShell } from "../../context/AppShellContext";
+} from "@/components/common/code-block-themes";
+import { useAppShell } from "@/context/AppShellContext";
 
 const MONOSPACE =
   'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace';

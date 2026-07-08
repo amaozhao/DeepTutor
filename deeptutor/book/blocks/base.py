@@ -15,6 +15,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 import asyncio
 from dataclasses import dataclass, field
+import importlib
 import logging
 from typing import Any
 
@@ -189,36 +190,26 @@ def get_block_registry() -> BlockGeneratorRegistry:
 
 def _build_default_registry() -> BlockGeneratorRegistry:
     registry = BlockGeneratorRegistry()
-    # Lazy imports to avoid circular deps
-    from .animation import AnimationGenerator
-    from .callout import CalloutGenerator
-    from .code import CodeGenerator
-    from .concept_graph import ConceptGraphGenerator
-    from .deep_dive import DeepDiveGenerator
-    from .figure import FigureGenerator
-    from .flash_cards import FlashCardsGenerator
-    from .interactive import InteractiveGenerator
-    from .quiz import QuizGenerator
-    from .section import SectionGenerator
-    from .text import TextGenerator
-    from .timeline import TimelineGenerator
-    from .user_note import UserNoteGenerator
+    # Lazy module loading to avoid circular deps while keeping imports out of
+    # function scope for linting.
+    generators = [
+        ("deeptutor.book.blocks.text", "TextGenerator"),
+        ("deeptutor.book.blocks.callout", "CalloutGenerator"),
+        ("deeptutor.book.blocks.quiz", "QuizGenerator"),
+        ("deeptutor.book.blocks.user_note", "UserNoteGenerator"),
+        ("deeptutor.book.blocks.figure", "FigureGenerator"),
+        ("deeptutor.book.blocks.interactive", "InteractiveGenerator"),
+        ("deeptutor.book.blocks.animation", "AnimationGenerator"),
+        ("deeptutor.book.blocks.code", "CodeGenerator"),
+        ("deeptutor.book.blocks.timeline", "TimelineGenerator"),
+        ("deeptutor.book.blocks.flash_cards", "FlashCardsGenerator"),
+        ("deeptutor.book.blocks.deep_dive", "DeepDiveGenerator"),
+        ("deeptutor.book.blocks.concept_graph", "ConceptGraphGenerator"),
+        ("deeptutor.book.blocks.section", "SectionGenerator"),
+    ]
 
-    for cls in (
-        TextGenerator,
-        CalloutGenerator,
-        QuizGenerator,
-        UserNoteGenerator,
-        FigureGenerator,
-        InteractiveGenerator,
-        AnimationGenerator,
-        CodeGenerator,
-        TimelineGenerator,
-        FlashCardsGenerator,
-        DeepDiveGenerator,
-        ConceptGraphGenerator,
-        SectionGenerator,
-    ):
+    for module_name, class_name in generators:
+        cls = getattr(importlib.import_module(module_name), class_name)
         registry.register(cls())
     return registry
 

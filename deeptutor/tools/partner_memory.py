@@ -2,11 +2,12 @@
 
 A partner has a *split* memory model that the product chat does not:
 
-* relationship memory for an assigned user lives below
-  ``data/partners/<id>/users/<uid>/workspace/memory``; admin and IM turns keep
-  the legacy Partner workspace for backward compatibility;
-* the authenticated human's L3 is read-only context. Admin and IM turns retain
-  the legacy admin L3. ``partner_read`` returns both layers concatenated.
+* its OWN long-term memory lives in the partner's synthetic workspace
+  (``data/partners/<id>/workspace/memory``) and is the only thing
+  ``partner_memorize`` ever writes to — a partner can never mutate the
+  owner's memory;
+* the OWNER's shared memory (the admin L3) is read-only context the
+  partner inherits, so ``partner_read`` returns *both* layers concatenated.
 
 These three tools replace the product chat's ``read_memory`` / ``write_memory``
 for partners (which are suppressed on partner turns) and add a keyword search
@@ -20,6 +21,22 @@ from __future__ import annotations
 from typing import Any
 
 from deeptutor.core.tool_protocol import BaseTool, ToolDefinition, ToolParameter, ToolResult
+from deeptutor.multi_user.context import get_current_user_or_none
+from deeptutor.multi_user.paths import (
+    get_admin_path_service,
+    get_current_path_service,
+)
+from deeptutor.partners.config.paths import (
+    get_partner_sessions_dir,
+)
+from deeptutor.services.memory import (
+    get_memory_store,
+    memory_path_service_override,
+    paths,
+)
+from deeptutor.services.memory.trace import TraceEvent
+from deeptutor.services.partners.scope import PARTNER_USER_PREFIX
+from deeptutor.services.partners.sessions import PartnerSessionStore
 
 # Force-mounted on every partner turn (see ``compose_enabled_tools`` /
 # ``agentic_pipeline``). Single source of truth for the partner memory surface.
@@ -42,8 +59,6 @@ def _concat_l3() -> str:
     (not the chat placeholder) when nothing is stored, so the caller can label
     the empty layer cleanly.
     """
-    from deeptutor.services.memory import get_memory_store, paths
-
     store = get_memory_store()
     parts: list[str] = []
     for slot in paths.L3_SLOTS:
@@ -55,9 +70,6 @@ def _concat_l3() -> str:
 
 def _resolve_partner_id() -> str | None:
     """The active partner id, or ``None`` when not inside a partner scope."""
-    from deeptutor.multi_user.context import get_current_user_or_none
-    from deeptutor.services.partners.scope import PARTNER_USER_PREFIX
-
     user = get_current_user_or_none()
     user_id = user.scope.user_id if user and user.scope else ""
     if not user_id.startswith(PARTNER_USER_PREFIX):
@@ -101,16 +113,9 @@ class PartnerReadTool(BaseTool):
         )
 
     async def execute(self, **kwargs: Any) -> ToolResult:
-        from deeptutor.multi_user.paths import get_admin_path_service, get_current_path_service
-        from deeptutor.services.memory import memory_path_service_override
-        from deeptutor.services.partners.interaction import get_partner_turn_context
-
-        turn = get_partner_turn_context()
-        shared_service = turn.shared_memory if turn else get_admin_path_service()
-        own_service = turn.own_memory if turn else get_current_path_service()
-        with memory_path_service_override(shared_service):
+        with memory_path_service_override(get_admin_path_service()):
             shared = _concat_l3()
-        with memory_path_service_override(own_service):
+        with memory_path_service_override(get_current_path_service()):
             own = _concat_l3()
 
         sections = [
@@ -168,11 +173,6 @@ class PartnerMemorizeTool(BaseTool):
         )
 
     async def execute(self, **kwargs: Any) -> ToolResult:
-        from deeptutor.multi_user.paths import get_current_path_service
-        from deeptutor.services.memory import get_memory_store, memory_path_service_override
-        from deeptutor.services.memory.trace import TraceEvent
-        from deeptutor.services.partners.interaction import get_partner_turn_context
-
         op = str(kwargs.get("op") or "").strip().lower()
         text = str(kwargs.get("text") or "").strip()
         target_id = kwargs.get("target_id")
@@ -188,11 +188,9 @@ class PartnerMemorizeTool(BaseTool):
             )
 
         store = get_memory_store()
-        turn = get_partner_turn_context()
-        own_service = turn.own_memory if turn else get_current_path_service()
         # Trace + preference both land in the partner's own memory scope, so the
         # footnote ref resolves inside the same tree it's stored in.
-        with memory_path_service_override(own_service):
+        with memory_path_service_override(get_current_path_service()):
             event = TraceEvent.new(
                 "partner",
                 "preference_stated",
@@ -248,10 +246,6 @@ class PartnerSearchTool(BaseTool):
         )
 
     async def execute(self, **kwargs: Any) -> ToolResult:
-        from deeptutor.partners.config.paths import get_partner_sessions_dir
-        from deeptutor.services.partners.interaction import get_partner_turn_context
-        from deeptutor.services.partners.sessions import PartnerSessionStore
-
         query = str(kwargs.get("query") or "").strip()
         if not query:
             return ToolResult(content="Error: query is required.", success=False)
@@ -268,12 +262,7 @@ class PartnerSearchTool(BaseTool):
                 success=False,
             )
 
-        turn = get_partner_turn_context()
-        store = (
-            turn.store
-            if turn is not None and turn.partner_id == partner_id
-            else PartnerSessionStore(get_partner_sessions_dir(partner_id))
-        )
+        store = PartnerSessionStore(get_partner_sessions_dir(partner_id))
         needle = query.lower()
         # (timestamp, formatted_line) — collected across all sessions, then
         # sorted most-recent-first and truncated to ``limit``.

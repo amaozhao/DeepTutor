@@ -2,15 +2,27 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
+import uuid
 
 from deeptutor.core.tool_protocol import BaseTool, ToolDefinition, ToolParameter, ToolResult
+from deeptutor.services.path_service import get_path_service
+from deeptutor.services.sandbox import (
+    ExecRequest,
+    Mount,
+    ResourceLimits,
+    get_sandbox_service,
+)
+from deeptutor.services.sandbox.artifacts import (
+    collect_public_artifacts,
+    render_artifacts_for_tool,
+)
 from deeptutor.tools.builtin.common import _PromptHintsMixin
 
 
 def _unique_run_token() -> str:
     """Short collision-resistant token for naming per-call code run dirs."""
-    import uuid
 
     return uuid.uuid4().hex[:12]
 
@@ -89,19 +101,6 @@ class CodeExecutionTool(_PromptHintsMixin, BaseTool):
         return name
 
     async def execute(self, **kwargs: Any) -> ToolResult:
-        from pathlib import Path
-
-        from deeptutor.services.sandbox import (
-            ExecRequest,
-            Mount,
-            ResourceLimits,
-            get_sandbox_service,
-        )
-        from deeptutor.services.sandbox.artifacts import (
-            collect_public_artifacts,
-            render_artifacts_for_tool,
-        )
-
         code = str(kwargs.get("code") or "").strip()
         if not code:
             raise ValueError("code_execution requires non-empty 'code'.")
@@ -122,8 +121,6 @@ class CodeExecutionTool(_PromptHintsMixin, BaseTool):
         if not workdir:
             # No pipeline workspace (e.g. direct/tool tests): fall back to the
             # detached code workspace the path service already manages.
-            from deeptutor.services.path_service import get_path_service
-
             workdir = str(get_path_service().get_run_code_workspace_dir())
             mounts = (Mount(host_path=workdir, sandbox_path=workdir, read_only=False),)
 

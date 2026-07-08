@@ -121,7 +121,9 @@ class TestProvisioning:
         # provisioning must fall back to it when the user workspace has no
         # skill of that name. Regression: builtin picks from the wizard's
         # default-all selection used to fail with "not accessible".
-        from deeptutor.services.skill.service import BUILTIN_SKILLS_ROOT
+        BUILTIN_SKILLS_ROOT = __import__(
+            "deeptutor.services.skill.service", fromlist=["BUILTIN_SKILLS_ROOT"]
+        ).BUILTIN_SKILLS_ROOT
 
         builtin_names = [
             entry.name for entry in BUILTIN_SKILLS_ROOT.iterdir() if (entry / "SKILL.md").exists()
@@ -170,7 +172,7 @@ class TestInventoryAndRemoval:
 
     def test_remove_rejects_path_traversal(self, partners_root):
         ensure_partner_workspace("ada")
-        import pytest
+        pytest = __import__("pytest")
 
         with pytest.raises(ValueError):
             remove_asset("ada", "skill", "../escape")

@@ -80,7 +80,9 @@ def test_text_only_parser_extracts_docx_text(tmp_path) -> None:
 
 def test_mineru_signature_distinguishes_local_and_cloud() -> None:
     parser = factory.get_parser("mineru")
-    from deeptutor.services.parsing.engines.mineru.config import MinerUConfig
+    MinerUConfig = __import__(
+        "deeptutor.services.parsing.engines.mineru.config", fromlist=["MinerUConfig"]
+    ).MinerUConfig
 
     local = parser.signature(MinerUConfig(mode="local")).hash()
     cloud = parser.signature(MinerUConfig(mode="cloud")).hash()
@@ -148,8 +150,12 @@ def test_markitdown_readiness_requires_current_package(monkeypatch) -> None:
 
 
 def test_mineru_cloud_readiness_needs_token() -> None:
-    from deeptutor.services.parsing.engines.mineru.config import MinerUConfig
-    from deeptutor.services.parsing.engines.mineru.readiness import mineru_readiness
+    MinerUConfig = __import__(
+        "deeptutor.services.parsing.engines.mineru.config", fromlist=["MinerUConfig"]
+    ).MinerUConfig
+    mineru_readiness = __import__(
+        "deeptutor.services.parsing.engines.mineru.readiness", fromlist=["mineru_readiness"]
+    ).mineru_readiness
 
     assert mineru_readiness(MinerUConfig(mode="cloud", api_token="")).reason == "not_configured"
     assert mineru_readiness(MinerUConfig(mode="cloud", api_token="tok")).ready is True
@@ -535,9 +541,11 @@ def test_tika_http_error_raises(tmp_path, monkeypatch: pytest.MonkeyPatch) -> No
 
 
 def test_mineru_local_model_download_gate(monkeypatch: pytest.MonkeyPatch) -> None:
-    from deeptutor.services.parsing.engines.mineru import backend
-    from deeptutor.services.parsing.engines.mineru import readiness as rd
-    from deeptutor.services.parsing.engines.mineru.config import MinerUConfig
+    backend = __import__("deeptutor.services.parsing.engines.mineru", fromlist=["backend"]).backend
+    rd = __import__("deeptutor.services.parsing.engines.mineru", fromlist=["readiness"]).readiness
+    MinerUConfig = __import__(
+        "deeptutor.services.parsing.engines.mineru.config", fromlist=["MinerUConfig"]
+    ).MinerUConfig
 
     monkeypatch.setattr(
         backend,
@@ -567,7 +575,9 @@ def test_mineru_local_model_download_gate(monkeypatch: pytest.MonkeyPatch) -> No
 
 def test_pymupdf4llm_signature_tracks_image_knobs() -> None:
     parser = factory.get_parser("pymupdf4llm")
-    from deeptutor.services.parsing.engines.pymupdf4llm.config import PyMuPDF4LLMConfig
+    PyMuPDF4LLMConfig = __import__(
+        "deeptutor.services.parsing.engines.pymupdf4llm.config", fromlist=["PyMuPDF4LLMConfig"]
+    ).PyMuPDF4LLMConfig
 
     base = parser.signature(
         PyMuPDF4LLMConfig(write_images=True, image_format="png", image_dpi=150)
@@ -636,7 +646,9 @@ def test_pymupdf4llm_readiness_requires_current_package(monkeypatch) -> None:
 def test_pymupdf4llm_parses_pdf_and_extracts_images(tmp_path) -> None:
     pymupdf = pytest.importorskip("pymupdf")
     pytest.importorskip("pymupdf4llm")
-    from deeptutor.services.parsing.engines.pymupdf4llm.config import PyMuPDF4LLMConfig
+    PyMuPDF4LLMConfig = __import__(
+        "deeptutor.services.parsing.engines.pymupdf4llm.config", fromlist=["PyMuPDF4LLMConfig"]
+    ).PyMuPDF4LLMConfig
 
     pdf = tmp_path / "doc.pdf"
     doc = pymupdf.open()
@@ -671,7 +683,9 @@ def test_pymupdf4llm_parses_pdf_and_extracts_images(tmp_path) -> None:
 def test_pymupdf4llm_no_images_leaves_no_asset_dir(tmp_path) -> None:
     pymupdf = pytest.importorskip("pymupdf")
     pytest.importorskip("pymupdf4llm")
-    from deeptutor.services.parsing.engines.pymupdf4llm.config import PyMuPDF4LLMConfig
+    PyMuPDF4LLMConfig = __import__(
+        "deeptutor.services.parsing.engines.pymupdf4llm.config", fromlist=["PyMuPDF4LLMConfig"]
+    ).PyMuPDF4LLMConfig
 
     pdf = tmp_path / "text.pdf"
     doc = pymupdf.open()
@@ -870,10 +884,12 @@ def test_liteparse_leaves_foreign_image_links_alone(tmp_path, monkeypatch) -> No
 
 
 def test_install_manager_spec_allowlist() -> None:
-    from deeptutor.services.parsing.engines._install import (
-        ENGINE_PIP_SPECS,
-        installable_engines,
-    )
+    ENGINE_PIP_SPECS = __import__(
+        "deeptutor.services.parsing.engines._install", fromlist=["ENGINE_PIP_SPECS"]
+    ).ENGINE_PIP_SPECS
+    installable_engines = __import__(
+        "deeptutor.services.parsing.engines._install", fromlist=["installable_engines"]
+    ).installable_engines
 
     # Only optional pip-backed engines are installable; built-in / external are not.
     assert installable_engines() == {"pymupdf4llm", "markitdown", "docling", "liteparse"}
@@ -912,10 +928,12 @@ def test_install_manager_upgrades_existing_package(monkeypatch) -> None:
 
 
 def test_model_download_allowlist() -> None:
-    from deeptutor.services.parsing.engines._install import (
-        ENGINE_MODEL_DOWNLOADERS,
-        model_downloadable_engines,
-    )
+    ENGINE_MODEL_DOWNLOADERS = __import__(
+        "deeptutor.services.parsing.engines._install", fromlist=["ENGINE_MODEL_DOWNLOADERS"]
+    ).ENGINE_MODEL_DOWNLOADERS
+    model_downloadable_engines = __import__(
+        "deeptutor.services.parsing.engines._install", fromlist=["model_downloadable_engines"]
+    ).model_downloadable_engines
 
     # Only Docling fetches model weights; the others need no models.
     assert model_downloadable_engines() == {"docling"}
@@ -925,7 +943,9 @@ def test_model_download_allowlist() -> None:
 
 
 def test_resolve_model_downloader_unknown_engine() -> None:
-    from deeptutor.services.parsing.engines._install import resolve_model_downloader
+    resolve_model_downloader = __import__(
+        "deeptutor.services.parsing.engines._install", fromlist=["resolve_model_downloader"]
+    ).resolve_model_downloader
 
     assert resolve_model_downloader("pymupdf4llm") is None
     assert resolve_model_downloader("nope") is None
@@ -984,7 +1004,9 @@ def test_resolve_model_downloader_falls_back_to_path(monkeypatch, tmp_path) -> N
 
 
 def test_background_job_manager_idle_status() -> None:
-    from deeptutor.services.parsing.engines._install import get_background_job_manager
+    get_background_job_manager = __import__(
+        "deeptutor.services.parsing.engines._install", fromlist=["get_background_job_manager"]
+    ).get_background_job_manager
 
     status = get_background_job_manager().status(0)
     assert status["state"] in {"idle", "running", "done", "failed", "cancelled"}
@@ -994,7 +1016,9 @@ def test_background_job_manager_idle_status() -> None:
 
 
 def test_docling_models_dir_honors_cache_env(monkeypatch, tmp_path) -> None:
-    from deeptutor.services.parsing.engines.docling import engine as docling_engine
+    docling_engine = __import__(
+        "deeptutor.services.parsing.engines.docling", fromlist=["engine"]
+    ).engine
 
     monkeypatch.setenv("DOCLING_CACHE_DIR", str(tmp_path))
     assert docling_engine.docling_models_dir() == tmp_path / "models"

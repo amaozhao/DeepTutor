@@ -89,7 +89,7 @@ class PipelineIntegrationTest:
         print_info(f"Created temp directory: {self.temp_dir}")
 
         # Initialize service with temp directory
-        from deeptutor.services.rag import RAGService
+        RAGService = __import__("deeptutor.services.rag", fromlist=["RAGService"]).RAGService
 
         self.service = RAGService(kb_base_dir=self.temp_dir, provider=self.pipeline_name)
 
@@ -136,7 +136,7 @@ class PipelineIntegrationTest:
 
         except Exception as e:
             print_error(f"Initialization failed: {e}")
-            import traceback
+            traceback = __import__("traceback")
 
             traceback.print_exc()
             return False
@@ -189,7 +189,7 @@ class PipelineIntegrationTest:
 
             except Exception as e:
                 print_error(f"Search failed: {e}")
-                import traceback
+                traceback = __import__("traceback")
 
                 traceback.print_exc()
                 all_passed = False
@@ -201,7 +201,7 @@ class PipelineIntegrationTest:
         print("\n  🔧 Testing via rag_tool.py...")
 
         try:
-            from deeptutor.tools.rag_tool import rag_search
+            rag_search = __import__("deeptutor.tools.rag_tool", fromlist=["rag_search"]).rag_search
 
             result = await rag_search(
                 query="What does Shandong have?",
@@ -222,7 +222,7 @@ class PipelineIntegrationTest:
 
         except Exception as e:
             print_error(f"rag_tool.py search failed: {e}")
-            import traceback
+            traceback = __import__("traceback")
 
             traceback.print_exc()
             return False
@@ -285,7 +285,7 @@ class PipelineIntegrationTest:
 
         except Exception as e:
             print_error(f"Test failed with exception: {e}")
-            import traceback
+            traceback = __import__("traceback")
 
             traceback.print_exc()
         finally:
@@ -301,7 +301,7 @@ class PipelineIntegrationTest:
 
 def get_available_pipelines():
     """Get list of available pipelines"""
-    from deeptutor.services.rag import RAGService
+    RAGService = __import__("deeptutor.services.rag", fromlist=["RAGService"]).RAGService
 
     return [p["id"] for p in RAGService.list_providers()]
 
@@ -413,7 +413,7 @@ class TestPipelineIntegration:
         on Initialize.
         """
         if os.environ.get("RAG_INTEGRATION_TESTS") != "1":
-            import pytest as _pytest
+            _pytest = __import__("pytest")
 
             _pytest.skip(
                 "RAG pipeline integration test skipped (set RAG_INTEGRATION_TESTS=1 to enable)."

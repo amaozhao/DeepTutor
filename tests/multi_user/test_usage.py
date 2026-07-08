@@ -173,7 +173,7 @@ async def test_voice_success_records_tts_and_stt_calls(seed_user, as_user, monke
 
 
 def test_web_search_quota_blocks_before_provider_call(seed_user, as_user, monkeypatch) -> None:
-    from deeptutor.services import search as search_service
+    search_service = __import__("deeptutor.services", fromlist=["search"]).search
 
     seed_user("admin", role="admin")
     user = seed_user("alice")
@@ -207,7 +207,7 @@ def test_web_search_quota_blocks_before_provider_call(seed_user, as_user, monkey
 
 
 def test_web_search_success_records_usage(seed_user, as_user, monkeypatch) -> None:
-    from deeptutor.services import search as search_service
+    search_service = __import__("deeptutor.services", fromlist=["search"]).search
 
     user = seed_user("alice")
     user_id = str(user["id"])
@@ -230,7 +230,7 @@ def test_web_search_success_records_usage(seed_user, as_user, monkeypatch) -> No
 
 @pytest.mark.asyncio
 async def test_embedding_quota_blocks_before_provider_call(seed_user, as_user, monkeypatch) -> None:
-    from deeptutor.services.embedding import client as embedding_client
+    embedding_client = __import__("deeptutor.services.embedding", fromlist=["client"]).client
 
     seed_user("admin", role="admin")
     user = seed_user("alice")
@@ -260,7 +260,7 @@ async def test_embedding_quota_blocks_before_provider_call(seed_user, as_user, m
 
 @pytest.mark.asyncio
 async def test_embedding_success_records_usage(seed_user, as_user, monkeypatch) -> None:
-    from deeptutor.services.embedding import client as embedding_client
+    embedding_client = __import__("deeptutor.services.embedding", fromlist=["client"]).client
 
     user = seed_user("alice")
     user_id = str(user["id"])
@@ -278,7 +278,12 @@ async def test_embedding_success_records_usage(seed_user, as_user, monkeypatch) 
 
 @pytest.mark.asyncio
 async def test_turn_quota_blocks_before_context_builder(seed_user, as_user, monkeypatch) -> None:
-    from deeptutor.services.session.turn_runtime import TurnRuntimeManager, _TurnExecution
+    TurnRuntimeManager = __import__(
+        "deeptutor.services.session.turn_runtime", fromlist=["TurnRuntimeManager"]
+    ).TurnRuntimeManager
+    _TurnExecution = __import__(
+        "deeptutor.services.session.turn_runtime", fromlist=["_TurnExecution"]
+    )._TurnExecution
 
     seed_user("admin", role="admin")
     user = seed_user("alice")

@@ -29,77 +29,25 @@ The output is decoupled from the rest of ``turn_runtime``:
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-import hashlib
 import logging
 from typing import Any, Sequence
 
-from deeptutor.reading.references import resolve_reading_sources
+from deeptutor.book.context import build_book_context
+from deeptutor.multi_user.context import get_current_user
+from deeptutor.services.notebook import get_notebook_manager
+from deeptutor.services.partners import get_partner_manager
 from deeptutor.services.session.protocol import SessionStoreProtocol
+from deeptutor.services.session.questions import format_question_bank_entry
+from deeptutor.services.session.sources import (
+    MANIFEST_PREVIEW_CHARS_FRESH,
+    SourceEntry,
+    SourceInventory,
+    render_manifest,
+)
 
 logger = logging.getLogger(__name__)
-
-# Per-source text-preview caps. Fresh sources get a meaningful preview so
-# the model can answer simple "is this the right one?" questions without
-# read_source. Historical sources surface only their identity — the model
-# pays the read_source cost only when it actually needs them.
-MANIFEST_PREVIEW_CHARS_FRESH = 2000
 # Image attachments flow through the multimodal block path; never list them.
 _IMAGE_MIME_PREFIX = "image/"
-
-
-@dataclass(frozen=True)
-class SourceEntry:
-    """One row in the per-turn Attached Sources manifest."""
-
-    sid: str
-    kind: str  # notebook | book | reading | history | partner_group | question | attachment
-    name: str
-    full_text: str
-    fresh: bool
-    # 1-indexed ordinal of the user turn this source first appeared in,
-    # within the active branch's lineage. Fresh sources use the **current**
-    # turn's ordinal so the manifest can label them consistently.
-    first_seen_turn: int
-
-    @property
-    def char_count(self) -> int:
-        return len(self.full_text)
-
-
-@dataclass
-class SourceInventory:
-    """Ordered set of ``SourceEntry`` keyed by ``sid``.
-
-    ``add`` is the only mutator. On duplicate ``sid`` the existing entry is
-    upgraded to ``fresh=True`` if the incoming entry is fresh — so a source
-    attached in the current turn always renders with a preview even if it
-    was also attached in a prior turn.
-    """
-
-    entries: list[SourceEntry] = field(default_factory=list)
-    _index: dict[str, int] = field(default_factory=dict, repr=False)
-
-    def add(self, entry: SourceEntry) -> None:
-        if not entry.sid:
-            return
-        if not entry.full_text.strip():
-            return
-        existing_pos = self._index.get(entry.sid)
-        if existing_pos is None:
-            self._index[entry.sid] = len(self.entries)
-            self.entries.append(entry)
-            return
-        existing = self.entries[existing_pos]
-        # Fresh always wins; otherwise keep the earlier registration.
-        if entry.fresh and not existing.fresh:
-            self.entries[existing_pos] = entry
-
-    def is_empty(self) -> bool:
-        return not self.entries
-
-    def __contains__(self, sid: str) -> bool:
-        return sid in self._index
 
 
 # ---------------------------------------------------------------------------
@@ -119,8 +67,6 @@ async def build_inventory(
     fresh_book_references: Sequence[dict[str, Any]],
     fresh_history_session_ids: Sequence[Any],
     fresh_question_entry_ids: Sequence[Any],
-    fresh_partner_group_references: Sequence[Any] = (),
-    fresh_reading_references: Sequence[dict[str, Any]] = (),
     language: str = "en",
 ) -> SourceInventory:
     """Compose the session-cumulative inventory for one chat turn.
@@ -140,7 +86,6 @@ async def build_inventory(
         notebook_records=fresh_notebook_records,
         book_context_text=fresh_book_context_text,
         book_references=fresh_book_references,
-        reading_references=fresh_reading_references,
     )
     # History + question entries are async (per-id store fetches), keep them
     # in a separate phase so the sync fresh additions don't block.
@@ -148,12 +93,6 @@ async def build_inventory(
         inv,
         store=store,
         history_session_ids=fresh_history_session_ids,
-        current_turn_ordinal=current_turn_ordinal,
-        language=language,
-    )
-    _add_fresh_partner_groups(
-        inv,
-        references=fresh_partner_group_references,
         current_turn_ordinal=current_turn_ordinal,
         language=language,
     )
@@ -173,70 +112,9 @@ async def build_inventory(
     return inv
 
 
-def render_manifest(inv: SourceInventory) -> tuple[str, dict[str, str]]:
-    """Render the inventory into (manifest_text, source_index).
-
-    ``manifest_text`` is the human/LLM-readable block injected at the tail
-    of the chat system prompt. ``source_index`` maps each source id to its
-    full extracted text and is handed to ``ReadSourceTool`` so the LLM can
-    read on demand.
-    """
-    if inv.is_empty():
-        return "", {}
-
-    source_index: dict[str, str] = {sid: e.full_text for sid, e in _iter_sid_entries(inv)}
-    rendered_rows: list[str] = []
-    for entry in inv.entries:
-        rendered_rows.append(_render_row(entry))
-
-    header = (
-        "[Attached Sources]\n"
-        "An index of the sources the user has attached in this conversation. "
-        "Rows with a `preview` field were attached **this turn**; rows marked "
-        "`previously attached (turn N)` were uploaded in earlier turns and show "
-        "only their identity. Their full text can be loaded on demand when a "
-        "source is relevant. Refer to sources by name; never invent source ids."
-    )
-    return header + "\n\n" + "\n\n".join(rendered_rows), source_index
-
-
 # ---------------------------------------------------------------------------
 # Internals
 # ---------------------------------------------------------------------------
-
-
-def _iter_sid_entries(inv: SourceInventory):
-    seen: set[str] = set()
-    for e in inv.entries:
-        if e.sid in seen:
-            continue
-        seen.add(e.sid)
-        yield e.sid, e
-
-
-def _clip_preview(text: str, limit: int = MANIFEST_PREVIEW_CHARS_FRESH) -> str:
-    cleaned = (text or "").strip()
-    if len(cleaned) <= limit:
-        return cleaned
-    return cleaned[:limit].rstrip() + "…"
-
-
-def _format_size(char_count: int) -> str:
-    """Compact size hint for historical rows ('~3 KB', '~120 chars')."""
-    if char_count >= 1024:
-        return f"~{round(char_count / 1024)} KB"
-    return f"~{char_count} chars"
-
-
-def _render_row(entry: SourceEntry) -> str:
-    if entry.fresh:
-        preview = _clip_preview(entry.full_text)
-        return f"- id={entry.sid}  type={entry.kind}  name={entry.name!r}\n  preview: {preview!r}"
-    return (
-        f"- id={entry.sid}  type={entry.kind}  name={entry.name!r}"
-        f"  size={_format_size(entry.char_count)}  "
-        f"source: previously attached (turn {entry.first_seen_turn})"
-    )
 
 
 # ----- Fresh source addition (current-turn payload) -----------------------
@@ -250,7 +128,6 @@ def _add_fresh(
     notebook_records: Sequence[dict[str, Any]],
     book_context_text: str,
     book_references: Sequence[dict[str, Any]],
-    reading_references: Sequence[dict[str, Any]],
 ) -> None:
     """Add the synchronously-available fresh sources (notebook records,
     book pages, attachments)."""
@@ -289,13 +166,6 @@ def _add_fresh(
                 first_seen_turn=current_turn_ordinal,
             )
         )
-
-    _add_reading_sources(
-        inv,
-        references=reading_references,
-        fresh=True,
-        turn_ordinal=current_turn_ordinal,
-    )
 
     for record in attachment_records:
         if str(record.get("type", "")).lower() == "image":
@@ -376,32 +246,6 @@ async def _add_fresh_questions(
         )
 
 
-def _add_fresh_partner_groups(
-    inv: SourceInventory,
-    *,
-    references: Sequence[Any],
-    current_turn_ordinal: int,
-    language: str,
-) -> None:
-    for raw in references:
-        ref = _partner_group_reference(raw)
-        if ref is None:
-            continue
-        text, name = _load_partner_group_reference(ref, language=language)
-        if not text:
-            continue
-        inv.add(
-            SourceEntry(
-                sid=_partner_group_source_id(ref),
-                kind="partner_group",
-                name=name,
-                full_text=text,
-                fresh=True,
-                first_seen_turn=current_turn_ordinal,
-            )
-        )
-
-
 # ----- Historical source collection ---------------------------------------
 
 
@@ -474,8 +318,6 @@ async def _collect_from_user_message(
     # Notebook records — re-resolve through the notebook service.
     notebook_refs = snap.get("notebookReferences") or []
     if notebook_refs:
-        from deeptutor.services.notebook import get_notebook_manager
-
         try:
             records = get_notebook_manager().get_records_by_references(list(notebook_refs))
         except Exception:
@@ -525,13 +367,6 @@ async def _collect_from_user_message(
             )
         )
 
-    _add_reading_sources(
-        inv,
-        references=snap.get("readingReferences") or [],
-        fresh=False,
-        turn_ordinal=turn_ordinal,
-    )
-
     # History sessions — async, one store fetch per id.
     for raw in snap.get("historyReferences") or []:
         hs_id = str(raw or "").strip()
@@ -547,30 +382,6 @@ async def _collect_from_user_message(
             SourceEntry(
                 sid=sid,
                 kind="history",
-                name=name,
-                full_text=text,
-                fresh=False,
-                first_seen_turn=turn_ordinal,
-            )
-        )
-
-    # Partner Group transcripts are public speaker/content rows only. Their
-    # service resolver applies ownership and the same absolute transcript cap
-    # used by live Group context; persisted private ``events`` never enter it.
-    for raw in snap.get("partnerGroupReferences") or []:
-        ref = _partner_group_reference(raw)
-        if ref is None:
-            continue
-        sid = _partner_group_source_id(ref)
-        if sid in inv:
-            continue
-        text, name = _load_partner_group_reference(ref, language=language)
-        if not text:
-            continue
-        inv.add(
-            SourceEntry(
-                sid=sid,
-                kind="partner_group",
                 name=name,
                 full_text=text,
                 fresh=False,
@@ -644,35 +455,6 @@ async def _load_lineage(
 # ----- Per-type resolvers shared by fresh + historical paths --------------
 
 
-def _add_reading_sources(
-    inv: SourceInventory,
-    *,
-    references: Sequence[dict[str, Any]],
-    fresh: bool,
-    turn_ordinal: int,
-) -> None:
-    """Resolve reading locators from the active user's store.
-
-    Persisted chat metadata never supplies source text. Re-resolution here
-    preserves user isolation and makes a deleted material disappear from later
-    turns instead of leaving a stale or spoofable copy in session metadata.
-    """
-
-    for source in resolve_reading_sources(list(references)):
-        if source.source_id in inv and not fresh:
-            continue
-        inv.add(
-            SourceEntry(
-                sid=source.source_id,
-                kind="reading",
-                name=source.name,
-                full_text=source.full_text,
-                fresh=fresh,
-                first_seen_turn=turn_ordinal,
-            )
-        )
-
-
 def _split_book_sections(book_context_text: str) -> list[str]:
     """Split the output of ``build_book_context`` back into per-book
     sections. ``build_book_context`` joins sections with ``"\\n\\n---\\n\\n"``;
@@ -700,8 +482,6 @@ def _resolve_book_section(book_reference: dict[str, Any]) -> tuple[str, str]:
     reference is rendered independently (so the per-book ``bk-{book_id}``
     source id stays stable). Returns ``("", "")`` on failure.
     """
-    from deeptutor.book.context import build_book_context
-
     try:
         result = build_book_context([book_reference])
     except Exception:
@@ -841,13 +621,9 @@ def _load_partner_session(ref: str, *, language: str = "en") -> tuple[str, str]:
     if not pid or not session_key:
         return "", ""
 
-    from deeptutor.multi_user.context import get_current_user
-
     if not get_current_user().is_admin:
         return "", ""
     try:
-        from deeptutor.services.partners import get_partner_manager
-
         manager = get_partner_manager()
         if not manager.partner_exists(pid):
             return "", ""
@@ -866,39 +642,6 @@ def _load_partner_session(ref: str, *, language: str = "en") -> tuple[str, str]:
     first_line = str((opener or {}).get("content", "") or "").strip().splitlines()
     title = (first_line[0][:60].strip() if first_line else "") or partner_name
     return transcript, title
-
-
-def _partner_group_reference(raw: Any) -> dict[str, str] | None:
-    if not isinstance(raw, dict):
-        return None
-    group_id = str(raw.get("group_id") or "").strip()
-    session_key = str(raw.get("session_key") or "").strip()
-    if not group_id or not session_key:
-        return None
-    return {"group_id": group_id[:80], "session_key": session_key[:120]}
-
-
-def _partner_group_source_id(ref: dict[str, str]) -> str:
-    composite = f"{ref['group_id']}\0{ref['session_key']}".encode()
-    return "pg-" + hashlib.sha256(composite).hexdigest()[:20]
-
-
-def _load_partner_group_reference(
-    ref: dict[str, str],
-    *,
-    language: str,
-) -> tuple[str, str]:
-    try:
-        from deeptutor.services.partner_groups import get_partner_group_manager
-
-        return get_partner_group_manager().referenced_transcript(
-            ref["group_id"],
-            ref["session_key"],
-            language=language,
-        )
-    except Exception:
-        logger.debug("Failed to resolve Partner Group reference %r", ref, exc_info=True)
-        return "", ""
 
 
 async def _load_history_session(
@@ -946,11 +689,7 @@ async def _load_question_entry(store: SessionStoreProtocol, entry_id: int) -> tu
         entry = None
     if not entry:
         return "", ""
-    # Use the existing turn_runtime helper for consistency with fresh-path
-    # formatting. Imported here to keep this module's static deps minimal.
-    from deeptutor.services.session.turn_runtime import _format_question_bank_entry
-
-    block = _format_question_bank_entry(entry)
+    block = format_question_bank_entry(entry)
     if not block.strip():
         return "", ""
     stem_source = str(entry.get("question", "") or "Untitled question")

@@ -6,6 +6,12 @@ from typing import Any
 
 from deeptutor.core.tool_protocol import BaseTool, ToolDefinition, ToolParameter, ToolResult
 from deeptutor.tools.builtin.common import _PromptHintsMixin
+from deeptutor.tools.cron_tool import run_cron_action
+from deeptutor.tools.github_query import run_github_query
+from deeptutor.tools.web_fetch import (
+    DEFAULT_MAX_CHARS,
+    fetch_url_as_markdown,
+)
 
 
 class WebFetchTool(_PromptHintsMixin, BaseTool):
@@ -41,11 +47,6 @@ class WebFetchTool(_PromptHintsMixin, BaseTool):
         )
 
     async def execute(self, **kwargs: Any) -> ToolResult:
-        from deeptutor.tools.web_fetch import (
-            DEFAULT_MAX_CHARS,
-            fetch_url_as_markdown,
-        )
-
         url = str(kwargs.get("url") or "").strip()
         if not url:
             return ToolResult(content="Error: url is required.", success=False)
@@ -107,8 +108,6 @@ class GithubTool(_PromptHintsMixin, BaseTool):
         )
 
     async def execute(self, **kwargs: Any) -> ToolResult:
-        from deeptutor.tools.github_query import run_github_query
-
         outcome = await run_github_query(
             query_type=str(kwargs.get("query_type") or ""),
             target=str(kwargs.get("target") or ""),
@@ -226,7 +225,5 @@ class CronTool(_PromptHintsMixin, BaseTool):
         )
 
     async def execute(self, **kwargs: Any) -> ToolResult:
-        from deeptutor.tools.cron_tool import run_cron_action
-
         outcome = run_cron_action(kwargs)
         return ToolResult(content=outcome.text, success=outcome.ok, metadata=outcome.meta)

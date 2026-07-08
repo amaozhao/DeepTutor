@@ -14,20 +14,22 @@ spelling of ``provider_id`` and stays populated for existing clients.
 
 from __future__ import annotations
 
-from collections.abc import Iterable
 import logging
 from typing import Any
 
+from deeptutor.agents._shared.tool_composition import default_optional_tools
+from deeptutor.core.i18n import current_language
 from deeptutor.i18n.metadata_i18n import localized_description, tool_description_i18n
-from deeptutor.services.i18n import current_language
+from deeptutor.runtime.registry import tool_registry as tool_registry_module
+from deeptutor.runtime.registry.deferred_tools import provider_identity
+from deeptutor.services import mcp as mcp_module
+from deeptutor.tools.builtin.names import CONFIGURABLE_BUILTIN_TOOL_NAMES
 
 logger = logging.getLogger(__name__)
 
 
 async def build_tool_options(
-    *,
-    exclude_builtin: set[str] | None = None,
-    optional_tools: Iterable[str] | None = None,
+    *, exclude_builtin: set[str] | None = None
 ) -> dict[str, list[dict[str, Any]]]:
     """Build the configurable-tool surface.
 
@@ -35,27 +37,13 @@ async def build_tool_options(
     the partners API passes ``{"read_memory", "write_memory"}`` because partners
     use the mandatory ``partner_*`` memory tools instead and cannot configure
     chat's memory tools.
-
-    ``optional_tools`` is an optional allow-list for the user-toggleable
-    surface.  The generic builder intentionally owns no admin or partner
-    policy: callers that need a restricted view pass it explicitly, while the
-    multi-user grant editor keeps seeing the complete assignable catalog.
     """
-    from deeptutor.agents._shared.tool_composition import (
-        default_optional_tools,
-    )
-    from deeptutor.runtime.registry.deferred_tools import provider_identity
-    from deeptutor.runtime.registry.tool_registry import get_tool_registry
-    from deeptutor.tools.builtin import CONFIGURABLE_BUILTIN_TOOL_NAMES
-
     exclude = exclude_builtin or set()
 
-    registry = get_tool_registry()
+    registry = tool_registry_module.get_tool_registry()
     language = current_language()
     try:
-        from deeptutor.services.mcp import get_mcp_manager
-
-        await get_mcp_manager().ensure_started()
+        await mcp_module.get_mcp_manager().ensure_started()
     except Exception:
         logger.debug("MCP manager unavailable for tool options", exc_info=True)
 
@@ -74,12 +62,7 @@ async def build_tool_options(
             "description_i18n": descriptions,
         }
 
-    allowed_optional = None if optional_tools is None else frozenset(optional_tools)
-    tools: list[dict[str, Any]] = [
-        _describe(name)
-        for name in default_optional_tools()
-        if allowed_optional is None or name in allowed_optional
-    ]
+    tools: list[dict[str, Any]] = [_describe(name) for name in default_optional_tools()]
     builtin_tools: list[dict[str, Any]] = [
         _describe(name) for name in CONFIGURABLE_BUILTIN_TOOL_NAMES if name not in exclude
     ]

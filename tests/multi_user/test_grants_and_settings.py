@@ -20,7 +20,8 @@ def make_user(tmp_path, role="user"):
 
 
 def test_grants_reject_secret_material(tmp_path, monkeypatch):
-    from deeptutor.multi_user import grants, identity
+    grants = __import__("deeptutor.multi_user", fromlist=["grants"]).grants
+    identity = __import__("deeptutor.multi_user", fromlist=["identity"]).identity
 
     monkeypatch.setattr(grants, "GRANTS_DIR", tmp_path / "grants")
     monkeypatch.setattr(
@@ -35,7 +36,7 @@ def test_grants_reject_secret_material(tmp_path, monkeypatch):
 
 
 def test_grants_reject_admin_users(tmp_path, monkeypatch):
-    from deeptutor.multi_user import grants
+    grants = __import__("deeptutor.multi_user", fromlist=["grants"]).grants
 
     monkeypatch.setattr(grants, "GRANTS_DIR", tmp_path / "grants")
     monkeypatch.setattr(

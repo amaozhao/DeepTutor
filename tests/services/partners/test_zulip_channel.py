@@ -351,7 +351,7 @@ class TestDownloadAttachments:
             ),
             patch.object(ch, "media_dir", return_value=tmp_path),
         ):
-            from pathlib import Path as RealPath
+            RealPath = __import__("pathlib", fromlist=["Path"]).Path
 
             with patch.object(RealPath, "exists", return_value=True):
                 paths = ch._download_attachments(message)
@@ -682,7 +682,9 @@ class TestSend:
         mock_client.call_endpoint.return_value = {"result": "success"}
         ch._client = mock_client
 
-        from deeptutor.partners.bus.events import OutboundMessage
+        OutboundMessage = __import__(
+            "deeptutor.partners.bus.events", fromlist=["OutboundMessage"]
+        ).OutboundMessage
 
         msg = OutboundMessage(
             channel="zulip",
@@ -707,7 +709,9 @@ class TestSend:
         typing_task = asyncio.create_task(asyncio.sleep(100))
         ch._typing_tasks["pm:42"] = typing_task
 
-        from deeptutor.partners.bus.events import OutboundMessage
+        OutboundMessage = __import__(
+            "deeptutor.partners.bus.events", fromlist=["OutboundMessage"]
+        ).OutboundMessage
 
         msg = OutboundMessage(
             channel="zulip",
@@ -728,7 +732,9 @@ class TestSend:
         typing_task = asyncio.create_task(asyncio.sleep(100))
         ch._typing_tasks["pm:42"] = typing_task
 
-        from deeptutor.partners.bus.events import OutboundMessage
+        OutboundMessage = __import__(
+            "deeptutor.partners.bus.events", fromlist=["OutboundMessage"]
+        ).OutboundMessage
 
         msg = OutboundMessage(
             channel="zulip",
@@ -744,7 +750,9 @@ class TestSend:
         ch = _make_channel()
         ch._client = None
 
-        from deeptutor.partners.bus.events import OutboundMessage
+        OutboundMessage = __import__(
+            "deeptutor.partners.bus.events", fromlist=["OutboundMessage"]
+        ).OutboundMessage
 
         msg = OutboundMessage(
             channel="zulip",
@@ -772,7 +780,9 @@ class TestUploadAndSend:
         mock_client.call_endpoint.side_effect = fake_call_endpoint
         ch._client = mock_client
 
-        from deeptutor.partners.bus.events import OutboundMessage
+        OutboundMessage = __import__(
+            "deeptutor.partners.bus.events", fromlist=["OutboundMessage"]
+        ).OutboundMessage
 
         msg = OutboundMessage(
             channel="zulip",
@@ -933,7 +943,9 @@ class TestSendMetadataEnrichment:
             "sender_email": "user@example.com",
         }
 
-        from deeptutor.partners.bus.events import OutboundMessage
+        OutboundMessage = __import__(
+            "deeptutor.partners.bus.events", fromlist=["OutboundMessage"]
+        ).OutboundMessage
 
         msg = OutboundMessage(
             channel="zulip",
@@ -959,7 +971,9 @@ class TestSendMetadataEnrichment:
             "recipient_user_id": "42",
         }
 
-        from deeptutor.partners.bus.events import OutboundMessage
+        OutboundMessage = __import__(
+            "deeptutor.partners.bus.events", fromlist=["OutboundMessage"]
+        ).OutboundMessage
 
         msg = OutboundMessage(
             channel="zulip",
@@ -981,7 +995,9 @@ class TestSendToolHints:
         mock_client.call_endpoint.return_value = {"result": "success"}
         ch._client = mock_client
 
-        from deeptutor.partners.bus.events import OutboundMessage
+        OutboundMessage = __import__(
+            "deeptutor.partners.bus.events", fromlist=["OutboundMessage"]
+        ).OutboundMessage
 
         msg = OutboundMessage(
             channel="zulip",
@@ -1005,7 +1021,9 @@ class TestSendToolHints:
         mock_client.call_endpoint.return_value = {"result": "success"}
         ch._client = mock_client
 
-        from deeptutor.partners.bus.events import OutboundMessage
+        OutboundMessage = __import__(
+            "deeptutor.partners.bus.events", fromlist=["OutboundMessage"]
+        ).OutboundMessage
 
         msg = OutboundMessage(
             channel="zulip",
