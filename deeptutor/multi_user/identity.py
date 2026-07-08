@@ -112,8 +112,10 @@ def auth_store_write_lock() -> Iterator[None]:
 
                 fcntl_module.flock(handle.fileno(), fcntl_module.LOCK_EX)
                 locked = True
-            except (ImportError, OSError):
+            except ImportError:
                 pass
+            except OSError as exc:
+                logger.warning("Auth store write lock unavailable for %s: %s", lock_path, exc)
             try:
                 yield
             finally:
@@ -157,8 +159,10 @@ def _migrate_secret() -> None:
             _write_auth_secret(secret)
             try:
                 SECRET_FILE.chmod(0o600)
-            except OSError:
-                pass
+            except OSError as exc:
+                logger.warning(
+                    "Failed to restrict auth secret permissions at %s: %s", SECRET_FILE, exc
+                )
             logger.info("Migrated auth secret from %s to %s", LEGACY_SECRET_FILE, SECRET_FILE)
     except Exception as exc:
         logger.warning("Failed to migrate legacy auth secret: %s", exc)
@@ -678,7 +682,8 @@ def load_or_create_auth_secret() -> str:
         try:
             if SECRET_FILE.exists():
                 seed = SECRET_FILE.read_text(encoding="utf-8").strip()
-        except Exception:
+        except Exception as exc:
+            logger.warning("Failed to read local auth secret seed at %s: %s", SECRET_FILE, exc)
             seed = ""
         return _postgres_secret(seed)
     migrate_legacy_multi_user_tree()
@@ -697,8 +702,10 @@ def load_or_create_auth_secret() -> str:
             _write_auth_secret(generated)
             try:
                 SECRET_FILE.chmod(0o600)
-            except OSError:
-                pass
+            except OSError as exc:
+                logger.warning(
+                    "Failed to restrict auth secret permissions at %s: %s", SECRET_FILE, exc
+                )
             logger.warning(
                 "Auth is enabled and no auth_secret file exists. Generated a stable local secret at %s.",
                 SECRET_FILE,

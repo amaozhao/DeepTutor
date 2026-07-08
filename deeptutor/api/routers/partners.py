@@ -17,7 +17,7 @@ import logging
 from typing import Any, AsyncGenerator, Literal
 from uuid import uuid4
 
-from fastapi import APIRouter, HTTPException, Query, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, HTTPException, Query, Response, WebSocket, WebSocketDisconnect
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
@@ -535,6 +535,7 @@ def _stopped_partner_dict(
 @router.get("/{partner_id}")
 async def get_partner(
     partner_id: str,
+    response: Response,
     include_secrets: bool = Query(
         False,
         description=(
@@ -544,6 +545,10 @@ async def get_partner(
     ),
 ):
     mgr = get_partner_manager()
+    if include_secrets:
+        logger.info("Admin requested raw partner channel secrets for partner '%s'", partner_id)
+        response.headers["Cache-Control"] = "no-store"
+        response.headers["Pragma"] = "no-cache"
     instance = mgr.get_partner(partner_id)
     if instance:
         return instance.to_dict(

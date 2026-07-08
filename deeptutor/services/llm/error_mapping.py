@@ -7,13 +7,17 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 import logging
+import socket
 
 # Import unified exceptions from exceptions.py
 from .exceptions import (
     LLMAPIError,
     LLMAuthenticationError,
     LLMError,
+    LLMModelNotFoundError,
+    LLMNetworkError,
     LLMRateLimitError,
+    LLMTimeoutError,
     ProviderContextWindowError,
 )
 
@@ -56,7 +60,13 @@ _GLOBAL_RULES: list[MappingRule] = [
         factory=lambda exc, provider: LLMRateLimitError(str(exc), provider=provider),
     ),
     MappingRule(
-        classifier=_message_contains("context length", "maximum context"),
+        classifier=_message_contains(
+            "context length",
+            "context window",
+            "maximum context",
+            "maximum context length",
+            "token limit",
+        ),
         factory=lambda exc, provider: ProviderContextWindowError(str(exc), provider=provider),
     ),
 ]
@@ -70,6 +80,14 @@ if _HAS_OPENAI and openai is not None:
         MappingRule(
             classifier=_instance_of(openai.RateLimitError),
             factory=lambda exc, provider: LLMRateLimitError(str(exc), provider=provider),
+        ),
+        MappingRule(
+            classifier=_instance_of(openai.APITimeoutError),
+            factory=lambda exc, provider: LLMTimeoutError(str(exc), provider=provider),
+        ),
+        MappingRule(
+            classifier=_instance_of(openai.APIConnectionError),
+            factory=lambda exc, provider: LLMNetworkError(str(exc), provider=provider),
         ),
     ]
 
@@ -86,6 +104,37 @@ try:
 except ImportError:
     pass
 
+try:
+    import httpx
+
+    _GLOBAL_RULES.extend(
+        [
+            MappingRule(
+                classifier=_instance_of(httpx.TimeoutException),
+                factory=lambda exc, provider: LLMTimeoutError(str(exc), provider=provider),
+            ),
+            MappingRule(
+                classifier=_instance_of(httpx.NetworkError),
+                factory=lambda exc, provider: LLMNetworkError(str(exc), provider=provider),
+            ),
+        ]
+    )
+except ImportError:
+    pass
+
+_GLOBAL_RULES.extend(
+    [
+        MappingRule(
+            classifier=_instance_of(TimeoutError),
+            factory=lambda exc, provider: LLMTimeoutError(str(exc), provider=provider),
+        ),
+        MappingRule(
+            classifier=_instance_of(ConnectionError, socket.gaierror),
+            factory=lambda exc, provider: LLMNetworkError(str(exc), provider=provider),
+        ),
+    ]
+)
+
 
 def map_error(exc: Exception, provider: str | None = None) -> LLMError:
     """Map provider-specific errors to unified internal exceptions."""
@@ -95,6 +144,10 @@ def map_error(exc: Exception, provider: str | None = None) -> LLMError:
         return LLMAuthenticationError(str(exc), provider=provider)
     if status_code == 429:
         return LLMRateLimitError(str(exc), provider=provider)
+    if status_code == 404:
+        return LLMModelNotFoundError(str(exc), provider=provider)
+    if status_code in {408, 504}:
+        return LLMTimeoutError(str(exc), provider=provider)
 
     for rule in _GLOBAL_RULES:
         if rule.classifier(exc):

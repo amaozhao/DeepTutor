@@ -17,64 +17,26 @@ import dynamic from "next/dynamic";
 import { MessageSquare } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import ChatComposer from "@/components/chat/home/ChatComposer";
+import ChatReferencePickers from "@/components/chat/home/ChatReferencePickers";
 import {
   type QuizFollowupTabContext,
   useFollowupThread,
   useQuizFollowupController,
 } from "@/context/QuizFollowupContext";
-import { buildQuizFollowupConfig } from "@/lib/quiz-types";
-import { classifyFile, isSvgFilename } from "@/lib/doc-attachments";
-import { useAttachmentLimits } from "@/lib/attachment-limits";
 import {
-  extractBase64FromDataUrl,
-  readFileAsDataUrl,
-} from "@/lib/file-attachments";
-import { listKnowledgeBases } from "@/lib/knowledge-api";
-import { listLLMOptions, type LLMOption } from "@/lib/llm-options";
-import { selectedBooksToPayload } from "@/lib/book-references";
-import type { SelectedBookReference } from "@/lib/book-references";
-import type { SelectedHistorySession } from "@/components/chat/HistorySessionPicker";
-import type { SelectedQuestionEntry } from "@/components/chat/QuestionBankPicker";
-import type { SelectedRecord } from "@/lib/notebook-selection-types";
-import type { SpaceMemoryFile } from "@/lib/space-items";
+  quizFollowupSendPlan,
+} from "@/lib/quiz-types";
+import { useChatAttachments } from "@/hooks/chat/attachments";
+import { useChatComposerMenus } from "@/hooks/chat/menus";
+import { useChatBasicResources } from "@/hooks/chat/resources";
+import { useChatReferences } from "@/hooks/chat/references";
+import { chatOutgoingAttachments } from "@/lib/chat/send";
+import { toggleKnowledgeBaseSelection } from "@/lib/chat/agents";
 import type { LLMSelection } from "@/lib/unified-ws";
 
-const NotebookRecordPicker = dynamic(
-  () => import("@/components/notebook/NotebookRecordPicker"),
-  { ssr: false },
-);
-const HistorySessionPicker = dynamic(
-  () => import("@/components/chat/HistorySessionPicker"),
-  { ssr: false },
-);
-const QuestionBankPicker = dynamic(
-  () => import("@/components/chat/QuestionBankPicker"),
-  { ssr: false },
-);
 const PersonaPicker = dynamic(() => import("@/components/chat/PersonaPicker"), {
   ssr: false,
 });
-const MemoryPicker = dynamic(() => import("@/components/chat/MemoryPicker"), {
-  ssr: false,
-});
-const BookReferencePicker = dynamic(
-  () => import("@/components/chat/BookReferencePicker"),
-  { ssr: false },
-);
-
-interface KnowledgeBase {
-  name: string;
-  is_default?: boolean;
-}
-
-interface PendingAttachment {
-  type: string;
-  filename: string;
-  base64?: string;
-  previewUrl?: string;
-  size?: number;
-  mimeType?: string;
-}
 
 // Single-capability list — the follow-up tab is locked to "chat".
 // label/description are i18n keys; resolved via t() inside the component.
@@ -99,101 +61,89 @@ function FollowupChatComposerImpl({ context }: FollowupChatComposerProps) {
 
   // ── Composer DOM refs ─────────────────────────────────────────
   const composerRef = useRef<HTMLDivElement>(null);
-  const capMenuRef = useRef<HTMLDivElement>(null);
-  const capBtnRef = useRef<HTMLButtonElement>(null);
-  const spaceMenuRef = useRef<HTMLDivElement>(null);
-  const spaceBtnRef = useRef<HTMLButtonElement>(null);
-  const dragCounter = useRef(0);
+  const {
+    capMenuRef,
+    capBtnRef,
+    spaceMenuRef,
+    spaceBtnRef,
+    capMenuOpen,
+    spaceMenuOpen,
+    setCapMenuOpen,
+    setSpaceMenuOpen,
+  } = useChatComposerMenus();
+
+  const chatAttachments = useChatAttachments(t);
+  const {
+    attachments,
+    dragging,
+    attachmentError,
+    dragCounter,
+    handlePaste,
+    removeAttachment,
+    handleDragEnter,
+    handleDragLeave,
+    handleDragOver,
+    handleDrop,
+    handleAddFiles,
+    clearAttachments,
+  } = chatAttachments;
 
   // ── Composer local state ──────────────────────────────────────
-  const [attachments, setAttachments] = useState<PendingAttachment[]>([]);
-  const attachmentLimits = useAttachmentLimits();
-  const [attachmentError, setAttachmentError] = useState<string | null>(null);
-  const attachmentErrorTimer = useRef<ReturnType<typeof setTimeout> | null>(
-    null,
-  );
-  const [dragging, setDragging] = useState(false);
-  const [capMenuOpen, setCapMenuOpen] = useState(false);
-  const [spaceMenuOpen, setSpaceMenuOpen] = useState(false);
-
   const [selectedKnowledgeBases, setSelectedKnowledgeBases] = useState<
     string[]
   >([]);
-  const [selectedBookReferences, setSelectedBookReferences] = useState<
-    SelectedBookReference[]
-  >([]);
-  const [selectedNotebookRecords, setSelectedNotebookRecords] = useState<
-    SelectedRecord[]
-  >([]);
-  const [selectedHistorySessions, setSelectedHistorySessions] = useState<
-    SelectedHistorySession[]
-  >([]);
-  const [selectedQuestionEntries, setSelectedQuestionEntries] = useState<
-    SelectedQuestionEntry[]
-  >([]);
   const [selectedPersona, setSelectedPersona] = useState<string | null>(null);
-  const [selectedMemoryFiles, setSelectedMemoryFiles] = useState<
-    SpaceMemoryFile[]
-  >([]);
-
-  // ── Picker dialog visibility ──────────────────────────────────
-  const [showNotebookPicker, setShowNotebookPicker] = useState(false);
-  const [showBookPicker, setShowBookPicker] = useState(false);
-  const [showHistoryPicker, setShowHistoryPicker] = useState(false);
-  const [showQuestionBankPicker, setShowQuestionBankPicker] = useState(false);
   const [showPersonaPicker, setShowPersonaPicker] = useState(false);
-  const [showMemoryPicker, setShowMemoryPicker] = useState(false);
 
-  // ── Shared data (KBs + LLMs) ──────────────────────────────────
-  const [knowledgeBases, setKnowledgeBases] = useState<KnowledgeBase[]>([]);
-  const [llmOptions, setLLMOptions] = useState<LLMOption[]>([]);
-  const [activeLLMDefault, setActiveLLMDefault] = useState<LLMSelection | null>(
-    null,
-  );
+  const references = useChatReferences();
+  const {
+    showNotebookPicker,
+    showBookPicker,
+    showHistoryPicker,
+    showQuestionBankPicker,
+    showMemoryPicker,
+    selectedNotebookRecords,
+    selectedBookReferences,
+    selectedHistorySessions,
+    selectedQuestionEntries,
+    selectedMemoryFiles,
+    notebookReferenceGroups,
+    notebookReferencesPayload,
+    bookReferencesPayload,
+    historyReferencesPayload,
+    questionNotebookReferencesPayload,
+    memoryReferencesPayload,
+    handleSelectNotebookPicker,
+    handleSelectBookPicker,
+    handleSelectHistoryPicker,
+    handleSelectQuestionBankPicker,
+    handleSelectMemoryPicker,
+    handleRemoveHistory,
+    handleRemoveNotebook,
+    handleRemoveBookReference,
+    handleRemoveQuestion,
+    handleToggleMemoryFile,
+    handleCloseNotebookPicker,
+    handleApplyNotebookRecords,
+    handleCloseBookPicker,
+    handleApplyBookReferences,
+    handleCloseHistoryPicker,
+    handleApplyHistorySessions,
+    handleCloseQuestionBankPicker,
+    handleApplyQuestionEntries,
+    handleCloseMemoryPicker,
+    handleApplyMemoryFiles,
+    clearSelectedReferences,
+  } = references;
+
+  const {
+    knowledgeBases,
+    llmOptions,
+    activeLLMDefault,
+    llmOptionsLoading,
+    llmOptionsError,
+  } = useChatBasicResources();
   const [llmSelection, setLLMSelection] = useState<LLMSelection | null>(null);
-  const [llmOptionsLoading, setLLMOptionsLoading] = useState(true);
-  const [llmOptionsError, setLLMOptionsError] = useState(false);
-
-  useEffect(() => {
-    let cancelled = false;
-    const run = async () => {
-      try {
-        const list = await listKnowledgeBases({ force: false });
-        if (!cancelled) setKnowledgeBases(list);
-      } catch {
-        if (!cancelled) setKnowledgeBases([]);
-      }
-    };
-    void run();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  useEffect(() => {
-    let cancelled = false;
-    const run = async () => {
-      setLLMOptionsLoading(true);
-      try {
-        const payload = await listLLMOptions();
-        if (cancelled) return;
-        setLLMOptions(payload.options);
-        setActiveLLMDefault(payload.active);
-        setLLMOptionsError(false);
-      } catch {
-        if (cancelled) return;
-        setLLMOptionsError(true);
-        setLLMOptions([]);
-        setActiveLLMDefault(null);
-      } finally {
-        if (!cancelled) setLLMOptionsLoading(false);
-      }
-    };
-    void run();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   // Default to the server-side active LLM until the user picks one.
   useEffect(() => {
@@ -201,372 +151,78 @@ function FollowupChatComposerImpl({ context }: FollowupChatComposerProps) {
     setLLMSelection(activeLLMDefault);
   }, [activeLLMDefault, llmSelection]);
 
-  // Click-outside handlers for menu chrome (cap / space).
-  useEffect(() => {
-    if (!capMenuOpen && !spaceMenuOpen) return;
-    const handler = (event: MouseEvent) => {
-      const target = event.target as Node | null;
-      if (!target) return;
-      if (
-        capMenuOpen &&
-        capMenuRef.current &&
-        !capMenuRef.current.contains(target) &&
-        capBtnRef.current &&
-        !capBtnRef.current.contains(target)
-      ) {
-        setCapMenuOpen(false);
-      }
-      if (
-        spaceMenuOpen &&
-        spaceMenuRef.current &&
-        !spaceMenuRef.current.contains(target) &&
-        spaceBtnRef.current &&
-        !spaceBtnRef.current.contains(target)
-      ) {
-        setSpaceMenuOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [capMenuOpen, spaceMenuOpen]);
-
-  // ── Attachment helpers ────────────────────────────────────────
-  const showAttachmentError = useCallback((message: string) => {
-    setAttachmentError(message);
-    if (attachmentErrorTimer.current) {
-      clearTimeout(attachmentErrorTimer.current);
-    }
-    attachmentErrorTimer.current = setTimeout(() => {
-      setAttachmentError(null);
-      attachmentErrorTimer.current = null;
-    }, 4000);
-  }, []);
-
-  const fileToAttachment = useCallback(
-    (f: File): Promise<PendingAttachment> =>
-      new Promise((resolve, reject) => {
-        readFileAsDataUrl(f)
-          .then((raw) => {
-            const svg = isSvgFilename(f.name) || f.type === "image/svg+xml";
-            const isImage = !svg && f.type.startsWith("image/");
-            const b64 = extractBase64FromDataUrl(raw);
-            resolve({
-              type: isImage ? "image" : "file",
-              filename: f.name,
-              base64: b64,
-              previewUrl: isImage || svg ? raw : undefined,
-              size: f.size,
-              mimeType: f.type || undefined,
-            });
-          })
-          .catch(reject);
-      }),
-    [],
-  );
-
-  const filterAndReportFiles = useCallback(
-    (files: File[]): File[] => {
-      let runningTotal = attachments.reduce((s, a) => s + (a.size ?? 0), 0);
-      const accepted: File[] = [];
-      const rejected: {
-        name: string;
-        reason: "unsupported" | "too_large" | "quota";
-      }[] = [];
-      for (const f of files) {
-        const kind = classifyFile(f);
-        if (!kind) {
-          rejected.push({ name: f.name, reason: "unsupported" });
-          continue;
-        }
-        if (f.size > attachmentLimits.maxFileBytes) {
-          rejected.push({ name: f.name, reason: "too_large" });
-          continue;
-        }
-        if (runningTotal + f.size > attachmentLimits.maxTotalBytes) {
-          rejected.push({ name: f.name, reason: "quota" });
-          break;
-        }
-        runningTotal += f.size;
-        accepted.push(f);
-      }
-      if (rejected.length) {
-        const first = rejected[0];
-        let msg: string;
-        if (first.reason === "too_large") {
-          msg = t("File too large: {{name}}", { name: first.name });
-        } else if (first.reason === "quota") {
-          msg = t("Too many files, skipped some");
-        } else {
-          msg = t("Unsupported file type: {{name}}", { name: first.name });
-        }
-        showAttachmentError(msg);
-      }
-      return accepted;
-    },
-    [attachments, attachmentLimits, showAttachmentError, t],
-  );
-
-  const handleAddFiles = useCallback(
-    async (files: File[]) => {
-      const accepted = filterAndReportFiles(files);
-      if (!accepted.length) return;
-      const next = await Promise.all(accepted.map(fileToAttachment));
-      setAttachments((prev) => [...prev, ...next]);
-    },
-    [fileToAttachment, filterAndReportFiles],
-  );
-
-  const removeAttachment = useCallback((index: number) => {
-    setAttachments((prev) => prev.filter((_, i) => i !== index));
-  }, []);
-
-  const handlePaste = useCallback(
-    async (event: React.ClipboardEvent) => {
-      const items = Array.from(event.clipboardData.items);
-      const files = items
-        .filter((item) => item.kind === "file")
-        .map((item) => item.getAsFile())
-        .filter((f): f is File => f !== null);
-      const accepted = filterAndReportFiles(files);
-      if (!accepted.length) return;
-      event.preventDefault();
-      const next = await Promise.all(accepted.map(fileToAttachment));
-      setAttachments((prev) => [...prev, ...next]);
-    },
-    [fileToAttachment, filterAndReportFiles],
-  );
-
-  // ── Drag-and-drop on the composer surface ─────────────────────
-  const handleDragEnter = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    dragCounter.current += 1;
-    if (e.dataTransfer.types.includes("Files")) setDragging(true);
-  }, []);
-  const handleDragLeave = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    dragCounter.current -= 1;
-    if (dragCounter.current <= 0) {
-      dragCounter.current = 0;
-      setDragging(false);
-    }
-  }, []);
-  const handleDragOver = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-  }, []);
-  const handleDrop = useCallback(
-    async (e: React.DragEvent) => {
-      e.preventDefault();
-      e.stopPropagation();
-      dragCounter.current = 0;
-      setDragging(false);
-      const files = Array.from(e.dataTransfer.files);
-      await handleAddFiles(files);
-    },
-    [handleAddFiles],
-  );
-
   // ── Picker handlers ───────────────────────────────────────────
   const handleToggleKB = useCallback((name: string) => {
     setSelectedKnowledgeBases((prev) =>
-      prev.includes(name) ? prev.filter((kb) => kb !== name) : [...prev, name],
+      toggleKnowledgeBaseSelection(prev, name),
     );
   }, []);
 
-  const handleSelectNotebookPicker = useCallback(() => {
-    setShowNotebookPicker(true);
-  }, []);
-  const handleSelectBookPicker = useCallback(() => {
-    setShowBookPicker(true);
-  }, []);
-  const handleSelectHistoryPicker = useCallback(() => {
-    setShowHistoryPicker(true);
-  }, []);
-  const handleSelectQuestionBankPicker = useCallback(() => {
-    setShowQuestionBankPicker(true);
-  }, []);
   const handleSelectPersonaPicker = useCallback(() => {
     setShowPersonaPicker(true);
-  }, []);
-  const handleSelectMemoryPicker = useCallback(() => {
-    setShowMemoryPicker(true);
   }, []);
 
   const handleClearPersona = useCallback(() => {
     setSelectedPersona(null);
   }, []);
-  const handleToggleMemoryFile = useCallback((file: SpaceMemoryFile) => {
-    setSelectedMemoryFiles((prev) =>
-      prev.includes(file) ? prev.filter((f) => f !== file) : [...prev, file],
-    );
-  }, []);
-
-  const handleRemoveHistory = useCallback((sessionId: string) => {
-    setSelectedHistorySessions((prev) =>
-      prev.filter((s) => s.sessionId !== sessionId),
-    );
-  }, []);
-  const handleRemoveBookReference = useCallback((bookId: string) => {
-    setSelectedBookReferences((prev) =>
-      prev.filter((b) => b.bookId !== bookId),
-    );
-  }, []);
-  const handleRemoveNotebook = useCallback((notebookId: string) => {
-    setSelectedNotebookRecords((prev) =>
-      prev.filter((r) => r.notebookId !== notebookId),
-    );
-  }, []);
-  const handleRemoveQuestion = useCallback((entryId: number) => {
-    setSelectedQuestionEntries((prev) => prev.filter((e) => e.id !== entryId));
-  }, []);
-
-  // ── References payloads ───────────────────────────────────────
-  const notebookReferencesPayload = useMemo(() => {
-    const grouped = new Map<string, string[]>();
-    selectedNotebookRecords.forEach((record) => {
-      const current = grouped.get(record.notebookId) || [];
-      current.push(record.id);
-      grouped.set(record.notebookId, current);
-    });
-    return Array.from(grouped.entries()).map(([notebook_id, record_ids]) => ({
-      notebook_id,
-      record_ids,
-    }));
-  }, [selectedNotebookRecords]);
-  const bookReferencesPayload = useMemo(
-    () => selectedBooksToPayload(selectedBookReferences),
-    [selectedBookReferences],
-  );
-  const historyReferencesPayload = useMemo(
-    () => selectedHistorySessions.map((s) => s.sessionId),
-    [selectedHistorySessions],
-  );
-  const questionNotebookReferencesPayload = useMemo(
-    () => selectedQuestionEntries.map((entry) => entry.id),
-    [selectedQuestionEntries],
-  );
-  const memoryReferencesPayload = useMemo(
-    () => [...selectedMemoryFiles],
-    [selectedMemoryFiles],
-  );
-  const notebookReferenceGroups = useMemo(() => {
-    return notebookReferencesPayload.map((ref) => {
-      const sample = selectedNotebookRecords.find(
-        (r) => r.notebookId === ref.notebook_id,
-      );
-      return {
-        notebookId: ref.notebook_id,
-        notebookName: sample?.notebookName ?? ref.notebook_id,
-        count: ref.record_ids.length,
-      };
-    });
-  }, [notebookReferencesPayload, selectedNotebookRecords]);
 
   // Once the user has clicked Send we wipe transient selections — the
   // follow-up chat session has captured them and later turns ride on
   // server-side memory, mirroring the main chat behavior.
   const handleSend = useCallback(
     (content: string) => {
-      const hasContent = content.trim().length > 0;
-      const hasReferences =
-        attachments.length > 0 ||
-        selectedKnowledgeBases.length > 0 ||
-        selectedBookReferences.length > 0 ||
-        selectedNotebookRecords.length > 0 ||
-        selectedHistorySessions.length > 0 ||
-        selectedQuestionEntries.length > 0 ||
-        !!selectedPersona ||
-        selectedMemoryFiles.length > 0;
-      if (!hasContent && !hasReferences) return;
-      if (thread.isStreaming) return;
-
-      const isFirstSend = !thread.sessionId && thread.messages.length === 0;
-      const answerImageAttachments = isFirstSend
-        ? context.answerImages
-            .map((image) => {
-              if (image.base64) {
-                return {
-                  type: "image",
-                  base64: image.base64,
-                  filename: image.filename,
-                  mime_type: image.mime,
-                } as const;
-              }
-              if (image.url) {
-                return {
-                  type: "image",
-                  url: image.url,
-                  filename: image.filename,
-                  mime_type: image.mime,
-                } as const;
-              }
-              return null;
-            })
-            .filter(
-              (entry): entry is NonNullable<typeof entry> => entry !== null,
-            )
-        : [];
-
-      const composerAttachments = attachments.map((a) => ({
-        type: a.type,
-        filename: a.filename,
-        base64: a.base64,
-        mime_type: a.mimeType,
-      }));
-
-      const personaPayload = selectedPersona ?? undefined;
-
-      const baseConfig = buildQuizFollowupConfig(
-        context.question,
-        context.userAnswer,
-        context.isCorrect,
-        context.parentQuizSessionId,
-        {
-          userAnswerImageFilenames: context.answerImages.map(
-            (image) => image.filename,
-          ),
-          aiJudgment: context.aiJudgment,
-        },
-      );
-
-      // Memory references ride on ``config`` — same convention as the
-      // main chat sendMessage path.
-      const config: Record<string, unknown> = { ...baseConfig };
-      if (memoryReferencesPayload.length > 0) {
-        config.memory_references = memoryReferencesPayload;
-      }
+      const plan = quizFollowupSendPlan({
+        content,
+        isStreaming: thread.isStreaming,
+        isFirstSend: !thread.sessionId && thread.messages.length === 0,
+        question: context.question,
+        userAnswer: context.userAnswer,
+        isCorrect: context.isCorrect,
+        parentQuizSessionId: context.parentQuizSessionId,
+        answerImages: context.answerImages,
+        aiJudgment: context.aiJudgment,
+        attachments,
+        selectedKnowledgeBases: { length: selectedKnowledgeBases.length },
+        selectedBookReferences: { length: selectedBookReferences.length },
+        selectedNotebookRecords: { length: selectedNotebookRecords.length },
+        selectedHistorySessions: { length: selectedHistorySessions.length },
+        selectedQuestionEntries: { length: selectedQuestionEntries.length },
+        selectedMemoryFiles: { length: selectedMemoryFiles.length },
+        selectedPersona,
+        memoryReferences: memoryReferencesPayload,
+      });
+      if (!plan) return;
 
       controller.sendMessage({
         questionKey: context.questionKey,
-        content,
-        attachments: [...answerImageAttachments, ...composerAttachments],
-        config,
+        content: plan.content,
+        attachments: [
+          ...plan.answerImageAttachments,
+          ...chatOutgoingAttachments(attachments),
+        ],
+        config: plan.config,
         language: context.language,
         knowledgeBases: selectedKnowledgeBases,
         notebookReferences: notebookReferencesPayload,
         historyReferences: historyReferencesPayload,
         bookReferences: bookReferencesPayload,
         questionNotebookReferences: questionNotebookReferencesPayload,
-        persona: personaPayload,
+        persona: plan.persona,
         llmSelection,
       });
 
       // Wipe transient selections — the chat session now owns them.
-      setAttachments([]);
-      setSelectedBookReferences([]);
-      setSelectedNotebookRecords([]);
-      setSelectedHistorySessions([]);
-      setSelectedQuestionEntries([]);
+      clearAttachments();
+      clearSelectedReferences();
       setSelectedPersona(null);
-      setSelectedMemoryFiles([]);
     },
     [
       attachments,
       bookReferencesPayload,
       context,
       controller,
+      clearAttachments,
+      clearSelectedReferences,
       historyReferencesPayload,
       llmSelection,
       memoryReferencesPayload,
@@ -676,38 +332,24 @@ function FollowupChatComposerImpl({ context }: FollowupChatComposerProps) {
         )}
       />
 
-      <NotebookRecordPicker
-        open={showNotebookPicker}
-        onClose={() => setShowNotebookPicker(false)}
-        onApply={(records: SelectedRecord[]) => {
-          setSelectedNotebookRecords(records);
-          setShowNotebookPicker(false);
-        }}
-      />
-      <BookReferencePicker
-        open={showBookPicker}
-        initialReferences={selectedBookReferences}
-        onClose={() => setShowBookPicker(false)}
-        onApply={(refs: SelectedBookReference[]) => {
-          setSelectedBookReferences(refs);
-          setShowBookPicker(false);
-        }}
-      />
-      <HistorySessionPicker
-        open={showHistoryPicker}
-        onClose={() => setShowHistoryPicker(false)}
-        onApply={(sessions: SelectedHistorySession[]) => {
-          setSelectedHistorySessions(sessions);
-          setShowHistoryPicker(false);
-        }}
-      />
-      <QuestionBankPicker
-        open={showQuestionBankPicker}
-        onClose={() => setShowQuestionBankPicker(false)}
-        onApply={(entries: SelectedQuestionEntry[]) => {
-          setSelectedQuestionEntries(entries);
-          setShowQuestionBankPicker(false);
-        }}
+      <ChatReferencePickers
+        showNotebookPicker={showNotebookPicker}
+        showBookPicker={showBookPicker}
+        showHistoryPicker={showHistoryPicker}
+        showQuestionBankPicker={showQuestionBankPicker}
+        showMemoryPicker={showMemoryPicker}
+        selectedBookReferences={selectedBookReferences}
+        selectedMemoryFiles={selectedMemoryFiles}
+        onCloseNotebookPicker={handleCloseNotebookPicker}
+        onApplyNotebookRecords={handleApplyNotebookRecords}
+        onCloseBookPicker={handleCloseBookPicker}
+        onApplyBookReferences={handleApplyBookReferences}
+        onCloseHistoryPicker={handleCloseHistoryPicker}
+        onApplyHistorySessions={handleApplyHistorySessions}
+        onCloseQuestionBankPicker={handleCloseQuestionBankPicker}
+        onApplyQuestionEntries={handleApplyQuestionEntries}
+        onCloseMemoryPicker={handleCloseMemoryPicker}
+        onApplyMemoryFiles={handleApplyMemoryFiles}
       />
       <PersonaPicker
         open={showPersonaPicker}
@@ -716,15 +358,6 @@ function FollowupChatComposerImpl({ context }: FollowupChatComposerProps) {
         onApply={(persona: string | null) => {
           setSelectedPersona(persona);
           setShowPersonaPicker(false);
-        }}
-      />
-      <MemoryPicker
-        open={showMemoryPicker}
-        initialFiles={selectedMemoryFiles}
-        onClose={() => setShowMemoryPicker(false)}
-        onApply={(files: SpaceMemoryFile[]) => {
-          setSelectedMemoryFiles(files);
-          setShowMemoryPicker(false);
         }}
       />
     </>

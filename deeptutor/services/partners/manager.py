@@ -301,6 +301,44 @@ class PartnerManager:
             self._stores[partner_id] = store
         return store
 
+    def _create_partner_task(
+        self,
+        instance: PartnerInstance,
+        coro: Awaitable[Any],
+        *,
+        name: str,
+    ) -> asyncio.Task:
+        task = asyncio.create_task(coro, name=name)
+        instance.tasks.append(task)
+
+        def discard_done(done: asyncio.Task) -> None:
+            try:
+                instance.tasks.remove(done)
+            except ValueError:
+                pass
+
+        task.add_done_callback(discard_done)
+        return task
+
+    async def _cancel_partner_tasks(
+        self,
+        tasks: list[asyncio.Task],
+        *,
+        timeout: float = 5.0,
+    ) -> None:
+        for task in tasks:
+            if not task.done():
+                task.cancel()
+        for task in tasks:
+            try:
+                await asyncio.wait_for(asyncio.shield(task), timeout=timeout)
+            except asyncio.CancelledError:
+                pass
+            except asyncio.TimeoutError:
+                logger.warning("Timed out waiting for partner task '%s' to stop", task.get_name())
+            except Exception:
+                logger.exception("Partner task '%s' failed during shutdown", task.get_name())
+
     def _ensure_partner_dirs(self, partner_id: str) -> None:
         get_partner_dir(partner_id)
         ensure_partner_workspace(partner_id)
@@ -460,17 +498,19 @@ class PartnerManager:
             channel_manager=channel_manager,
         )
 
-        runner_task = asyncio.create_task(runner.run(), name=f"partner:{partner_id}:runner")
-        router_task = asyncio.create_task(
+        self._create_partner_task(instance, runner.run(), name=f"partner:{partner_id}:runner")
+        self._create_partner_task(
+            instance,
             self._outbound_router(partner_id, bus, instance),
             name=f"partner:{partner_id}:router",
         )
-        instance.tasks.extend([runner_task, router_task])
 
         if channel_manager:
             for ch_name, ch in channel_manager.channels.items():
-                instance.tasks.append(
-                    asyncio.create_task(ch.start(), name=f"partner:{partner_id}:ch:{ch_name}")
+                self._create_partner_task(
+                    instance,
+                    ch.start(),
+                    name=f"partner:{partner_id}:ch:{ch_name}",
                 )
 
         self._partners[partner_id] = instance
@@ -539,14 +579,8 @@ class PartnerManager:
             self._load_auto_start(partner_id, default=True) if preserve_auto_start else False
         )
 
-        for task in instance.tasks:
-            if not task.done():
-                task.cancel()
-        for task in instance.tasks:
-            try:
-                await asyncio.wait_for(asyncio.shield(task), timeout=5.0)
-            except (asyncio.CancelledError, asyncio.TimeoutError):
-                pass
+        await self._cancel_partner_tasks(list(instance.tasks))
+        instance.tasks.clear()
 
         if instance.channel_manager:
             try:
@@ -614,8 +648,10 @@ class PartnerManager:
             instance.last_reload_error = None
             if channel_manager:
                 for ch_name, ch in channel_manager.channels.items():
-                    instance.tasks.append(
-                        asyncio.create_task(ch.start(), name=f"partner:{partner_id}:ch:{ch_name}")
+                    self._create_partner_task(
+                        instance,
+                        ch.start(),
+                        name=f"partner:{partner_id}:ch:{ch_name}",
                     )
                 logger.info(
                     "Reloaded channels for partner '%s': %s",
@@ -630,14 +666,7 @@ class PartnerManager:
     ) -> None:
         ch_prefix = f"partner:{partner_id}:ch:"
         to_remove = [t for t in instance.tasks if (t.get_name() or "").startswith(ch_prefix)]
-        for t in to_remove:
-            if not t.done():
-                t.cancel()
-        for t in to_remove:
-            try:
-                await asyncio.wait_for(asyncio.shield(t), timeout=5.0)
-            except (asyncio.CancelledError, asyncio.TimeoutError):
-                pass
+        await self._cancel_partner_tasks(to_remove)
         instance.tasks = [t for t in instance.tasks if t not in to_remove]
 
         if instance.channel_manager:
@@ -809,9 +838,10 @@ class PartnerManager:
             return existing
         turn = LiveTurn(user_content=content)
         instance.live_turns[session_key] = turn
-        turn.task = asyncio.create_task(
+        turn.task = self._create_partner_task(
+            instance,
             self._drive_web_turn(partner_id, session_key, content, media or [], turn),
-            name=f"partner:{partner_id}:webturn",
+            name=f"partner:{partner_id}:webturn:{session_key}",
         )
         return turn
 

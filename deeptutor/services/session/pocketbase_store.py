@@ -48,7 +48,8 @@ def _json_loads(value: Any, default: Any) -> Any:
         return value
     try:
         return json.loads(value)
-    except Exception:
+    except (TypeError, json.JSONDecodeError) as exc:
+        logger.warning("Invalid PocketBase JSON field; using default: %s", exc)
         return default
 
 
@@ -152,7 +153,13 @@ class PocketBaseSessionStore:
         def _get():
             try:
                 return _find_session_record(_pb(), sid, uid)
-            except Exception:
+            except Exception as exc:
+                logger.warning(
+                    "get_session failed for session_id=%s user_id=%s: %s",
+                    sid,
+                    uid,
+                    exc,
+                )
                 return None
 
         record = await asyncio.to_thread(_get)
@@ -556,7 +563,8 @@ class PocketBaseSessionStore:
         try:
             records = await asyncio.to_thread(_list)
             return [self._turn_record_to_dict(r) for r in records]
-        except Exception:
+        except Exception as exc:
+            logger.warning("list_active_turns failed for session_id=%s: %s", sid, exc)
             return []
 
     async def update_turn_status(self, turn_id: str, status: str, error: str = "") -> bool:

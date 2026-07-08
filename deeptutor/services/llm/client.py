@@ -36,30 +36,6 @@ class LLMClient:
         self.config = config or get_llm_config()
         self.logger = logging.getLogger(__name__)
 
-        # Keep OPENAI_* env vars aligned for libraries that still read from env.
-        self._setup_openai_env_vars()
-
-    def _setup_openai_env_vars(self) -> None:
-        """
-        Set OpenAI environment variables for compatibility with OpenAI-style SDKs.
-        """
-        import os
-
-        binding = getattr(self.config, "binding", "openai")
-
-        # Only set env vars for OpenAI-compatible bindings
-        if binding in ("openai", "azure_openai", "gemini"):
-            if self.config.api_key:
-                os.environ["OPENAI_API_KEY"] = self.config.api_key
-                self.logger.debug("Set OPENAI_API_KEY env var")
-
-            if self.config.base_url:
-                from .utils import sanitize_url as _sanitize
-
-                clean_url = _sanitize(self.config.base_url)
-                os.environ["OPENAI_BASE_URL"] = clean_url
-                self.logger.debug(f"Set OPENAI_BASE_URL env var to {clean_url}")
-
     async def complete(
         self,
         prompt: str,

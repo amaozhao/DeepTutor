@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from pathlib import Path
 
@@ -143,3 +144,49 @@ def test_parse_sync_upload_mode_uses_parse_service_and_isolates_output(
     assert captured["output_dir"] == str(output_base)
     assert (output_base / "exam_questions.json").exists()
     assert not (cache_dir / "exam_questions.json").exists()
+
+
+def test_parse_exam_paper_to_templates_happy_path(monkeypatch, tmp_path: Path) -> None:
+    from deeptutor.agents.question import mimic_source
+
+    parsed_dir = tmp_path / "parsed-001"
+    parsed_dir.mkdir()
+    questions_file = parsed_dir / "exam_questions.json"
+    questions_file.write_text(
+        json.dumps(
+            {
+                "questions": [
+                    {
+                        "question_text": "Define an eigenvalue.",
+                        "question_type": "written",
+                        "answer": "A scalar λ such that Av = λv …",
+                    },
+                    {
+                        "question_text": "What is the rank of an identity matrix?",
+                        "question_type": "choice",
+                        "answer": "n",
+                    },
+                    {"question_text": "", "question_type": "written"},
+                ]
+            }
+        )
+    )
+
+    monkeypatch.setattr(mimic_source, "extract_questions_from_paper", lambda *a, **k: True)
+
+    templates, trace = asyncio.run(
+        mimic_source.parse_exam_paper_to_templates(
+            parsed_dir,
+            max_questions=10,
+            paper_mode="parsed",
+            output_dir=tmp_path,
+        )
+    )
+
+    assert len(templates) == 2
+    assert all(t.source == "mimic" for t in templates)
+    assert templates[0].reference_question.startswith("Define")
+    assert templates[0].reference_answer.startswith("A scalar")
+    assert templates[1].question_type == "choice"
+    assert trace["template_count"] == "2"
+    assert trace["question_file"].endswith("exam_questions.json")

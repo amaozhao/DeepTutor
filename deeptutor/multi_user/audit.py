@@ -37,8 +37,10 @@ def _audit_write_lock():
 
                 fcntl_module.flock(handle.fileno(), fcntl_module.LOCK_EX)
                 locked = True
-            except (ImportError, OSError):
+            except ImportError:
                 pass
+            except OSError as exc:
+                logger.warning("Audit write lock unavailable for %s: %s", lock_path, exc)
             try:
                 yield target
             finally:

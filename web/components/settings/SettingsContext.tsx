@@ -24,93 +24,57 @@ import {
 import { useAppShell } from "@/context/AppShellContext";
 import { apiFetch, apiUrl } from "@/lib/api";
 import { setTheme as applyThemePreference } from "@/lib/theme";
+import {
+  type Catalog,
+  type CatalogModel,
+  type CatalogProfile,
+  type DiagnosticsResult,
+  type EmbeddingCapabilities,
+  type LlmContextWindowDetection,
+  type ProviderOption,
+  type ServiceName,
+  type SystemStatus,
+  type UiSettings,
+  cloneCatalog,
+  defaultCatalog,
+  getActiveModel,
+  getActiveProfile,
+  nextModelName,
+  prefillsDefaultModel,
+} from "./catalog";
 
-// ─── Domain types ─────────────────────────────────────────────────────────
+export type {
+  Catalog,
+  CatalogModel,
+  CatalogProfile,
+  CatalogService,
+  DiagnosticsResult,
+  EmbeddingCapabilities,
+  LlmContextWindowDetection,
+  ProviderOption,
+  ServiceName,
+  ServiceReadiness,
+  SystemStatus,
+  UiSettings,
+} from "./catalog";
 
-export type ServiceName =
-  | "llm"
-  | "embedding"
-  | "search"
-  | "tts"
-  | "stt"
-  | "imagegen"
-  | "videogen";
+export {
+  cloneCatalog,
+  currentDiagnosticsResult,
+  defaultCatalog,
+  generationService,
+  getActiveModel,
+  getActiveProfile,
+  serviceConfigured,
+  servicePendingApply,
+  serviceReadiness,
+  voiceService,
+} from "./catalog";
 
-export type CatalogModel = {
-  id: string;
-  name: string;
-  model: string;
-  dimension?: string;
-  send_dimensions?: boolean;
-  supported_dimensions?: string;
-  context_window?: string;
-  context_window_source?: string;
-  context_window_detected_at?: string;
-  // Voice (TTS): free-form provider/model-specific voice string, e.g.
-  // "alloy", "autumn", "model:voice". `response_format` is the TTS output
-  // codec (mp3/wav/...) and is reused by imagegen ("url"/"b64_json").
-  // `language` is an optional STT hint.
-  voice?: string;
-  response_format?: string;
-  language?: string;
-  // Image generation: pixel size (e.g. "1024x1024"), quality, and style.
-  size?: string;
-  quality?: string;
-  style?: string;
-  // Video generation: aspect ratio (e.g. "16:9"), duration (seconds), resolution.
-  aspect_ratio?: string;
-  duration?: string;
-  resolution?: string;
-};
-
-export type LlmContextWindowDetection = {
-  profileId: string | null;
-  modelId: string | null;
-  contextWindow: number;
-  source: string;
-  detail?: string;
-  detectedAt?: string;
-};
-
-export type CatalogProfile = {
-  id: string;
-  name: string;
-  binding?: string;
-  provider?: string;
-  base_url: string;
-  api_key: string;
-  api_version: string;
-  extra_headers?: Record<string, string> | string;
-  proxy?: string;
-  max_results?: number;
-  models: CatalogModel[];
-};
-
-export type CatalogService = {
-  active_profile_id: string | null;
-  active_model_id?: string | null;
-  profiles: CatalogProfile[];
-};
-
-export type Catalog = {
-  version: number;
-  services: {
-    llm: CatalogService;
-    embedding: CatalogService;
-    search: CatalogService;
-    tts: CatalogService;
-    stt: CatalogService;
-    imagegen: CatalogService;
-    videogen: CatalogService;
-  };
-};
-
-export type UiSettings = {
-  theme: "light" | "dark" | "glass" | "snow";
-  language: "en" | "zh";
-  code_block_theme: string;
-  code_block_show_line_numbers: boolean;
-  code_block_wrap_long_lines: boolean;
+type SettingsPayload = {
+  ui: UiSettings;
+  catalog?: Catalog;
+  providers?: Record<ServiceName, ProviderOption[]>;
 };
 
 type CodeBlockUiSettings = Pick<
@@ -152,57 +116,6 @@ export async function persistUiSettingsPatch(
     body: JSON.stringify(patch),
   });
 }
-
-export type ProviderOption = {
-  value: string;
-  label: string;
-  base_url?: string;
-  default_dim?: string;
-  default_model?: string;
-  default_voice?: string;
-};
-
-export type SystemStatus = {
-  backend: { status: string; timestamp: string };
-  llm: { status: string; model?: string; error?: string };
-  embeddings: { status: string; model?: string; error?: string };
-  search: { status: string; provider?: string; error?: string };
-  deployment?: {
-    status: string;
-    multi_replica_ready: boolean;
-    shared_state?: Record<string, string>;
-    blocking_reasons?: string[];
-  };
-};
-
-export type EmbeddingCapabilities = {
-  detected_dim?: number;
-  default_dim?: number;
-  supported_dimensions?: number[];
-  supports_variable_dimensions?: boolean;
-  model_known?: boolean;
-  active_dim?: number;
-  active_dim_source?: string;
-};
-
-export type DiagnosticsResult = {
-  state: "success" | "failed";
-  message: string;
-  profileId: string | null;
-  modelId: string | null;
-};
-
-export type ServiceReadiness =
-  | "not_configured"
-  | "untested"
-  | "passed"
-  | "failed";
-
-type SettingsPayload = {
-  ui: UiSettings;
-  catalog?: Catalog;
-  providers?: Record<ServiceName, ProviderOption[]>;
-};
 
 const DIAGNOSTICS_RESULTS_KEY = "deeptutor.settings.diagnosticsResults.v1";
 
@@ -269,148 +182,6 @@ export const TOUR_STEPS: TourStep[] = [
     descKey: "settingsTour.memory.desc",
   },
 ];
-
-// ─── Helpers ───────────────────────────────────────────────────────────────
-
-export function cloneCatalog(catalog: Catalog): Catalog {
-  return JSON.parse(JSON.stringify(catalog)) as Catalog;
-}
-
-/** TTS/STT share the catalog shape but configure audio providers. */
-export function voiceService(service: ServiceName): boolean {
-  return service === "tts" || service === "stt";
-}
-
-/** imagegen/videogen share the catalog shape but configure media generation. */
-export function generationService(service: ServiceName): boolean {
-  return service === "imagegen" || service === "videogen";
-}
-
-/** Services whose model entry should prefill from the provider's default model. */
-function prefillsDefaultModel(service: ServiceName): boolean {
-  return voiceService(service) || generationService(service);
-}
-
-export function defaultCatalog(): Catalog {
-  return {
-    version: 1,
-    services: {
-      llm: { active_profile_id: null, active_model_id: null, profiles: [] },
-      embedding: {
-        active_profile_id: null,
-        active_model_id: null,
-        profiles: [],
-      },
-      search: { active_profile_id: null, profiles: [] },
-      tts: { active_profile_id: null, active_model_id: null, profiles: [] },
-      stt: { active_profile_id: null, active_model_id: null, profiles: [] },
-      imagegen: {
-        active_profile_id: null,
-        active_model_id: null,
-        profiles: [],
-      },
-      videogen: {
-        active_profile_id: null,
-        active_model_id: null,
-        profiles: [],
-      },
-    },
-  };
-}
-
-export function getActiveProfile(
-  catalog: Catalog,
-  serviceName: ServiceName,
-): CatalogProfile | null {
-  const service = catalog.services[serviceName];
-  return (
-    service.profiles.find(
-      (profile) => profile.id === service.active_profile_id,
-    ) ??
-    service.profiles[0] ??
-    null
-  );
-}
-
-export function getActiveModel(
-  catalog: Catalog,
-  serviceName: ServiceName,
-): CatalogModel | null {
-  if (serviceName === "search") return null;
-  const service = catalog.services[serviceName];
-  const profile = getActiveProfile(catalog, serviceName);
-  if (!profile) return null;
-  return (
-    profile.models.find((model) => model.id === service.active_model_id) ??
-    profile.models[0] ??
-    null
-  );
-}
-
-export function serviceConfigured(
-  catalog: Catalog,
-  serviceName: ServiceName,
-): boolean {
-  return serviceName === "search"
-    ? Boolean(getActiveProfile(catalog, serviceName)?.provider)
-    : Boolean(getActiveModel(catalog, serviceName)?.model);
-}
-
-export function currentDiagnosticsResult(
-  catalog: Catalog,
-  serviceName: ServiceName,
-  diagnosticsResults: Partial<Record<ServiceName, DiagnosticsResult>>,
-): DiagnosticsResult | null {
-  const service = catalog.services[serviceName];
-  const diagnostics = diagnosticsResults[serviceName];
-  if (!diagnostics) return null;
-  const profileId = service.active_profile_id ?? null;
-  const modelId =
-    serviceName === "search" ? null : (service.active_model_id ?? null);
-  return diagnostics.profileId === profileId && diagnostics.modelId === modelId
-    ? diagnostics
-    : null;
-}
-
-export function serviceReadiness(
-  catalog: Catalog,
-  serviceName: ServiceName,
-  diagnosticsResults: Partial<Record<ServiceName, DiagnosticsResult>>,
-): ServiceReadiness {
-  if (!serviceConfigured(catalog, serviceName)) return "not_configured";
-  const diagnostics = currentDiagnosticsResult(
-    catalog,
-    serviceName,
-    diagnosticsResults,
-  );
-  if (diagnostics?.state === "failed") return "failed";
-  if (diagnostics?.state === "success") return "passed";
-  return "untested";
-}
-
-export function servicePendingApply(
-  catalog: Catalog,
-  draft: Catalog,
-  service: ServiceName,
-): boolean {
-  return (
-    JSON.stringify(catalog.services[service]) !==
-    JSON.stringify(draft.services[service])
-  );
-}
-
-function nextModelName(
-  models: CatalogModel[],
-  language: UiSettings["language"],
-): string {
-  const prefix = language === "zh" ? "模型" : "Model ";
-  const used = new Set(models.map((model) => model.name.trim()));
-  let index = models.length + 1;
-  while (used.has(`${prefix}${index}`)) {
-    index += 1;
-  }
-  return `${prefix}${index}`;
-}
 
 function readStoredDiagnosticsResults(): Partial<
   Record<ServiceName, DiagnosticsResult>
@@ -529,9 +300,6 @@ export function useSettings(): SettingsContextValue {
 export function SettingsProvider({ children }: { children: ReactNode }) {
   const { t } = useTranslation();
   const router = useRouter();
-  // Code-block appearance lives in AppShellContext (the single source of truth,
-  // also consumed by RichCodeBlock). Read the values from there and delegate
-  // writes to its setters; this provider only adds backend persistence on top.
   const {
     codeBlockTheme,
     codeBlockShowLineNumbers,
@@ -575,10 +343,11 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     useState<EmbeddingCapabilities | null>(null);
   const [tourStepIndex, setTourStepIndex] = useState(-1);
   const eventSourceRef = useRef<EventSource | null>(null);
-  // Extensions register their latest dirty/save on each render. Keep the
-  // derived dirty state explicit instead of using an indirect version counter.
+  // Extensions register their latest dirty/save on each render. We track
+  // a "version" counter to trigger re-renders for `hasUnsavedChanges`
+  // when an extension's dirty flag flips.
   const extensionsRef = useRef<Map<string, SettingsExtension>>(new Map());
-  const [hasDirtyExtension, setHasDirtyExtension] = useState(false);
+  const [, setExtensionsVersion] = useState(0);
   const registerExtension = useCallback(
     (key: string, ext: SettingsExtension | null) => {
       const map = extensionsRef.current;
@@ -586,21 +355,17 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
       if (ext === null) {
         if (prev === undefined) return;
         map.delete(key);
-        setHasDirtyExtension(
-          Array.from(map.values()).some((extension) => extension.dirty),
-        );
+        setExtensionsVersion((n) => n + 1);
         return;
       }
       if (prev && prev.dirty === ext.dirty && prev.save === ext.save) {
         return;
       }
       map.set(key, ext);
-      // Only recompute the dirty summary when dirty flips — save fn changes
-      // every render are common and should not re-render the toolbar.
+      // Only bump version when dirty flips — save fn changes every render
+      // are common and should not re-render the toolbar.
       if (prev?.dirty !== ext.dirty) {
-        setHasDirtyExtension(
-          Array.from(map.values()).some((extension) => extension.dirty),
-        );
+        setExtensionsVersion((n) => n + 1);
       }
     },
     [],
@@ -630,9 +395,6 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
       }
       setTheme(payload.ui.theme);
       setLanguage(payload.ui.language);
-      // Writes the backend-loaded values into app-shell storage and dispatches
-      // the code-block settings event; AppShellContext (the single source) picks
-      // them up, so no separate copy needs seeding here.
       syncLoadedCodeBlockSettingsToAppShell(payload.ui);
       if (payload.providers) setProviders(payload.providers);
       settingsLoaded = true;
@@ -669,8 +431,6 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
 
   // Load settings + status once on mount. Subsequent navigations between
   // settings sub-pages share this state via the layout-level provider.
-  // Code-block switch hydration lives in AppShellContext (the single source),
-  // so no separate post-mount re-read is needed here.
   useEffect(() => {
     loadSettings();
     return () => {
@@ -708,9 +468,6 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     await persistUiSettingsPatch({ language: next });
   }, []);
 
-  // Each setter updates the app-shell source of truth (which normalizes,
-  // persists to localStorage, and notifies consumers) then mirrors the change
-  // to the backend.
   const updateCodeBlockTheme = useCallback(
     async (next: CodeBlockThemeId) => {
       setAppShellCodeBlockTheme(next);
@@ -1023,20 +780,20 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     draft.services.embedding.active_model_id,
   ]);
 
-  const llmActiveProfileId = draft.services.llm.active_profile_id;
-  const llmActiveModelId = draft.services.llm.active_model_id;
+  const activeLlmProfileId = draft.services.llm.active_profile_id;
+  const activeLlmModelId = draft.services.llm.active_model_id;
   useEffect(() => {
     setLlmContextDetection((current) => {
       if (!current) return null;
       if (
-        current.profileId === llmActiveProfileId &&
-        current.modelId === llmActiveModelId
+        current.profileId === activeLlmProfileId &&
+        current.modelId === activeLlmModelId
       ) {
         return current;
       }
       return null;
     });
-  }, [llmActiveProfileId, llmActiveModelId]);
+  }, [activeLlmProfileId, activeLlmModelId]);
 
   const runDetailedTest = useCallback(
     async (service: ServiceName) => {
@@ -1225,13 +982,17 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   }, [tourStepIndex, router]);
 
   // ── Derived ─────────────────────────────────────────────────────────────
-  const hasUnsavedChanges = useMemo(() => {
-    return (
-      hasDirtyExtension ||
-      (catalogEditable === true &&
-        JSON.stringify(catalog) !== JSON.stringify(draft))
-    );
-  }, [catalog, catalogEditable, draft, hasDirtyExtension]);
+  const catalogDirty =
+    catalogEditable === true && JSON.stringify(catalog) !== JSON.stringify(draft);
+  let hasUnsavedChanges = catalogDirty;
+  if (!hasUnsavedChanges) {
+    for (const ext of extensionsRef.current.values()) {
+      if (ext.dirty) {
+        hasUnsavedChanges = true;
+        break;
+      }
+    }
+  }
 
   const settingsLoading = catalogEditable === null;
 

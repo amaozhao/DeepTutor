@@ -19,16 +19,8 @@ import {
 import { useTranslation } from "react-i18next";
 
 import { apiFetch, apiUrl } from "@/lib/api";
-import { L1View } from "@/components/memory/MemorySection";
-
-type Surface =
-  | "chat"
-  | "notebook"
-  | "quiz"
-  | "kb"
-  | "book"
-  | "partner"
-  | "cowriter";
+import { L1View } from "@/components/memory/MemoryL1View";
+import type { Surface } from "@/components/memory/model";
 
 interface NavEntry {
   key: Surface;

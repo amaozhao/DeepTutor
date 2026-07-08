@@ -5,6 +5,7 @@ from __future__ import annotations
 from contextlib import contextmanager
 from copy import deepcopy
 import json
+import logging
 from pathlib import Path
 import threading
 from typing import Any
@@ -15,6 +16,7 @@ from .usage import empty_quota, normalize_quota
 
 GRANTS_DIR = SYSTEM_ROOT / "grants"
 _GRANTS_WRITE_LOCK = threading.Lock()
+logger = logging.getLogger(__name__)
 
 
 def empty_grant(user_id: str) -> dict[str, Any]:
@@ -73,8 +75,10 @@ def _grant_write_lock(user_id: str):
 
                 fcntl_module.flock(handle.fileno(), fcntl_module.LOCK_EX)
                 locked = True
-            except (ImportError, OSError):
+            except ImportError:
                 pass
+            except OSError as exc:
+                logger.warning("Grant write lock unavailable for %s: %s", lock_path, exc)
             try:
                 yield path
             finally:
@@ -120,7 +124,8 @@ def load_grant(user_id: str) -> dict[str, Any]:
         return empty_grant(user_id)
     try:
         return normalize_grant(user_id, json.loads(path.read_text(encoding="utf-8")))
-    except Exception:
+    except Exception as exc:
+        logger.warning("Failed to load grant for user %s from %s: %s", user_id, path, exc)
         return empty_grant(user_id)
 
 

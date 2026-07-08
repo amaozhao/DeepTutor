@@ -9,7 +9,6 @@ import json
 from typing import Any
 
 import httpx
-from loguru import logger
 
 from deeptutor.services.llm.openai_http_client import disable_ssl_verify_enabled
 from deeptutor.services.llm.provider_core.base import LLMProvider, LLMResponse, ToolCallRequest
@@ -72,25 +71,13 @@ class OpenAICodexProvider(LLMProvider):
             body["tools"] = convert_tools(tools)
 
         try:
-            try:
-                content, tool_calls, finish_reason = await _request_codex(
-                    DEFAULT_CODEX_URL,
-                    headers,
-                    body,
-                    verify=not disable_ssl_verify_enabled(),
-                    on_content_delta=on_content_delta,
-                )
-            except Exception as exc:
-                if "CERTIFICATE_VERIFY_FAILED" not in str(exc):
-                    raise
-                logger.warning("SSL verification failed for Codex API; retrying with verify=False")
-                content, tool_calls, finish_reason = await _request_codex(
-                    DEFAULT_CODEX_URL,
-                    headers,
-                    body,
-                    verify=False,
-                    on_content_delta=on_content_delta,
-                )
+            content, tool_calls, finish_reason = await _request_codex(
+                DEFAULT_CODEX_URL,
+                headers,
+                body,
+                verify=not disable_ssl_verify_enabled(),
+                on_content_delta=on_content_delta,
+            )
             return LLMResponse(content=content, tool_calls=tool_calls, finish_reason=finish_reason)
         except Exception as exc:
             return LLMResponse(content=f"Error calling Codex: {exc}", finish_reason="error")

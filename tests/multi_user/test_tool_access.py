@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import logging
+import sys
+
 import pytest
 
 from deeptutor.multi_user.grants import load_grant, normalize_grant, save_grant
@@ -107,9 +110,29 @@ def test_saved_grant_round_trips_v2(grantable_alice):
 def test_save_grant_uses_local_write_lock(grantable_alice, mu_isolated_root):
     save_grant(grantable_alice, {"enabled_tools": ["reason"]})
 
-    assert (
-        mu_isolated_root / "data" / "system" / "grants" / f"{grantable_alice}.lock"
-    ).exists()
+    assert (mu_isolated_root / "data" / "system" / "grants" / f"{grantable_alice}.lock").exists()
+
+
+def test_save_grant_logs_when_file_lock_is_unavailable(
+    grantable_alice, mu_isolated_root, caplog, monkeypatch
+):
+    from deeptutor.multi_user import grants
+
+    class _BrokenFcntl:
+        LOCK_EX = 1
+        LOCK_UN = 2
+
+        @staticmethod
+        def flock(*_args):
+            raise OSError("no flock")
+
+    monkeypatch.setitem(sys.modules, "fcntl", _BrokenFcntl)
+    caplog.set_level(logging.WARNING, logger="deeptutor.multi_user.grants")
+
+    save_grant(grantable_alice, {"enabled_tools": ["reason"]})
+
+    assert load_grant(grantable_alice)["enabled_tools"] == ["reason"]
+    assert "Grant write lock unavailable" in caplog.text
 
 
 def test_load_grant_does_not_take_write_lock(grantable_alice, mu_isolated_root):
@@ -119,6 +142,19 @@ def test_load_grant_does_not_take_write_lock(grantable_alice, mu_isolated_root):
 
     assert load_grant(grantable_alice)["enabled_tools"] == ["reason"]
     assert not lock_file.exists()
+
+
+def test_load_grant_logs_corrupt_grant_fallback(grantable_alice, mu_isolated_root, caplog):
+    grant_file = mu_isolated_root / "data" / "system" / "grants" / f"{grantable_alice}.json"
+    grant_file.parent.mkdir(parents=True, exist_ok=True)
+    grant_file.write_text("{bad json", encoding="utf-8")
+
+    caplog.set_level(logging.WARNING, logger="deeptutor.multi_user.grants")
+
+    grant = load_grant(grantable_alice)
+
+    assert grant == normalize_grant(grantable_alice, None)
+    assert "Failed to load grant for user u_alice" in caplog.text
 
 
 def test_combine_whitelists():

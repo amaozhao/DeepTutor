@@ -5,6 +5,7 @@ import io
 import json
 import logging
 from pathlib import Path
+import sys
 import zipfile
 
 from fastapi import FastAPI, HTTPException
@@ -15,6 +16,7 @@ from deeptutor.multi_user.data_governance import (
     apply_data_retention_policy,
     apply_user_delete_policy,
     export_user_data,
+    load_data_governance_settings,
     save_data_governance_settings,
 )
 from deeptutor.multi_user.grants import save_grant
@@ -214,6 +216,43 @@ def test_data_retention_prune_uses_audit_write_lock(mu_isolated_root):
     assert lock_file.exists()
 
 
+def test_data_governance_settings_load_logs_corrupt_file(mu_isolated_root, caplog):
+    from deeptutor.multi_user import paths
+
+    settings_file = paths.get_admin_path_service().get_settings_file("data_governance")
+    settings_file.parent.mkdir(parents=True, exist_ok=True)
+    settings_file.write_text("{bad json", encoding="utf-8")
+
+    caplog.set_level(logging.WARNING, logger="deeptutor.multi_user.data_governance")
+
+    settings = load_data_governance_settings()
+
+    assert settings["audit_retention_days"] == 0
+    assert "Failed to load data governance settings" in caplog.text
+
+
+def test_data_retention_logs_malformed_rows_and_unreadable_archives(mu_isolated_root, caplog):
+    from deeptutor.multi_user import paths
+
+    paths.ensure_system_dirs()
+    audit_file = paths.SYSTEM_ROOT / "audit" / "usage.jsonl"
+    audit_file.write_text("{bad json\n", encoding="utf-8")
+    deleted_root = paths.SYSTEM_ROOT / "deleted_users"
+    bad_archive = deleted_root / "u_bad-20250101T000000Z"
+    bad_archive.mkdir(parents=True)
+    (bad_archive / "manifest.json").write_text("{bad json", encoding="utf-8")
+    save_data_governance_settings({"audit_retention_days": 30, "deleted_user_retention_days": 30})
+
+    caplog.set_level(logging.WARNING, logger="deeptutor.multi_user.data_governance")
+
+    result = apply_data_retention_policy()
+
+    assert result["audit"]["removed"] == 0
+    assert result["deleted_users"]["removed"] == 0
+    assert "Keeping malformed JSONL row" in caplog.text
+    assert "Skipping deleted-user archive with unreadable manifest" in caplog.text
+
+
 def test_multi_user_export_endpoint_returns_zip(seed_user):
     from deeptutor.multi_user import router as multi_router
 
@@ -376,6 +415,24 @@ def test_audit_writes_use_local_file_lock(mu_isolated_root):
     log_admin_action("user_create", target_user_id="u1", summary={"username": "alice"})
 
     assert (paths.SYSTEM_ROOT / "audit" / "usage.lock").exists()
+
+
+def test_audit_logs_when_file_lock_is_unavailable(mu_isolated_root, monkeypatch, caplog):
+    class _BrokenFcntl:
+        LOCK_EX = 1
+        LOCK_UN = 2
+
+        @staticmethod
+        def flock(*_args):
+            raise OSError("no flock")
+
+    monkeypatch.setitem(sys.modules, "fcntl", _BrokenFcntl)
+
+    with caplog.at_level(logging.WARNING, logger="deeptutor.multi_user.audit"):
+        log_admin_action("user_create", target_user_id="u1", summary={"username": "alice"})
+
+    assert query_audit_events(action="user_create", limit=10)
+    assert "Audit write lock unavailable" in caplog.text
 
 
 def test_audit_queries_do_not_take_write_lock(mu_isolated_root):

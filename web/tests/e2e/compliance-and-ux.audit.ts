@@ -14,7 +14,8 @@ async function expectAnyVisible(
 ) {
   for (const loc of locators) {
     try {
-      if (await loc.first().isVisible()) return;
+      await expect(loc.first()).toBeVisible({ timeout: 5000 });
+      return;
     } catch {}
   }
   expect(false, message).toBe(true);
@@ -85,7 +86,7 @@ test.describe("Compliance :: Error Handling & UX Signals", () => {
       }),
     );
 
-    await page.goto(`${BASE_URL}/notebook`);
+    await page.goto(`${BASE_URL}/space/notebooks`);
 
     await expectAnyVisible(
       [

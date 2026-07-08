@@ -86,6 +86,17 @@ class LLMTimeoutError(LLMAPIError):
         self.timeout = timeout
 
 
+class LLMNetworkError(LLMAPIError):
+    """Raised when a provider call fails before receiving an HTTP response."""
+
+    def __init__(
+        self,
+        message: str = "Network error",
+        provider: str | None = None,
+    ):
+        super().__init__(message, status_code=None, provider=provider)
+
+
 class LLMRateLimitError(LLMAPIError):
     """Raised when rate limited by the API."""
 
@@ -151,6 +162,7 @@ __all__ = [
     "LLMCircuitBreakerError",
     "LLMAPIError",
     "LLMTimeoutError",
+    "LLMNetworkError",
     "LLMRateLimitError",
     "LLMAuthenticationError",
     "LLMModelNotFoundError",

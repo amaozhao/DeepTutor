@@ -4,13 +4,13 @@ from __future__ import annotations
 
 from collections.abc import AsyncGenerator
 import logging
-import os
 from typing import Any
 import uuid
 
 from openai import AsyncOpenAI, BadRequestError
 
 from deeptutor.services.llm.capabilities import disable_response_format_at_runtime
+from deeptutor.services.llm.fallback import is_unsupported_response_format
 from deeptutor.services.llm.openai_http_client import openai_client_kwargs
 from deeptutor.services.llm.provider_registry import find_by_name, strip_provider_prefix
 from deeptutor.services.llm.reasoning_params import default_reasoning_effort_for
@@ -22,22 +22,8 @@ logger = logging.getLogger(__name__)
 
 
 def _is_unsupported_response_format_error(exc: BaseException) -> bool:
-    """Detect whether a BadRequestError stems from an unsupported ``response_format``.
-
-    Examples seen in the wild:
-    - LM Studio + Gemma: ``"'response_format.type' must be 'json_schema' or 'text'"``
-    - DashScope + various models: ``"'response_format.type' specified ... not valid: 'json_object' is not supported by this model"``
-    """
-    text = str(exc).lower()
-    if "response_format" not in text and "response format" not in text:
-        return False
-    return (
-        "json_object" in text
-        or "json_schema" in text
-        or "not supported" in text
-        or "not valid" in text
-        or "must be" in text
-    )
+    """Backward-compatible wrapper for the shared fallback decision."""
+    return is_unsupported_response_format(exc)
 
 
 async def _create_with_format_fallback(
@@ -81,18 +67,6 @@ def _build_messages(
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": prompt},
     ]
-
-
-def _setup_provider_env(provider_name: str, api_key: str | None, api_base: str | None) -> None:
-    spec = find_by_name(provider_name)
-    if not spec or not api_key:
-        return
-    if spec.env_key:
-        os.environ.setdefault(spec.env_key, api_key)
-    effective_base = api_base or spec.default_api_base
-    for env_name, env_val in spec.env_extras:
-        resolved = env_val.replace("{api_key}", api_key).replace("{api_base}", effective_base or "")
-        os.environ.setdefault(env_name, resolved)
 
 
 def _resolve_model_and_base(
@@ -141,7 +115,6 @@ async def sdk_complete(
     **kwargs: Any,
 ) -> str:
     """Non-streaming completion using the openai SDK."""
-    _setup_provider_env(provider_name, api_key, base_url)
     resolved_model, effective_base, effective_key = _resolve_model_and_base(
         provider_name,
         model,
@@ -211,7 +184,6 @@ async def sdk_stream(
     **kwargs: Any,
 ) -> AsyncGenerator[str, None]:
     """Streaming completion using the openai SDK."""
-    _setup_provider_env(provider_name, api_key, base_url)
     resolved_model, effective_base, effective_key = _resolve_model_and_base(
         provider_name,
         model,

@@ -1,8 +1,10 @@
-import type { LLMSelection } from "../unified-ws";
+import type { LLMSelection, StreamEvent } from "../unified-ws";
 import {
   normalizeBookReferences,
   type BookReferencePayload,
 } from "../book-references";
+import { normalizeMarkdownForDisplay } from "../markdown-display";
+import { normalizeMessageContent } from "../message-content";
 
 type NotebookReferencePayload = {
   notebook_id: string;
@@ -13,6 +15,9 @@ type QuestionNotebookReferencePayload = number[];
 type MemoryReferencePayload = Array<"summary" | "profile">;
 
 type SessionMessageLike = {
+  id?: number;
+  role?: string;
+  content?: unknown;
   capability?: string;
   metadata?: Record<string, unknown>;
   attachments: Array<{
@@ -26,6 +31,8 @@ type SessionMessageLike = {
     generated?: boolean;
     size_bytes?: number;
   }>;
+  events?: unknown;
+  parent_message_id?: number | null;
 };
 
 export type HydratedMessageAttachment =
@@ -46,6 +53,17 @@ export interface HydratedRequestSnapshot {
   persona?: string;
   memoryReferences?: MemoryReferencePayload;
   llmSelection?: LLMSelection | null;
+}
+
+export interface HydratedSessionMessage {
+  id?: number;
+  role: "user" | "assistant" | "system";
+  content: string;
+  capability: string;
+  events: StreamEvent[];
+  attachments: HydratedMessageAttachment[];
+  requestSnapshot?: HydratedRequestSnapshot;
+  parentMessageId?: number | null;
 }
 
 export function hydrateMessageAttachments(
@@ -182,4 +200,38 @@ export function hydrateRequestSnapshot(
   if (memoryReferences.length) snapshot.memoryReferences = memoryReferences;
   if (llmSelection) snapshot.llmSelection = llmSelection;
   return snapshot;
+}
+
+export function hydrateSessionMessages(
+  messages: readonly (SessionMessageLike & {
+    role: "user" | "assistant" | "system";
+  })[],
+): HydratedSessionMessage[] {
+  return messages
+    .filter((message) => message.role !== "system")
+    .map((message) => {
+      const raw = normalizeMessageContent(message.content);
+      const attachments = hydrateMessageAttachments(message.attachments);
+      const requestSnapshot = hydrateRequestSnapshot(
+        message,
+        raw,
+        attachments,
+      );
+      return {
+        id: message.id,
+        role: message.role,
+        content:
+          message.role === "assistant" ? normalizeMarkdownForDisplay(raw) : raw,
+        capability: message.capability || "",
+        events: Array.isArray(message.events)
+          ? (message.events as StreamEvent[])
+          : [],
+        attachments,
+        parentMessageId:
+          message.parent_message_id === undefined
+            ? null
+            : message.parent_message_id,
+        ...(requestSnapshot ? { requestSnapshot } : {}),
+      };
+    });
 }

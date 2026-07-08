@@ -10,7 +10,7 @@ import pytest
 from deeptutor.core.stream import StreamEvent, StreamEventType
 from deeptutor.partners.bus.events import InboundMessage
 from deeptutor.partners.bus.queue import MessageBus
-from deeptutor.services.partners.manager import PartnerConfig
+from deeptutor.services.partners.manager import PartnerConfig, PartnerInstance
 from deeptutor.services.partners.runtime import PartnerRunner
 from deeptutor.services.partners.sessions import PartnerSessionStore
 
@@ -536,6 +536,28 @@ class TestSessionStoreOps:
 
 
 class TestLiveTurn:
+    @pytest.mark.asyncio
+    async def test_partner_task_registry_tracks_and_discards_cancelled_tasks(self):
+        from deeptutor.services.partners.manager import PartnerManager
+
+        mgr = PartnerManager()
+        inst = PartnerInstance(partner_id="ada", config=PartnerConfig(name="Ada"))
+        started = asyncio.Event()
+
+        async def sleeper():
+            started.set()
+            await asyncio.sleep(60)
+
+        task = mgr._create_partner_task(inst, sleeper(), name="partner:ada:test")
+        await asyncio.wait_for(started.wait(), timeout=1)
+
+        assert task in inst.tasks
+        await mgr._cancel_partner_tasks([task])
+        await asyncio.sleep(0)
+
+        assert task.cancelled()
+        assert task not in inst.tasks
+
     def test_buffer_replays_for_late_subscriber(self):
         from deeptutor.services.partners.manager import LiveTurn
 
@@ -575,6 +597,8 @@ class TestLiveTurn:
         await mgr.start_partner("ada")
         try:
             turn = mgr.start_web_turn("ada", "web-x", "hello", [])
+            assert turn.task is not None
+            assert turn.task in mgr._partners["ada"].tasks
             queue = turn.subscribe()
             frames: list[dict] = []
             while True:

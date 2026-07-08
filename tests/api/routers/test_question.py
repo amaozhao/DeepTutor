@@ -167,9 +167,7 @@ def test_mimic_websocket_generation_is_rate_limited(
     async def _fake_mimic_exam_questions(*_args, **_kwargs):
         return {"success": False, "error": "stub mimic failure"}
 
-    monkeypatch.setattr(
-        question_router_module, "mimic_exam_questions", _fake_mimic_exam_questions
-    )
+    monkeypatch.setattr(question_router_module, "mimic_exam_questions", _fake_mimic_exam_questions)
 
     with TestClient(_build_app(question_router_module)) as client:
         for index in range(31):

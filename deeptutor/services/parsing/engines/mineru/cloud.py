@@ -28,6 +28,8 @@ import zipfile
 
 import httpx
 
+from deeptutor.services.outbound import OutboundUrlError, validate_outbound_url
+
 from .config import MinerUConfig, MinerUError
 
 logger = logging.getLogger(__name__)
@@ -229,8 +231,18 @@ def verify_credentials(config: MinerUConfig) -> None:
 
 def _download(zip_url: str) -> bytes:
     try:
-        response = httpx.get(zip_url, timeout=_DOWNLOAD_TIMEOUT_SECONDS, follow_redirects=True)
+        safe_url = validate_outbound_url(zip_url)
+    except OutboundUrlError as exc:
+        raise MinerUError(str(exc)) from exc
+    try:
+        response = httpx.get(safe_url, timeout=_DOWNLOAD_TIMEOUT_SECONDS, follow_redirects=True)
         response.raise_for_status()
+        final_url = getattr(response, "url", None)
+        if final_url:
+            try:
+                validate_outbound_url(str(final_url))
+            except OutboundUrlError as exc:
+                raise MinerUError(str(exc)) from exc
         return response.content
     except httpx.HTTPError as exc:
         raise MinerUError(f"Failed to download MinerU result archive: {exc}") from exc

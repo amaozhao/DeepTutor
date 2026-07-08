@@ -5,6 +5,7 @@ import {
   asLLMSelection,
   hydrateMessageAttachments,
   hydrateRequestSnapshot,
+  hydrateSessionMessages,
   normalizeSelectedBranches,
 } from "../../../lib/chat/hydration";
 
@@ -84,4 +85,61 @@ test("selection helpers reject incomplete values", () => {
   assert.deepEqual(normalizeSelectedBranches({ a: "2", b: -1, c: "x" }), {
     a: 2,
   });
+});
+
+test("hydrateSessionMessages filters system rows and hydrates chat messages", () => {
+  const messages = hydrateSessionMessages([
+    {
+      id: 1,
+      role: "system",
+      content: "hidden",
+      attachments: [],
+    },
+    {
+      id: 2,
+      role: "user",
+      content: [{ type: "text", text: "hello" }],
+      capability: "chat",
+      attachments: [],
+      events: [],
+      parent_message_id: null,
+      metadata: {
+        request_snapshot: {
+          content: "hello",
+          enabledTools: ["web_search"],
+          knowledgeBases: ["kb"],
+          language: "en",
+        },
+      },
+    },
+    {
+      id: 3,
+      role: "assistant",
+      content: "##Heading",
+      capability: "chat",
+      attachments: [
+        {
+          type: "file",
+          filename: "out.txt",
+          url: "/api/attachments/out",
+        },
+      ],
+      events: [{ type: "done", source: "server", stage: "", timestamp: 1 }],
+      parent_message_id: 2,
+    },
+  ]);
+
+  assert.equal(messages.length, 2);
+  assert.equal(messages[0].content, "hello");
+  assert.deepEqual(messages[0].requestSnapshot, {
+    content: "hello",
+    capability: "chat",
+    enabledTools: ["web_search"],
+    knowledgeBases: ["kb"],
+    language: "en",
+  });
+  assert.equal(messages[1].content, "##Heading");
+  assert.equal(messages[1].parentMessageId, 2);
+  assert.equal(messages[1].attachments[0].filename, "out.txt");
+  assert.equal(messages[1].events[0].type, "done");
 });

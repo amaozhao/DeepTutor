@@ -106,10 +106,15 @@ class TestCreate:
 class TestConfigAndSoul:
     def test_get_masks_secrets_by_default(self, client):
         _create(client, channels={"telegram": {"enabled": True, "token": "raw"}})
-        body = client.get("/api/v1/partners/ada").json()
+        res = client.get("/api/v1/partners/ada")
+        body = res.json()
         assert body["channels"]["telegram"]["token"] == "***"
-        body = client.get("/api/v1/partners/ada?include_secrets=true").json()
+        assert res.headers.get("cache-control") != "no-store"
+        res = client.get("/api/v1/partners/ada?include_secrets=true")
+        body = res.json()
         assert body["channels"]["telegram"]["token"] == "raw"
+        assert res.headers["cache-control"] == "no-store"
+        assert res.headers["pragma"] == "no-cache"
 
     def test_patch_updates_tools_and_clears(self, client):
         _create(client, enabled_tools=["web_search", "paper_search"])

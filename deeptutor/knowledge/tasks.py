@@ -272,9 +272,7 @@ async def run_upload_processing_task(
             task_stream_manager.emit_failed(task_id, error_msg, details=trace)
 
 
-async def run_reindex_task(
-    kb_name: str, base_dir: str, task_id: str, signature_hash: str
-) -> None:
+async def run_reindex_task(kb_name: str, base_dir: str, task_id: str, signature_hash: str) -> None:
     """Re-index a KB's raw documents against the currently-active embedding config."""
     task_manager = TaskIDManager.get_instance()
     task_stream_manager = get_task_stream_manager()

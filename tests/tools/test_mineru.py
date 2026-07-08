@@ -238,7 +238,11 @@ def test_parse_cloud_reports_progress(tmp_path: Path, monkeypatch: pytest.Monkey
                 "code": 0,
                 "data": {
                     "extract_result": [
-                        {"file_name": "exam.pdf", "state": "done", "full_zip_url": "https://zip"}
+                        {
+                            "file_name": "exam.pdf",
+                            "state": "done",
+                            "full_zip_url": "https://8.8.8.8/zip",
+                        }
                     ]
                 },
             }
@@ -290,6 +294,11 @@ def test_extract_archive_rejects_zip_slip(tmp_path: Path) -> None:
     assert (workdir / "images" / "fig.png").exists()
     # The traversal member must not escape the working dir.
     assert not (tmp_path / "evil.txt").exists()
+
+
+def test_download_rejects_private_result_url() -> None:
+    with pytest.raises(MinerUError, match="private|loopback"):
+        mineru_cloud._download("http://127.0.0.1/result.zip")
 
 
 # ---------------------------------------------------------------------------
@@ -365,7 +374,11 @@ def test_parse_cloud_happy_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch)
                 "code": 0,
                 "data": {
                     "extract_result": [
-                        {"file_name": "exam.pdf", "state": "done", "full_zip_url": "https://zip"}
+                        {
+                            "file_name": "exam.pdf",
+                            "state": "done",
+                            "full_zip_url": "https://8.8.8.8/zip",
+                        }
                     ]
                 },
             }

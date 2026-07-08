@@ -27,7 +27,10 @@ def __getattr__(name: str) -> Any:
     if name == "FollowupAgent":
         module = import_module("deeptutor.agents.question.agents.followup_agent")
         return getattr(module, name)
-    if name in {"QuestionPipeline", "QuizTemplate", "QuizPair", "QuizPlan", "QuizHistoryEntry"}:
+    if name in {"QuizTemplate", "QuizPlan", "QuizHistoryEntry"}:
+        module = import_module("deeptutor.agents.question.planning")
+        return getattr(module, name)
+    if name in {"QuestionPipeline", "QuizPair"}:
         module = import_module("deeptutor.agents.question.pipeline")
         return getattr(module, name)
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

@@ -10,14 +10,10 @@ from __future__ import annotations
 
 from contextvars import ContextVar, Token
 from dataclasses import dataclass, replace
-import logging
-import os
-from pathlib import Path
 import re
 from typing import TYPE_CHECKING, TypedDict
 
 from deeptutor.services.config import resolve_llm_runtime_config
-from deeptutor.services.provider_registry import canonical_provider_name, find_by_name
 
 from .exceptions import LLMConfigError
 
@@ -44,52 +40,6 @@ class LLMConfigUpdate(TypedDict, total=False):
     max_concurrency: int
     requests_per_minute: int
     traffic_controller: "TrafficController" | None
-
-
-logger = logging.getLogger(__name__)
-
-PROJECT_ROOT = Path(__file__).resolve().parents[3]
-
-
-def _is_openai_compatible_binding(binding: str | None) -> bool:
-    canonical = canonical_provider_name(binding) or (binding or "").strip().lower()
-    spec = find_by_name(canonical)
-    if not spec or spec.is_oauth:
-        return False
-    return spec.backend in {"openai_compat", "azure_openai"}
-
-
-def _set_openai_env_vars(api_key: str | None, base_url: str | None, *, source: str) -> None:
-    if api_key:
-        os.environ["OPENAI_API_KEY"] = api_key
-        logger.debug("Set OPENAI_API_KEY env var (%s)", source)
-
-    if base_url:
-        from .utils import sanitize_url
-
-        clean_url = sanitize_url(base_url)
-        os.environ["OPENAI_BASE_URL"] = clean_url
-        logger.debug("Set OPENAI_BASE_URL env var to %s (%s)", clean_url, source)
-
-
-def _setup_openai_env_vars_early() -> None:
-    """
-    Set OPENAI_* environment variables early for OpenAI-compatible SDKs.
-
-    Some SDK helpers read credentials/endpoints from process environment.
-    This is called at module import time so downstream calls have consistent
-    environment regardless of entrypoint.
-    """
-    try:
-        resolved = resolve_llm_runtime_config()
-    except Exception:
-        return
-    if _is_openai_compatible_binding(resolved.binding):
-        _set_openai_env_vars(resolved.api_key, resolved.effective_url, source="early init")
-
-
-# Execute early setup at module import time
-_setup_openai_env_vars_early()
 
 
 @dataclass
@@ -144,19 +94,8 @@ def reset_scoped_llm_config(token: Token[LLMConfig | None]) -> None:
 
 
 def initialize_environment() -> None:
-    """
-    Explicitly initialize environment variables for compatibility.
-
-    This should be called during application startup to keep OPENAI_* env vars
-    aligned with current config values.
-    """
-    resolved = resolve_llm_runtime_config()
-    if _is_openai_compatible_binding(resolved.binding):
-        _set_openai_env_vars(
-            resolved.api_key,
-            resolved.effective_url,
-            source="initialize_environment",
-        )
+    """Deprecated compatibility hook; LLM credentials now flow as explicit args."""
+    return None
 
 
 def _get_llm_config_from_resolver() -> LLMConfig:

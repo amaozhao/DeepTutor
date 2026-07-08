@@ -178,7 +178,8 @@ async def _build_question_bank_context(
         seen.add(entry_id)
         try:
             entry = await get_entry(entry_id)
-        except Exception:
+        except Exception as exc:
+            logger.warning("Failed to load question bank entry %s: %s", entry_id, exc)
             entry = None
         if not entry:
             continue
@@ -375,7 +376,8 @@ class TurnRuntimeManager:
                 from deeptutor.api.routers.settings import get_enabled_optional_tools
 
                 payload = {**payload, "tools": list(get_enabled_optional_tools())}
-            except Exception:
+            except Exception as exc:
+                logger.warning("Failed to load enabled optional tools: %s", exc)
                 payload = {**payload, "tools": []}
         # Admin-imposed per-user tool whitelist (grant v2). Sits after the
         # back-fill so explicit caller lists and settings defaults pass the

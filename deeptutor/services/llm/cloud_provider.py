@@ -8,12 +8,9 @@ Provides both complete() and stream() methods.
 
 from collections.abc import AsyncGenerator, Mapping
 import logging
-import threading
 from typing import cast
 
 import aiohttp
-
-from deeptutor.services.config import load_system_settings
 
 from .capabilities import (
     disable_response_format_at_runtime,
@@ -22,6 +19,8 @@ from .capabilities import (
 )
 from .config import get_token_limit_kwargs
 from .exceptions import LLMAPIError, LLMAuthenticationError, LLMConfigError
+from .fallback import is_unsupported_response_format
+from .openai_http_client import disable_ssl_verify_enabled
 from .reasoning_params import default_reasoning_effort_for
 from .utils import (
     build_auth_headers,
@@ -33,9 +32,6 @@ from .utils import (
 )
 
 logger = logging.getLogger(__name__)
-
-# Thread-safe lock for SSL-warning state
-_ssl_warning_lock = threading.Lock()
 
 
 def _coerce_float(value: object, default: float) -> float:
@@ -102,22 +98,8 @@ _BINDINGS_WITH_EXTRA_BODY_THINKING = frozenset(
 
 
 def _looks_like_unsupported_response_format(error_text: str) -> bool:
-    """Detect whether a 400 error body indicates ``response_format`` is unsupported.
-
-    Mirrors the heuristic in ``executors._is_unsupported_response_format_error``
-    so the aiohttp-based ``_openai_complete`` / ``_openai_stream`` paths can
-    auto-recover when ``response_format`` is sent to a model that rejects it.
-    """
-    text = (error_text or "").lower()
-    if "response_format" not in text and "response format" not in text:
-        return False
-    return (
-        "json_object" in text
-        or "json_schema" in text
-        or "not supported" in text
-        or "not valid" in text
-        or "must be" in text
-    )
+    """Backward-compatible wrapper for the shared fallback decision."""
+    return is_unsupported_response_format(error_text)
 
 
 def _get_aiohttp_connector() -> aiohttp.TCPConnector | None:
@@ -128,19 +110,8 @@ def _get_aiohttp_connector() -> aiohttp.TCPConnector | None:
         A TCPConnector with SSL verification disabled when DISABLE_SSL_VERIFY
         is truthy; otherwise None to use aiohttp defaults.
     """
-    # Thread-safe check and one-time warning emission
-    disable_flag = bool(load_system_settings()["disable_ssl_verify"])
-    if not disable_flag:
+    if not disable_ssl_verify_enabled():
         return None
-
-    # Emit warning once across threads
-    with _ssl_warning_lock:
-        if not globals().get("_ssl_warning_logged", False):
-            logger.warning(
-                "SSL verification is disabled via DISABLE_SSL_VERIFY. This is unsafe and must "
-                "not be used in production environments."
-            )
-            globals()["_ssl_warning_logged"] = True
     return aiohttp.TCPConnector(ssl=False)
 
 

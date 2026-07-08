@@ -70,6 +70,7 @@ export default function PartnerChannels({
       // Edit form needs raw secrets to populate fields. Default GET masks them.
       const res = await apiFetch(
         apiUrl(`/api/v1/partners/${partnerId}?include_secrets=true`),
+        { cache: "no-store" },
       );
       if (!res.ok) return;
       const data = await res.json();

@@ -64,6 +64,7 @@ export default function NotebooksSection() {
   const [loading, setLoading] = useState(true);
   const [newName, setNewName] = useState("");
   const [newDescription, setNewDescription] = useState("");
+  const [loadError, setLoadError] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selected, setSelected] = useState<NotebookDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
@@ -108,6 +109,7 @@ export default function NotebooksSection() {
 
   const load = useCallback(async () => {
     setLoading(true);
+    setLoadError("");
     try {
       const nbs = await listNotebooks();
       const next: NotebookInfo[] = nbs.map((nb) => ({
@@ -128,10 +130,15 @@ export default function NotebooksSection() {
         setSelectedId(null);
         setSelected(null);
       }
+    } catch {
+      setLoadError(t("Unable to load notebooks."));
+      setNotebooks([]);
+      setSelectedId(null);
+      setSelected(null);
     } finally {
       setLoading(false);
     }
-  }, [loadDetail, selectedId]);
+  }, [loadDetail, selectedId, t]);
 
   useEffect(() => {
     void load();
@@ -358,8 +365,12 @@ export default function NotebooksSection() {
             })}
 
             {!notebooks.length && (
-              <div className="rounded-xl border border-dashed border-[var(--border)] px-6 py-10 text-center text-[13px] text-[var(--muted-foreground)]">
-                {t("No notebooks yet. Create one to organize outputs.")}
+              <div
+                role={loadError ? "alert" : undefined}
+                data-testid="notebooks-empty"
+                className="rounded-xl border border-dashed border-[var(--border)] px-6 py-10 text-center text-[13px] text-[var(--muted-foreground)]"
+              >
+                {loadError || t("No notebooks yet. Create one to organize outputs.")}
               </div>
             )}
           </div>

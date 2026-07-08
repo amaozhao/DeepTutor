@@ -19,6 +19,10 @@ import json_repair
 from openai import AsyncOpenAI
 
 from deeptutor.services.llm.capabilities import disable_response_format_at_runtime
+from deeptutor.services.llm.fallback import (
+    is_unsupported_response_format,
+    should_fallback_from_responses_error,
+)
 from deeptutor.services.llm.openai_http_client import openai_client_kwargs
 from deeptutor.services.llm.provider_core.base import LLMProvider, LLMResponse, ToolCallRequest
 from deeptutor.services.llm.provider_core.openai_responses import (
@@ -125,9 +129,6 @@ class OpenAICompatProvider(LLMProvider):
         self._spec = spec
         self._provider_name = provider_name
 
-        if api_key and spec and spec.env_key:
-            self._setup_env(api_key, api_base)
-
         effective_base = api_base or (spec.default_api_base if spec else None) or None
         self._effective_base = effective_base
         default_headers: dict[str, str] = {"x-session-affinity": uuid.uuid4().hex}
@@ -145,23 +146,6 @@ class OpenAICompatProvider(LLMProvider):
         )
         self._responses_failures: dict[str, int] = {}
         self._responses_tripped_at: dict[str, float] = {}
-
-    def _setup_env(self, api_key: str, api_base: str | None) -> None:
-        import os
-
-        spec = self._spec
-        if not spec or not spec.env_key:
-            return
-        if spec.is_gateway:
-            os.environ[spec.env_key] = api_key
-        else:
-            os.environ.setdefault(spec.env_key, api_key)
-        effective_base = api_base or spec.default_api_base
-        for env_name, env_val in spec.env_extras:
-            resolved = env_val.replace("{api_key}", api_key).replace(
-                "{api_base}", effective_base or ""
-            )
-            os.environ.setdefault(env_name, resolved)
 
     # ------------------------------------------------------------------
     # Prompt caching
@@ -350,50 +334,11 @@ class OpenAICompatProvider(LLMProvider):
 
     @staticmethod
     def _should_fallback_from_responses_error(exc: Exception) -> bool:
-        response = getattr(exc, "response", None)
-        status_code = getattr(exc, "status_code", None)
-        if status_code is None and response is not None:
-            status_code = getattr(response, "status_code", None)
-        if status_code not in {400, 404, 422}:
-            return False
-
-        body = (
-            getattr(exc, "body", None)
-            or getattr(exc, "doc", None)
-            or getattr(response, "text", None)
-        )
-        body_text = str(body).lower() if body is not None else ""
-        return any(
-            marker in body_text
-            for marker in (
-                "responses",
-                "response api",
-                "max_output_tokens",
-                "instructions",
-                "previous_response",
-                "unknown parameter",
-                "unrecognized request argument",
-                "unsupported",
-                "not supported",
-            )
-        )
+        return should_fallback_from_responses_error(exc)
 
     @staticmethod
     def _is_response_format_error(exc: Exception) -> bool:
-        text = str(getattr(exc, "body", None) or getattr(exc, "message", None) or exc).lower()
-        if "response_format" not in text and "response format" not in text:
-            return False
-        return any(
-            marker in text
-            for marker in (
-                "not supported",
-                "unsupported",
-                "json_object",
-                "json_schema",
-                "must be 'json_schema' or 'text'",
-                "specified for 'response_format.type' is not valid",
-            )
-        )
+        return is_unsupported_response_format(exc)
 
     def _build_responses_body(
         self,

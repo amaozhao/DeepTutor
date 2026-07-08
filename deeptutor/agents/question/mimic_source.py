@@ -22,7 +22,7 @@ import json
 import logging
 from pathlib import Path
 
-from deeptutor.agents.question.pipeline import (
+from deeptutor.agents.question.planning import (
     _VALID_DIFFICULTIES,
     _VALID_QUESTION_TYPES,
     QuizTemplate,
