@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+
 from _pytest.monkeypatch import MonkeyPatch
 import pytest
 
@@ -41,6 +43,16 @@ def test_client_complete_sync(monkeypatch: MonkeyPatch) -> None:
     monkeypatch.setattr(client, "complete", _fake_complete)
 
     assert client.complete_sync("hello") == "ok"
+
+
+def test_client_init_does_not_write_openai_env(monkeypatch: MonkeyPatch) -> None:
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("OPENAI_BASE_URL", raising=False)
+
+    LLMClient(LLMConfig(model="model", api_key="key", base_url="https://example.com"))
+
+    assert "OPENAI_API_KEY" not in os.environ
+    assert "OPENAI_BASE_URL" not in os.environ
 
 
 def test_client_reports_multimodal_image_support() -> None:

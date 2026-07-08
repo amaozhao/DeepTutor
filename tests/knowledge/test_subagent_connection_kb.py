@@ -41,3 +41,15 @@ def test_register_cli_connection_has_no_partner_id(tmp_path: Path) -> None:
     assert meta["agent_kind"] == "claude_code"
     # Empty partner_id is dropped from the curated metadata (None-stripped).
     assert "partner_id" not in meta or not meta["partner_id"]
+
+
+def test_get_info_keeps_subagent_target_fields_out_of_metadata(tmp_path: Path) -> None:
+    manager = KnowledgeBaseManager(base_dir=str(tmp_path / "kbs"))
+    manager.register_subagent_connection("Panda Kate", "partner", partner_id="panda-kate")
+
+    metadata = manager.get_info("Panda Kate")["metadata"]
+
+    assert metadata["type"] == "subagent"
+    assert metadata["agent_kind"] == "partner"
+    assert "partner_id" not in metadata
+    assert "cwd" not in metadata

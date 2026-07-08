@@ -7,13 +7,17 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 import logging
+import socket
 
 # Import unified exceptions from exceptions.py
 from .exceptions import (
     LLMAPIError,
     LLMAuthenticationError,
     LLMError,
+    LLMModelNotFoundError,
+    LLMNetworkError,
     LLMRateLimitError,
+    LLMTimeoutError,
     ProviderContextWindowError,
 )
 
@@ -61,15 +65,36 @@ _GLOBAL_RULES: list[MappingRule] = [
         factory=lambda exc, provider: LLMRateLimitError(str(exc), provider=provider),
     ),
     MappingRule(
+        classifier=_class_named("APITimeoutError", "TimeoutException"),
+        factory=lambda exc, provider: LLMTimeoutError(str(exc), provider=provider),
+    ),
+    MappingRule(
+        classifier=_class_named("APIConnectionError", "NetworkError"),
+        factory=lambda exc, provider: LLMNetworkError(str(exc), provider=provider),
+    ),
+    MappingRule(
+        classifier=_instance_of(TimeoutError),
+        factory=lambda exc, provider: LLMTimeoutError(str(exc), provider=provider),
+    ),
+    MappingRule(
+        classifier=_instance_of(ConnectionError, socket.gaierror),
+        factory=lambda exc, provider: LLMNetworkError(str(exc), provider=provider),
+    ),
+    MappingRule(
         classifier=_message_contains("rate limit", "429", "quota"),
         factory=lambda exc, provider: LLMRateLimitError(str(exc), provider=provider),
     ),
     MappingRule(
-        classifier=_message_contains("context length", "maximum context"),
+        classifier=_message_contains(
+            "context length",
+            "context window",
+            "maximum context",
+            "maximum context length",
+            "token limit",
+        ),
         factory=lambda exc, provider: ProviderContextWindowError(str(exc), provider=provider),
     ),
 ]
-
 
 def map_error(exc: Exception, provider: str | None = None) -> LLMError:
     """Map provider-specific errors to unified internal exceptions."""
@@ -79,6 +104,10 @@ def map_error(exc: Exception, provider: str | None = None) -> LLMError:
         return LLMAuthenticationError(str(exc), provider=provider)
     if status_code == 429:
         return LLMRateLimitError(str(exc), provider=provider)
+    if status_code == 404:
+        return LLMModelNotFoundError(str(exc), provider=provider)
+    if status_code in {408, 504}:
+        return LLMTimeoutError(str(exc), provider=provider)
 
     for rule in _GLOBAL_RULES:
         if rule.classifier(exc):

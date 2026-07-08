@@ -8,7 +8,7 @@ from types import TracebackType
 from _pytest.monkeypatch import MonkeyPatch
 import pytest
 
-from deeptutor.services.llm.exceptions import LLMAPIError
+from deeptutor.services.llm.exceptions import LLMAPIError, LLMConfigError
 
 cloud_provider = importlib.import_module("deeptutor.services.llm.cloud_provider")
 
@@ -177,6 +177,10 @@ def test_cloud_helpers(monkeypatch: MonkeyPatch) -> None:
     monkeypatch.setattr(cloud_provider.aiohttp, "TCPConnector", lambda **_kw: _FakeConnector())
     connector = cloud_provider._get_aiohttp_connector()
     assert connector is not None
+
+    monkeypatch.setenv("ENVIRONMENT", "production")
+    with pytest.raises(LLMConfigError, match="not allowed in production"):
+        cloud_provider._get_aiohttp_connector()
 
 
 @pytest.mark.asyncio

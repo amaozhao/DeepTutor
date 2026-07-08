@@ -24,14 +24,19 @@ arguments, not a human):
 from __future__ import annotations
 
 from dataclasses import dataclass
-import ipaddress
 import logging
 import re
-import socket
 from typing import Any
 from urllib.parse import urlparse
 
 import httpx
+
+from deeptutor.services.outbound import (
+    ALLOWED_OUTBOUND_SCHEMES as ALLOWED_SCHEMES,
+)
+from deeptutor.services.outbound import (
+    is_disallowed_host as _is_disallowed_host,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +44,6 @@ DEFAULT_MAX_CHARS = 50_000
 MAX_RESPONSE_BYTES = 4 * 1024 * 1024  # 4 MB — safety cap on raw download
 DEFAULT_TIMEOUT_S = 15.0
 DEFAULT_USER_AGENT = "DeepTutor/1.0 (+https://hkuds.dev/deeptutor)"
-ALLOWED_SCHEMES = {"http", "https"}
 
 # Cheap inline HTML → text. Good enough for blog / docs / arxiv abstract
 # pages. For JS-heavy SPAs the tool will return the bare HTML scaffold —
@@ -151,54 +155,6 @@ def _default_client_factory(*, timeout: float, user_agent: str) -> httpx.AsyncCl
         timeout=timeout,
         headers={"User-Agent": user_agent},
         max_redirects=5,
-    )
-
-
-def _is_disallowed_host(host: str) -> bool:
-    """Block hosts that resolve to private / loopback / link-local IPs.
-
-    Handles both raw IP literals (``127.0.0.1`` / ``[::1]``) and DNS
-    names (resolves them once via ``socket.getaddrinfo`` and checks ALL
-    returned addresses). DNS failures are treated as disallowed to fail
-    closed when in doubt.
-    """
-    candidate = host.strip("[]")
-    # Direct IP literal check
-    try:
-        ip = ipaddress.ip_address(candidate)
-        return _is_disallowed_ip(ip)
-    except ValueError:
-        pass
-    # Common loopback / metadata hostnames before DNS even tries.
-    lower = candidate.lower()
-    if lower in {"localhost", "ip6-localhost", "ip6-loopback"}:
-        return True
-    if lower.endswith(".local"):
-        return True
-    # Resolve once; treat resolution failure as "disallowed" so a typo
-    # plus an unlucky stub doesn't accidentally hit a private network.
-    try:
-        infos = socket.getaddrinfo(candidate, None)
-    except OSError:
-        return True
-    for info in infos:
-        addr = info[4][0]
-        try:
-            if _is_disallowed_ip(ipaddress.ip_address(addr)):
-                return True
-        except ValueError:
-            continue
-    return False
-
-
-def _is_disallowed_ip(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
-    return (
-        ip.is_private
-        or ip.is_loopback
-        or ip.is_link_local
-        or ip.is_multicast
-        or ip.is_reserved
-        or ip.is_unspecified
     )
 
 

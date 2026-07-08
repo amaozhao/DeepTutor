@@ -9,7 +9,7 @@ Single public entry point:
 
 * :func:`load_session_quiz_history` — async, takes ``session_id`` and an
   upper bound, returns a chronological list of
-  :class:`~deeptutor.agents.question.pipeline.QuizHistoryEntry`.
+  :class:`~deeptutor.agents.question.planning.QuizHistoryEntry`.
 
 Source of truth: the ``notebook_entries`` table (populated by
 ``POST /sessions/{id}/quiz-results``). Messages are *not* consulted —
@@ -24,7 +24,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from deeptutor.agents.question.pipeline import QuizHistoryEntry
+from deeptutor.agents.question.planning import QuizHistoryEntry
 
 logger = logging.getLogger(__name__)
 

@@ -50,9 +50,7 @@ def _deployment_status() -> dict[str, object]:
     shared_state_settings = load_shared_state_settings()
     shared_state_provider = str(shared_state_settings.get("provider") or "file")
     database_url_configured = bool(shared_state_settings.get("database_url"))
-    external_state_configured = (
-        shared_state_provider == "postgres" and database_url_configured
-    )
+    external_state_configured = shared_state_provider == "postgres" and database_url_configured
     worker_count = configured_worker_count()
     blocking_reasons: list[str] = []
     if not external_state_configured:
@@ -106,14 +104,20 @@ def _container_health() -> tuple[int, dict[str, object]]:
     shared_state = deployment.get("shared_state") or {}
     external_state_configured = bool(shared_state.get("external_state_configured"))
     storage = _writable_dir_status(paths.ADMIN_WORKSPACE_ROOT)
-    auth_store = {"status": "external"} if external_state_configured else _writable_dir_status(
-        paths.SYSTEM_ROOT / "auth"
+    auth_store = (
+        {"status": "external"}
+        if external_state_configured
+        else _writable_dir_status(paths.SYSTEM_ROOT / "auth")
     )
-    quota_store = {"status": "external"} if external_state_configured else _writable_dir_status(
-        paths.SYSTEM_ROOT / "usage"
+    quota_store = (
+        {"status": "external"}
+        if external_state_configured
+        else _writable_dir_status(paths.SYSTEM_ROOT / "usage")
     )
-    rate_store = {"status": "external"} if external_state_configured else _writable_dir_status(
-        paths.SYSTEM_ROOT / "rate"
+    rate_store = (
+        {"status": "external"}
+        if external_state_configured
+        else _writable_dir_status(paths.SYSTEM_ROOT / "rate")
     )
     shared_state_store: dict[str, str] = {"status": "file"}
     if external_state_configured:
@@ -132,9 +136,8 @@ def _container_health() -> tuple[int, dict[str, object]]:
         failures.append("rate store is not writable")
     if shared_state_store["status"] == "error":
         failures.append("shared state store is not reachable")
-    if (
-        int((deployment.get("shared_state") or {}).get("backend_workers") or 1) > 1
-        and not bool(deployment.get("multi_replica_ready"))
+    if int((deployment.get("shared_state") or {}).get("backend_workers") or 1) > 1 and not bool(
+        deployment.get("multi_replica_ready")
     ):
         failures.append(
             "multiple backend workers configured before shared auth/rate/quota stores are active"

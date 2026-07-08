@@ -104,13 +104,27 @@ async def test_imagegen_adapter_b64_json(monkeypatch: pytest.MonkeyPatch) -> Non
 
 @pytest.mark.asyncio
 async def test_imagegen_adapter_url_is_downloaded(monkeypatch: pytest.MonkeyPatch) -> None:
-    post_resp = httpx.Response(200, json={"data": [{"url": "https://cdn/x.png"}]})
+    post_resp = httpx.Response(200, json={"data": [{"url": "https://8.8.8.8/x.png"}]})
     get_resp = httpx.Response(200, content=b"DOWNLOADED", headers={"content-type": "image/png"})
     captured = _patch_http(monkeypatch, post=post_resp, get=get_resp)
     config = ImagegenConfig(model="seedream", base_url="https://ark/api/v3", api_key="k")
     images = await OpenAICompatImagegenAdapter().generate("dog", config)
     assert images == [(b"DOWNLOADED", "image/png")]
-    assert captured["gets"][0]["url"] == "https://cdn/x.png"
+    assert captured["gets"][0]["url"] == "https://8.8.8.8/x.png"
+
+
+@pytest.mark.asyncio
+async def test_imagegen_adapter_blocks_private_download_url(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    post_resp = httpx.Response(200, json={"data": [{"url": "http://127.0.0.1/x.png"}]})
+    captured = _patch_http(monkeypatch, post=post_resp, get=httpx.Response(200, content=b"no"))
+    config = ImagegenConfig(model="seedream", base_url="https://ark/api/v3", api_key="k")
+
+    with pytest.raises(GenerationProviderError, match="private|loopback"):
+        await OpenAICompatImagegenAdapter().generate("dog", config)
+
+    assert captured["gets"] == []
 
 
 @pytest.mark.asyncio
@@ -137,6 +151,37 @@ async def test_imagegen_chat_completions_adapter_data_uri(monkeypatch: pytest.Mo
     assert post["url"] == "https://openrouter.ai/api/v1/chat/completions"
     assert post["json"]["modalities"] == ["image", "text"]
     assert post["json"]["messages"][0]["content"] == "a fox"
+
+
+@pytest.mark.asyncio
+async def test_imagegen_chat_completions_blocks_private_download_url(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    resp = httpx.Response(
+        200,
+        json={
+            "choices": [
+                {
+                    "message": {
+                        "content": "here",
+                        "images": [{"image_url": {"url": "http://127.0.0.1/x.png"}}],
+                    }
+                }
+            ]
+        },
+    )
+    captured = _patch_http(monkeypatch, post=resp, get=httpx.Response(200, content=b"no"))
+    config = ImagegenConfig(
+        model="google/gemini-2.5-flash-image-preview",
+        adapter="chat_completions",
+        base_url="https://openrouter.ai/api/v1",
+        api_key="or-key",
+    )
+
+    with pytest.raises(GenerationProviderError, match="private|loopback"):
+        await ChatCompletionsImagegenAdapter().generate("a fox", config)
+
+    assert captured["gets"] == []
 
 
 @pytest.mark.asyncio
@@ -172,7 +217,7 @@ async def test_videogen_adapter_submit_poll_download(monkeypatch: pytest.MonkeyP
     def get_router(url: str, _kwargs: Any) -> httpx.Response:
         if url.endswith("/contents/generations/tasks/task-1"):
             return httpx.Response(
-                200, json={"status": "succeeded", "content": {"video_url": "https://cdn/v.mp4"}}
+                200, json={"status": "succeeded", "content": {"video_url": "https://8.8.8.8/v.mp4"}}
             )
         return httpx.Response(200, content=b"MP4DATA", headers={"content-type": "video/mp4"})
 
@@ -186,6 +231,34 @@ async def test_videogen_adapter_submit_poll_download(monkeypatch: pytest.MonkeyP
     video, content_type = await AsyncTaskVideogenAdapter().generate("a wave", config)
     assert video == b"MP4DATA"
     assert content_type == "video/mp4"
+
+
+@pytest.mark.asyncio
+async def test_videogen_adapter_blocks_private_download_url(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    submit = httpx.Response(200, json={"id": "task-1"})
+
+    def get_router(url: str, _kwargs: Any) -> httpx.Response:
+        if url.endswith("/contents/generations/tasks/task-1"):
+            return httpx.Response(
+                200,
+                json={"status": "succeeded", "content": {"video_url": "http://127.0.0.1/v.mp4"}},
+            )
+        return httpx.Response(200, content=b"SHOULD_NOT_FETCH")
+
+    captured = _patch_http(monkeypatch, post=submit, get=get_router)
+    config = VideogenConfig(
+        model="seedance",
+        base_url="https://ark/api/v3",
+        api_key="k",
+        poll_interval=0.0,
+    )
+
+    with pytest.raises(GenerationProviderError, match="private|loopback"):
+        await AsyncTaskVideogenAdapter().generate("a wave", config)
+
+    assert len(captured["gets"]) == 1
 
 
 @pytest.mark.asyncio
@@ -427,7 +500,7 @@ async def test_generate_video_facade(monkeypatch: pytest.MonkeyPatch) -> None:
     def get_router(url: str, _kwargs: Any) -> httpx.Response:
         if "tasks/task-9" in url:
             return httpx.Response(
-                200, json={"status": "succeeded", "content": {"video_url": "https://cdn/v.mp4"}}
+                200, json={"status": "succeeded", "content": {"video_url": "https://8.8.8.8/v.mp4"}}
             )
         return httpx.Response(200, content=b"VID", headers={"content-type": "video/mp4"})
 

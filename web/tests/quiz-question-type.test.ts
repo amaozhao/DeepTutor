@@ -9,7 +9,21 @@ import {
   resolveChoiceAnswerKey,
   resolveConceptAnswer,
 } from "../lib/quiz-question-type";
-import { extractQuizQuestions } from "../lib/quiz-types";
+import {
+  extractQuizQuestions,
+  quizFollowupAnswerImageAttachments,
+  quizFollowupConfigWithMemory,
+  quizFollowupSendPlan,
+} from "../lib/quiz-types";
+
+const baseQuestion = {
+  question_id: "q1",
+  question: "Pick one",
+  question_type: "choice" as const,
+  options: { A: "One", B: "Two" },
+  correct_answer: "A",
+  explanation: "A is correct",
+};
 
 test("normalizeQuizQuestionType maps legacy choice aliases to choice", () => {
   assert.equal(normalizeQuizQuestionType("choice"), "choice");
@@ -73,4 +87,175 @@ test("extractQuizQuestions normalizes legacy question types from payloads", () =
 
   assert.ok(questions);
   assert.equal(questions?.[0]?.question_type, "choice");
+});
+
+test("quizFollowupAnswerImageAttachments maps usable answer images", () => {
+  assert.deepEqual(
+    quizFollowupAnswerImageAttachments([
+      {
+        base64: "abc",
+        url: "https://example.test/a.png",
+        filename: "a.png",
+        mime: "image/png",
+      },
+      {
+        base64: null,
+        url: "https://example.test/b.jpg",
+        filename: "b.jpg",
+        mime: "image/jpeg",
+      },
+      {
+        base64: null,
+        url: null,
+        filename: "empty.png",
+        mime: "image/png",
+      },
+    ]),
+    [
+      {
+        type: "image",
+        base64: "abc",
+        filename: "a.png",
+        mime_type: "image/png",
+      },
+      {
+        type: "image",
+        url: "https://example.test/b.jpg",
+        filename: "b.jpg",
+        mime_type: "image/jpeg",
+      },
+    ],
+  );
+});
+
+test("quizFollowupConfigWithMemory only adds memory references when present", () => {
+  const config = { followup_question_context: { question_id: "q1" } };
+  assert.equal(quizFollowupConfigWithMemory(config, []), config);
+  assert.deepEqual(quizFollowupConfigWithMemory(config, ["profile"]), {
+    followup_question_context: { question_id: "q1" },
+    memory_references: ["profile"],
+  });
+});
+
+test("quizFollowupSendPlan blocks empty or streaming follow-up sends", () => {
+  const base = {
+    content: "",
+    isStreaming: false,
+    isFirstSend: true,
+    question: baseQuestion,
+    userAnswer: "",
+    isCorrect: null,
+    parentQuizSessionId: null,
+    answerImages: [],
+    aiJudgment: "",
+    attachments: [],
+    selectedKnowledgeBases: [],
+    selectedBookReferences: [],
+    selectedNotebookRecords: [],
+    selectedHistorySessions: [],
+    selectedQuestionEntries: [],
+    selectedMemoryFiles: [],
+    selectedPersona: null,
+    memoryReferences: [],
+  };
+
+  assert.equal(quizFollowupSendPlan(base), null);
+  assert.equal(
+    quizFollowupSendPlan({
+      ...base,
+      content: "Explain",
+      isStreaming: true,
+    }),
+    null,
+  );
+});
+
+test("quizFollowupSendPlan builds first-turn context and optional references", () => {
+  const plan = quizFollowupSendPlan({
+    content: "",
+    isStreaming: false,
+    isFirstSend: true,
+    question: baseQuestion,
+    userAnswer: "A",
+    isCorrect: true,
+    parentQuizSessionId: "quiz-session",
+    answerImages: [
+      {
+        base64: "abc",
+        url: null,
+        filename: "answer.png",
+        mime: "image/png",
+      },
+    ],
+    aiJudgment: "Good",
+    attachments: [],
+    selectedKnowledgeBases: ["kb"],
+    selectedBookReferences: [],
+    selectedNotebookRecords: [],
+    selectedHistorySessions: [],
+    selectedQuestionEntries: [],
+    selectedMemoryFiles: ["profile"],
+    selectedPersona: "Socratic",
+    memoryReferences: ["profile"],
+  });
+
+  assert.ok(plan);
+  assert.equal(plan.content, "");
+  assert.equal(plan.persona, "Socratic");
+  assert.deepEqual(plan.answerImageAttachments, [
+    {
+      type: "image",
+      base64: "abc",
+      filename: "answer.png",
+      mime_type: "image/png",
+    },
+  ]);
+  assert.deepEqual(plan.config, {
+    followup_question_context: {
+      parent_quiz_session_id: "quiz-session",
+      question_id: "q1",
+      question: "Pick one",
+      question_type: "choice",
+      options: { A: "One", B: "Two" },
+      correct_answer: "A",
+      explanation: "A is correct",
+      difficulty: undefined,
+      concentration: undefined,
+      knowledge_context: undefined,
+      user_answer: "A",
+      is_correct: true,
+      user_answer_image_filenames: ["answer.png"],
+      ai_judgment: "Good",
+    },
+    memory_references: ["profile"],
+  });
+
+  const followupTurn = quizFollowupSendPlan({
+    content: "Next",
+    isStreaming: false,
+    isFirstSend: false,
+    question: baseQuestion,
+    userAnswer: "A",
+    isCorrect: true,
+    parentQuizSessionId: "quiz-session",
+    answerImages: [
+      {
+        base64: "abc",
+        url: null,
+        filename: "answer.png",
+        mime: "image/png",
+      },
+    ],
+    aiJudgment: "Good",
+    attachments: [],
+    selectedKnowledgeBases: [],
+    selectedBookReferences: [],
+    selectedNotebookRecords: [],
+    selectedHistorySessions: [],
+    selectedQuestionEntries: [],
+    selectedMemoryFiles: [],
+    selectedPersona: null,
+    memoryReferences: [],
+  });
+  assert.deepEqual(followupTurn?.answerImageAttachments, []);
 });

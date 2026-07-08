@@ -27,7 +27,6 @@ import {
   useState,
 } from "react";
 import { updateNotebookEntry } from "@/lib/notebook-api";
-import { shouldAppendEventContent } from "@/lib/stream";
 import { hasPendingAskUser } from "@/lib/ask-user-state";
 import {
   type ChatMessage,
@@ -36,42 +35,30 @@ import {
   UnifiedWSClient,
 } from "@/lib/unified-ws";
 import type { QuizQuestion } from "@/lib/quiz-types";
-
-export interface FollowupMessage {
-  role: "user" | "assistant" | "system";
-  content: string;
-  /**
-   * Stream events that produced this message (assistant turns only).
-   * Keeping the full event log on the assistant message lets the
-   * follow-up tab render the same inline trace rows (``TraceFlow``) the
-   * main chat uses — reasoning blocks, tool calls, stage transitions, etc.
-   */
-  events?: StreamEvent[];
-}
-
-export interface FollowupThreadState {
-  isOpen: boolean;
-  input: string;
-  isStreaming: boolean;
-  currentStage: string;
-  sessionId: string | null;
-  activeTurnId: string | null;
-  messages: FollowupMessage[];
-  error: string | null;
-}
-
-export function createEmptyThreadState(): FollowupThreadState {
-  return {
-    isOpen: false,
-    input: "",
-    isStreaming: false,
-    currentStage: "",
-    sessionId: null,
-    activeTurnId: null,
-    messages: [],
-    error: null,
-  };
-}
+import {
+  buildSubmitUserReplyMessage,
+  type AskUserReply,
+} from "@/context/chat/commands";
+import { runnerSendState } from "@/context/chat/transport";
+import {
+  applyFollowupSessionEvent,
+  applyFollowupStreamEvent,
+  createEmptyThreadState,
+  followupDoneState,
+  followupFailedState,
+  followupHydratedState,
+  followupResumeState,
+  followupSessionEventInfo,
+  followupStartUserTurnState,
+  shouldHydrateFollowupThread,
+  type FollowupThreadState,
+  type HydratedFollowupMessage,
+} from "@/context/quiz/followup";
+export {
+  createEmptyThreadState,
+  type FollowupThreadState,
+  type HydratedFollowupMessage,
+} from "@/context/quiz/followup";
 
 /** Snapshot of the question + answer + judgment that a follow-up tab pins. */
 export interface QuizFollowupTabContext {
@@ -134,12 +121,6 @@ export interface SendMessageInput {
   persona?: string;
   /** Pinned LLM selection — when null/undefined the server default applies. */
   llmSelection?: LLMSelection | null;
-}
-
-export interface HydratedFollowupMessage {
-  role: "user" | "assistant" | "system";
-  content: string;
-  events?: StreamEvent[];
 }
 
 export interface QuizFollowupController {
@@ -256,90 +237,29 @@ export function QuizFollowupProvider({ children }: ProviderProps) {
   const handleThreadEvent = useCallback(
     (key: string, event: StreamEvent) => {
       if (event.type === "session") {
-        const metadata = (event.metadata ?? {}) as {
-          session_id?: string;
-          turn_id?: string;
-        };
-        const nextSessionId = metadata.session_id || event.session_id || "";
-        const nextTurnId = metadata.turn_id || event.turn_id || null;
-        if (!nextSessionId) return;
-        updateThread(key, (prev) => ({
-          ...prev,
-          sessionId: nextSessionId,
-          activeTurnId: nextTurnId,
-        }));
+        const info = followupSessionEventInfo(event);
+        if (!info) return;
+        updateThread(key, (prev) => applyFollowupSessionEvent(prev, info));
         const runner = runnersRef.current.get(key);
-        if (runner) runner.questionKey = nextSessionId;
+        if (runner) runner.questionKey = info.sessionId;
         const entryId = entryIdsRef.current.get(key);
         if (entryId) {
           void updateNotebookEntry(entryId, {
-            followup_session_id: nextSessionId,
+            followup_session_id: info.sessionId,
           }).catch(() => {});
         }
         return;
       }
 
       if (event.type === "done") {
-        updateThread(key, (prev) => ({
-          ...prev,
-          isStreaming: false,
-          currentStage: "",
-          activeTurnId: null,
-        }));
+        updateThread(key, followupDoneState);
         const runner = runnersRef.current.get(key);
         runner?.client.disconnect();
         runnersRef.current.delete(key);
         return;
       }
 
-      updateThread(key, (prev) => {
-        const next = {
-          ...prev,
-          activeTurnId: event.turn_id || prev.activeTurnId,
-        };
-        if (event.type === "stage_start") {
-          next.currentStage = event.stage;
-        } else if (event.type === "stage_end") {
-          next.currentStage = "";
-        } else if (event.type === "error") {
-          next.error = event.content || prev.error;
-          const terminal = Boolean(
-            ((event.metadata ?? {}) as { turn_terminal?: boolean })
-              .turn_terminal,
-          );
-          if (terminal) {
-            next.isStreaming = false;
-            next.currentStage = "";
-            next.activeTurnId = null;
-          }
-        }
-        // Append the streaming event to the latest assistant message's
-        // event log so the trace surface can render the full reasoning /
-        // tool-call narrative — matching the main chat's behaviour.
-        const messages = [...prev.messages];
-        let last = messages[messages.length - 1];
-        if (!last || last.role !== "assistant") {
-          messages.push({ role: "assistant", content: "", events: [event] });
-        } else {
-          messages[messages.length - 1] = {
-            ...last,
-            events: [...(last.events ?? []), event],
-          };
-        }
-        last = messages[messages.length - 1];
-        if (
-          last &&
-          last.role === "assistant" &&
-          shouldAppendEventContent(event)
-        ) {
-          messages[messages.length - 1] = {
-            ...last,
-            content: `${last.content}${event.content}`,
-          };
-        }
-        next.messages = messages;
-        return next;
-      });
+      updateThread(key, (prev) => applyFollowupStreamEvent(prev, event));
     },
     [updateThread],
   );
@@ -358,15 +278,12 @@ export function QuizFollowupProvider({ children }: ProviderProps) {
           () => {
             const current = threadsRef.current[key];
             if (current?.isStreaming) {
-              updateThread(key, (prev) => ({
-                ...prev,
-                isStreaming: false,
-                currentStage: "",
-                activeTurnId: null,
-                error:
-                  prev.error ||
+              updateThread(key, (prev) =>
+                followupFailedState(
+                  prev,
                   "Follow-up chat failed because the connection closed.",
-              }));
+                ),
+              );
             }
           },
         ),
@@ -381,16 +298,18 @@ export function QuizFollowupProvider({ children }: ProviderProps) {
   const sendThroughRunner = useCallback(
     function send(key: string, message: ChatMessage, attempt = 0) {
       const runner = ensureRunner(key);
-      if (!runner.client.connected) {
-        if (attempt >= 10) {
-          updateThread(key, (prev) => ({
-            ...prev,
-            isStreaming: false,
-            currentStage: "",
-            error: "Follow-up chat failed to connect.",
-          }));
-          return;
-        }
+      const sendState = runnerSendState({
+        connected: runner.client.connected,
+        attempt,
+        maxAttempts: 10,
+      });
+      if (sendState === "failed") {
+        updateThread(key, (prev) =>
+          followupFailedState(prev, "Follow-up chat failed to connect."),
+        );
+        return;
+      }
+      if (sendState === "retry") {
         window.setTimeout(() => send(key, message, attempt + 1), 200);
         return;
       }
@@ -407,14 +326,9 @@ export function QuizFollowupProvider({ children }: ProviderProps) {
       if (!content && input.attachments.length === 0) return;
       if (current.isStreaming) return;
 
-      updateThread(input.questionKey, (prev) => ({
-        ...prev,
-        isOpen: true,
-        input: "",
-        isStreaming: true,
-        error: null,
-        messages: [...prev.messages, { role: "user", content }],
-      }));
+      updateThread(input.questionKey, (prev) =>
+        followupStartUserTurnState(prev, content),
+      );
 
       sendThroughRunner(input.questionKey, {
         type: "start_turn",
@@ -443,15 +357,7 @@ export function QuizFollowupProvider({ children }: ProviderProps) {
   );
 
   const submitAskUserReply = useCallback(
-    (
-      key: string,
-      reply:
-        | string
-        | {
-            text?: string;
-            answers?: Array<{ questionId: string; text: string }>;
-          },
-    ) => {
+    (key: string, reply: AskUserReply) => {
       const current = threadsRef.current[key];
       const turnId = current?.activeTurnId;
       if (!current || !turnId) return;
@@ -463,26 +369,12 @@ export function QuizFollowupProvider({ children }: ProviderProps) {
       );
       if (!current.isStreaming && !pendingAskUser) return;
 
-      const message: import("@/lib/unified-ws").SubmitUserReplyMessage = {
-        type: "submit_user_reply",
-        turn_id: turnId,
-      };
-      if (typeof reply === "string") {
-        message.text = reply;
-      } else {
-        if (typeof reply.text === "string") message.text = reply.text;
-        if (Array.isArray(reply.answers)) message.answers = reply.answers;
-      }
       // Flip the thread back into the streaming state so the trace surface
       // shows the spinner while the resumed iteration runs. The runner is
       // already alive (ask_user pauses without disconnecting), so we just
       // forward the reply through it.
-      updateThread(key, (prev) => ({
-        ...prev,
-        isStreaming: true,
-        error: null,
-      }));
-      sendThroughRunner(key, message);
+      updateThread(key, followupResumeState);
+      sendThroughRunner(key, buildSubmitUserReplyMessage(turnId, reply));
     },
     [sendThroughRunner, updateThread],
   );
@@ -495,23 +387,11 @@ export function QuizFollowupProvider({ children }: ProviderProps) {
 
   const hydrateThread = useCallback(
     (key: string, sessionId: string, messages: HydratedFollowupMessage[]) => {
-      // Skip when the thread already holds local state — we never
-      // overwrite an active conversation with a stale snapshot. The
-      // ``sessionId`` check covers the case where the in-memory thread
-      // is empty but we already wired a session id from a prior call.
       const current = threadsRef.current[key];
-      if (current && (current.messages.length > 0 || current.isStreaming)) {
-        return;
-      }
-      updateThread(key, (prev) => ({
-        ...prev,
-        sessionId,
-        messages: messages.map((m) => ({
-          role: m.role,
-          content: m.content,
-          events: m.events ?? [],
-        })),
-      }));
+      if (!shouldHydrateFollowupThread(current)) return;
+      updateThread(key, (prev) =>
+        followupHydratedState(prev, sessionId, messages),
+      );
     },
     [updateThread],
   );

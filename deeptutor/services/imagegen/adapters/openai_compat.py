@@ -23,6 +23,7 @@ from deeptutor.services.generation_http import (
 )
 from deeptutor.services.imagegen.base import BaseImagegenAdapter
 from deeptutor.services.imagegen.config import ImagegenConfig
+from deeptutor.services.outbound import OutboundUrlError, validate_outbound_url
 
 logger = logging.getLogger(__name__)
 
@@ -84,8 +85,18 @@ class OpenAICompatImagegenAdapter(BaseImagegenAdapter):
             return base64.b64decode(b64), "image/png"
         src = item.get("url")
         if isinstance(src, str) and src:
-            resp = await client.get(src)
+            try:
+                safe_url = validate_outbound_url(src)
+            except OutboundUrlError as exc:
+                raise GenerationProviderError(str(exc)) from exc
+            resp = await client.get(safe_url)
             raise_for_provider(resp, "Image download")
+            final_url = getattr(resp, "url", None)
+            if final_url:
+                try:
+                    validate_outbound_url(str(final_url))
+                except OutboundUrlError as exc:
+                    raise GenerationProviderError(str(exc)) from exc
             content_type = resp.headers.get("content-type") or "image/png"
             if not content_type.startswith("image/"):
                 content_type = "image/png"

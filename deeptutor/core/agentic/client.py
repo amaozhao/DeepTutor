@@ -19,11 +19,13 @@ import threading
 from types import SimpleNamespace
 from typing import Any
 
-import httpx
 from openai import AsyncAzureOpenAI, AsyncOpenAI
 
-from deeptutor.services.config import load_system_settings
 from deeptutor.services.llm import get_token_limit_kwargs, supports_tools
+from deeptutor.services.llm.openai_http_client import (
+    disable_ssl_verify_enabled,
+    openai_client_kwargs,
+)
 from deeptutor.services.llm.reasoning_params import (
     build_openai_compatible_reasoning_kwargs,
 )
@@ -88,22 +90,20 @@ def _build_openai_client(config: LLMClientConfig, *, disable_ssl_verify: bool) -
         if native_adapter is not None:
             return native_adapter
 
-    http_client = None
-    if disable_ssl_verify:
-        http_client = httpx.AsyncClient(verify=False)  # nosec B501
+    client_kwargs = openai_client_kwargs()
     if config.binding == "azure_openai" or (config.binding == "openai" and config.api_version):
         return AsyncAzureOpenAI(
             api_key=config.api_key or "sk-no-key-required",
             azure_endpoint=config.base_url,
             api_version=config.api_version,
-            http_client=http_client,
             default_headers=default_headers,
+            **client_kwargs,
         )
     return AsyncOpenAI(
         api_key=config.api_key or "sk-no-key-required",
         base_url=config.base_url or None,
-        http_client=http_client,
         default_headers=default_headers,
+        **client_kwargs,
     )
 
 
@@ -131,7 +131,7 @@ def build_openai_client(config: LLMClientConfig) -> Any:
     handle itself owns an HTTP connection pool, so reusing it is both faster
     and prevents a new allocator/socket high-water mark on every turn.
     """
-    disable_ssl_verify = bool(load_system_settings()["disable_ssl_verify"])
+    disable_ssl_verify = disable_ssl_verify_enabled()
     try:
         loop = asyncio.get_running_loop()
     except RuntimeError:

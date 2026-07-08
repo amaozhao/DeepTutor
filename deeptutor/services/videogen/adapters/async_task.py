@@ -28,6 +28,7 @@ from deeptutor.services.generation_http import (
     join_api_path,
     raise_for_provider,
 )
+from deeptutor.services.outbound import OutboundUrlError, validate_outbound_url
 from deeptutor.services.videogen.base import BaseVideogenAdapter, ProgressFn
 from deeptutor.services.videogen.config import VideogenConfig
 
@@ -77,8 +78,18 @@ class AsyncTaskVideogenAdapter(BaseVideogenAdapter):
             async with httpx.AsyncClient(timeout=config.request_timeout) as client:
                 video_url = await self._poll(client, config, headers, task_id, progress)
                 await self._notify(progress, "Downloading rendered video…")
-                video_resp = await client.get(video_url)
+                try:
+                    safe_video_url = validate_outbound_url(video_url)
+                except OutboundUrlError as exc:
+                    raise GenerationProviderError(str(exc)) from exc
+                video_resp = await client.get(safe_video_url)
                 raise_for_provider(video_resp, "Video download")
+                final_url = getattr(video_resp, "url", None)
+                if final_url:
+                    try:
+                        validate_outbound_url(str(final_url))
+                    except OutboundUrlError as exc:
+                        raise GenerationProviderError(str(exc)) from exc
                 content = video_resp.content
                 content_type = video_resp.headers.get("content-type") or "video/mp4"
         except httpx.HTTPError as exc:

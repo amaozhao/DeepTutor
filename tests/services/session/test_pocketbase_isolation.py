@@ -11,6 +11,7 @@ user's sessions.
 from __future__ import annotations
 
 from contextlib import contextmanager
+import logging
 from pathlib import Path
 import re
 
@@ -18,6 +19,7 @@ import pytest
 
 from deeptutor.multi_user.context import reset_current_user, set_current_user
 from deeptutor.multi_user.models import CurrentUser, UserScope
+from deeptutor.services.session import pocketbase_store
 from deeptutor.services.session.pocketbase_store import PocketBaseSessionStore
 
 pytestmark = pytest.mark.asyncio
@@ -141,6 +143,48 @@ async def test_get_session_404s_for_other_user(fake_pb) -> None:
     with as_user("alice"):
         own = await store.get_session("s_secret")
     assert own is not None and own["session_id"] == "s_secret"
+
+
+async def test_get_session_logs_query_failures(fake_pb, caplog) -> None:
+    store = PocketBaseSessionStore()
+
+    class _BrokenCollection:
+        def get_full_list(self, query_params=None):
+            raise RuntimeError("pb unavailable")
+
+    fake_pb._collections["sessions"] = _BrokenCollection()
+
+    with (
+        as_user("alice"),
+        caplog.at_level(logging.WARNING, logger="deeptutor.services.session.pocketbase_store"),
+    ):
+        assert await store.get_session("s_broken") is None
+
+    assert "get_session failed for session_id=s_broken user_id=alice" in caplog.text
+    assert "pb unavailable" in caplog.text
+
+
+async def test_list_active_turns_logs_query_failures(fake_pb, caplog) -> None:
+    store = PocketBaseSessionStore()
+
+    class _BrokenCollection:
+        def get_full_list(self, query_params=None):
+            raise RuntimeError("turn lookup failed")
+
+    fake_pb._collections["turns"] = _BrokenCollection()
+
+    with caplog.at_level(logging.WARNING, logger="deeptutor.services.session.pocketbase_store"):
+        assert await store.list_active_turns("s_broken") == []
+
+    assert "list_active_turns failed for session_id=s_broken" in caplog.text
+    assert "turn lookup failed" in caplog.text
+
+
+def test_json_loads_logs_invalid_payload(caplog) -> None:
+    with caplog.at_level(logging.WARNING, logger="deeptutor.services.session.pocketbase_store"):
+        assert pocketbase_store._json_loads("{bad json", {"fallback": True}) == {"fallback": True}
+
+    assert "Invalid PocketBase JSON field; using default" in caplog.text
 
 
 async def test_mutations_are_scoped_to_owner(fake_pb) -> None:

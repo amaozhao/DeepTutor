@@ -4,19 +4,19 @@ from __future__ import annotations
 
 import base64
 import io
-import zipfile
 from xml.sax.saxutils import escape
+import zipfile
 
-import pytest
 from openpyxl import Workbook
+import pytest
 
 from deeptutor.utils import document_extractor as document_extractor_module
 from deeptutor.utils.document_extractor import (
     MAX_DOC_BYTES,
     MAX_EXTRACTED_CHARS_PER_DOC,
     CorruptDocumentError,
-    DocumentTooLargeError,
     DocumentExtractionError,
+    DocumentTooLargeError,
     EmptyDocumentError,
     UnsupportedDocumentError,
     extract_documents_from_records,
@@ -44,9 +44,7 @@ except ImportError:  # pragma: no cover - exercised only in minimal test envs
 
 def _make_docx(paragraphs: list[str]) -> bytes:
     if DocxDocument is None:
-        body = "".join(
-            f"<w:p><w:r><w:t>{escape(p)}</w:t></w:r></w:p>" for p in paragraphs
-        )
+        body = "".join(f"<w:p><w:r><w:t>{escape(p)}</w:t></w:r></w:p>" for p in paragraphs)
         buf = io.BytesIO()
         with zipfile.ZipFile(buf, "w") as zf:
             zf.writestr(

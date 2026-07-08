@@ -6,6 +6,8 @@ from urllib.parse import urlparse
 
 import httpx
 
+from deeptutor.services.outbound import OutboundUrlError, validate_outbound_url
+
 logger = logging.getLogger(__name__)
 
 # Supported image MIME types
@@ -72,13 +74,23 @@ async def fetch_image_from_url(url: str) -> tuple[bytes, str]:
     """
     if not is_valid_image_url(url):
         raise ImageError(f"Invalid image URL: {url}")
+    try:
+        safe_url = validate_outbound_url(url)
+    except OutboundUrlError as exc:
+        raise ImageError(str(exc)) from exc
 
-    logger.info(f"Fetching image from URL: {url[:100]}...")
+    logger.info(f"Fetching image from URL: {safe_url[:100]}...")
 
     try:
         async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT, follow_redirects=True) as client:
-            response = await client.get(url)
+            response = await client.get(safe_url)
             response.raise_for_status()
+            final_url = str(response.url)
+            if final_url:
+                try:
+                    validate_outbound_url(final_url)
+                except OutboundUrlError as exc:
+                    raise ImageError(str(exc)) from exc
 
             # Check Content-Type
             content_type = response.headers.get("content-type", "").split(";")[0].strip().lower()

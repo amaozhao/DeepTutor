@@ -235,6 +235,137 @@ export function buildQuizFollowupConfig(
   };
 }
 
+export type QuizFollowupAnswerImage = {
+  base64: string | null;
+  url: string | null;
+  filename: string;
+  mime: string;
+};
+
+export type QuizFollowupAttachment = {
+  type: "image";
+  base64?: string;
+  url?: string;
+  filename: string;
+  mime_type: string;
+};
+
+export function quizFollowupAnswerImageAttachments(
+  answerImages: QuizFollowupAnswerImage[],
+): QuizFollowupAttachment[] {
+  const attachments: QuizFollowupAttachment[] = [];
+  for (const image of answerImages) {
+    if (image.base64) {
+      attachments.push({
+        type: "image",
+        base64: image.base64,
+        filename: image.filename,
+        mime_type: image.mime,
+      });
+      continue;
+    }
+    if (image.url) {
+      attachments.push({
+        type: "image",
+        url: image.url,
+        filename: image.filename,
+        mime_type: image.mime,
+      });
+    }
+  }
+  return attachments;
+}
+
+export function quizFollowupConfigWithMemory(
+  config: Record<string, unknown>,
+  memoryReferences: unknown[],
+): Record<string, unknown> {
+  if (memoryReferences.length === 0) return config;
+  return { ...config, memory_references: memoryReferences };
+}
+
+type Counted = { length: number };
+
+export function quizFollowupSendPlan({
+  content,
+  isStreaming,
+  isFirstSend,
+  question,
+  userAnswer,
+  isCorrect,
+  parentQuizSessionId,
+  answerImages,
+  aiJudgment,
+  attachments,
+  selectedKnowledgeBases,
+  selectedBookReferences,
+  selectedNotebookRecords,
+  selectedHistorySessions,
+  selectedQuestionEntries,
+  selectedMemoryFiles,
+  selectedPersona,
+  memoryReferences,
+}: {
+  content: string;
+  isStreaming: boolean;
+  isFirstSend: boolean;
+  question: QuizQuestion;
+  userAnswer: string;
+  isCorrect: boolean | null;
+  parentQuizSessionId: string | null;
+  answerImages: QuizFollowupAnswerImage[];
+  aiJudgment: string;
+  attachments: Counted;
+  selectedKnowledgeBases: Counted;
+  selectedBookReferences: Counted;
+  selectedNotebookRecords: Counted;
+  selectedHistorySessions: Counted;
+  selectedQuestionEntries: Counted;
+  selectedMemoryFiles: Counted;
+  selectedPersona: string | null;
+  memoryReferences: unknown[];
+}): {
+  content: string;
+  answerImageAttachments: QuizFollowupAttachment[];
+  config: Record<string, unknown>;
+  persona?: string;
+} | null {
+  const hasContent = content.trim().length > 0;
+  const hasReferences =
+    attachments.length > 0 ||
+    selectedKnowledgeBases.length > 0 ||
+    selectedBookReferences.length > 0 ||
+    selectedNotebookRecords.length > 0 ||
+    selectedHistorySessions.length > 0 ||
+    selectedQuestionEntries.length > 0 ||
+    selectedMemoryFiles.length > 0 ||
+    Boolean(selectedPersona);
+  if (isStreaming || (!hasContent && !hasReferences)) return null;
+
+  const config = quizFollowupConfigWithMemory(
+    buildQuizFollowupConfig(
+      question,
+      userAnswer,
+      isCorrect,
+      parentQuizSessionId,
+      {
+        userAnswerImageFilenames: answerImages.map((image) => image.filename),
+        aiJudgment,
+      },
+    ),
+    memoryReferences,
+  );
+
+  return {
+    content,
+    answerImageAttachments: isFirstSend
+      ? quizFollowupAnswerImageAttachments(answerImages)
+      : [],
+    config,
+    persona: selectedPersona ?? undefined,
+  };
+}
+
 function titleCase(value: string): string {
   if (!value) return "";
   return value.charAt(0).toUpperCase() + value.slice(1);
