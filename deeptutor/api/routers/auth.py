@@ -446,8 +446,18 @@ async def login(body: LoginRequest, response: Response) -> dict:
 
 @router.post("/logout")
 async def logout(response: Response) -> dict:
-    """Clear the JWT cookie."""
-    response.delete_cookie(key=_COOKIE_NAME, samesite=_SAMESITE)
+    """Clear the JWT cookie.
+
+    Attributes must mirror ``login``'s ``set_cookie`` call — ``delete_cookie``
+    defaults ``secure=False``, which browsers reject when paired with
+    ``SameSite=None`` and silently keep the old cookie. See #623.
+    """
+    response.delete_cookie(
+        key=_COOKIE_NAME,
+        httponly=True,
+        samesite=_SAMESITE,
+        secure=_SECURE,
+    )
     return {"ok": True}
 
 
