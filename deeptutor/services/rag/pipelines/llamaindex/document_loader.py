@@ -11,24 +11,22 @@ into the multimodal ``ImageNode`` path below.
 
 from __future__ import annotations
 
-import asyncio
 import base64
 from dataclasses import dataclass
 import logging
 import mimetypes
 from pathlib import Path
-from typing import Any, Callable, Iterable
+from typing import Any, Iterable
 
 from llama_index.core import Document
 from llama_index.core.schema import ImageNode
 
+from deeptutor.services import parsing as parsing_services
 from deeptutor.services.embedding import get_embedding_client
 from deeptutor.services.llm.client import get_llm_client
-from deeptutor.services.parsing import ParserError, get_parse_service
+from deeptutor.services.parsing import ParserError
 from deeptutor.services.rag.file_routing import FileTypeRouter
 from deeptutor.utils.document_validator import DocumentValidator
-
-from .config import image_description_limits
 
 IMAGE_DESCRIPTION_SYSTEM_PROMPT = (
     "You describe images for a retrieval-augmented knowledge base. "
@@ -60,15 +58,10 @@ class _ImageSource:
 class LlamaIndexDocumentLoader:
     """Convert source files into LlamaIndex ``Document`` / ``ImageNode`` objects."""
 
-    def __init__(self, logger=None, image_concurrency: int = 6) -> None:
+    def __init__(self, logger=None) -> None:
         self.logger = logger or logging.getLogger(__name__)
-        self.image_concurrency = max(1, int(image_concurrency))
 
-    async def load(
-        self,
-        file_paths: Iterable[str],
-        image_progress_callback: Callable[[int, int], None] | None = None,
-    ) -> list[Any]:
+    async def load(self, file_paths: Iterable[str]) -> list[Any]:
         documents: list[Any] = []
         image_sources: list[_ImageSource] = []
         classification = FileTypeRouter.classify_files(list(file_paths))
@@ -76,20 +69,8 @@ class LlamaIndexDocumentLoader:
         for file_path_str in classification.parser_files:
             file_path = Path(file_path_str)
             self.logger.info(f"Parsing document: {file_path.name}")
-            # MinerU cloud parsing blocks end to end (upload + 300s polling +
-            # archive download) on a synchronous httpx.Client — running it on
-            # the event loop stalls every other request for the whole PDF
-            # (same class of bug as upstream #761/#777). Hand it to a thread.
-            text, extracted_images, parse_engine = await asyncio.to_thread(
-                self._parse_document, file_path
-            )
-            self._append_if_nonempty(
-                documents,
-                file_path,
-                text,
-                parse_engine=parse_engine,
-                extracted_image_count=len(extracted_images),
-            )
+            text, extracted_images = self._parse_document(file_path)
+            self._append_if_nonempty(documents, file_path, text)
             image_sources.extend(extracted_images)
 
         for file_path_str in classification.text_files:
@@ -100,67 +81,36 @@ class LlamaIndexDocumentLoader:
 
         for file_path_str in classification.image_files:
             path = Path(file_path_str)
-            from deeptutor.services.parsing import get_parse_service
-
-            parse_service = get_parse_service()
-            supports = getattr(parse_service, "supports", lambda _path: False)
-            if supports(path):
-                self.logger.info(f"Parsing image with active document parser: {path.name}")
-                text, extracted_images, parse_engine = await asyncio.to_thread(
-                    self._parse_document, path, parse_service
-                )
-                if text.strip() or extracted_images:
-                    self._append_if_nonempty(
-                        documents,
-                        path,
-                        text,
-                        parse_engine=parse_engine,
-                        extracted_image_count=len(extracted_images),
-                    )
-                    image_sources.extend(extracted_images)
-                else:
-                    # Preserve the pre-parser behavior when an image-capable
-                    # engine fails or yields no usable IR.
-                    image_sources.append(_ImageSource(path=path, origin=path))
-            else:
-                image_sources.append(_ImageSource(path=path, origin=path))
+            image_sources.append(_ImageSource(path=path, origin=path))
 
         if image_sources:
-            documents.extend(
-                await self._load_image_nodes(
-                    image_sources, image_progress_callback=image_progress_callback
-                )
-            )
+            documents.extend(await self._load_image_nodes(image_sources))
 
         for file_path_str in classification.unsupported:
             self.logger.warning(f"Skipped unsupported file: {Path(file_path_str).name}")
 
         return documents
 
-    def _parse_document(
-        self,
-        file_path: Path,
-        parse_service=None,  # noqa: ANN001
-    ) -> tuple[str, list[_ImageSource], str]:
+    def _parse_document(self, file_path: Path) -> tuple[str, list[_ImageSource]]:
         """Parse a document through the shared, engine-pluggable parse layer.
 
-        Returns ``(text, extracted_images, engine)``. A parse failure (engine
+        Returns ``(text, extracted_images)``. A parse failure (engine
         unavailable, unsupported format for the active engine, or models not
         ready) is logged and the file is skipped — matching the sibling
         LightRAG/GraphRAG pipelines — rather than aborting the whole batch.
         """
         try:
-            parsed = (parse_service or get_parse_service()).parse(file_path)
+            parsed = parsing_services.get_parse_service().parse(file_path)
         except ParserError as exc:
             self.logger.warning(
                 f"Skipped {file_path.name}: the active document-parsing engine could "
                 f"not handle it ({exc}). Change the engine in Settings → Document Parsing."
             )
-            return "", [], ""
+            return "", []
 
         text = parsed.markdown.strip() or self._text_from_blocks(parsed.blocks)
         images = self._collect_asset_images(parsed.asset_dir, origin=file_path)
-        return text, images, str(parsed.engine or "")
+        return text, images
 
     @staticmethod
     def _text_from_blocks(blocks: list[dict] | None) -> str:
@@ -194,115 +144,63 @@ class LlamaIndexDocumentLoader:
             )
         return images
 
-    async def _load_image_nodes(
-        self,
-        sources: list[_ImageSource],
-        *,
-        image_progress_callback: Callable[[int, int], None] | None = None,
-    ) -> list[ImageNode]:
-        try:
-            embedding_client = get_embedding_client()
-        except Exception as exc:
-            self._log_skipped_images(sources, f"embedding client is unavailable ({exc})")
-            return []
+    async def _load_image_nodes(self, sources: list[_ImageSource]) -> list[ImageNode]:
+        embedding_client = get_embedding_client()
+        llm_client = get_llm_client()
+
+        unsupported_reasons = []
         if not embedding_client.supports_multimodal_contents():
-            self._log_skipped_images(
-                sources,
+            unsupported_reasons.append(
                 "embedding provider/model does not support multimodal contents "
                 f"(binding={embedding_client.config.binding}, "
-                f"model={embedding_client.config.model})",
+                f"model={embedding_client.config.model})"
             )
-            return []
-
-        # Resolve the LLM only after the embedding prerequisite passes. This
-        # keeps text-only embedding setups independent of LLM configuration and
-        # reuses one client for the whole image batch.
-        try:
-            llm_client = get_llm_client()
-        except Exception as exc:
-            self._log_skipped_images(sources, f"LLM client is unavailable ({exc})")
-            return []
         if not llm_client.supports_multimodal_images():
-            self._log_skipped_images(
-                sources,
+            unsupported_reasons.append(
                 "LLM provider/model does not support multimodal image input "
-                f"(binding={llm_client.config.binding}, model={llm_client.config.model})",
+                f"(binding={llm_client.config.binding}, model={llm_client.config.model})"
             )
+        if unsupported_reasons:
+            reason_text = "; ".join(unsupported_reasons)
+            for source in sources:
+                self.logger.warning(
+                    "Skipped image because image indexing requires both "
+                    f"multimodal embedding and multimodal LLM support; {reason_text}: "
+                    f"{source.path.name}"
+                )
             return []
 
         embedded: list[_ImageSource] = []
         descriptions: list[str] = []
-        contents: list[dict[str, str]] = []
-        completed = 0
-        total = len(sources)
-        concurrency, timeout_seconds = image_description_limits()
-        semaphore = asyncio.Semaphore(concurrency)
-
-        async def _describe_one(
-            source: _ImageSource,
-        ) -> tuple[_ImageSource, str, dict[str, str]] | None:
-            nonlocal completed
-            result: tuple[_ImageSource, str, dict[str, str]] | None = None
+        contents = []
+        for source in sources:
             try:
-                try:
-                    async with semaphore:
-                        image_payload = self._load_image_payload(source.path)
-                        description = await asyncio.wait_for(
-                            self._describe_image(
-                                llm_client,
-                                source.path,
-                                image_payload["base64"],
-                                image_payload["mimetype"],
-                            ),
-                            timeout=timeout_seconds,
-                        )
-                except asyncio.TimeoutError:
-                    self.logger.error(
-                        "Image description timed out after %ss: %s",
-                        timeout_seconds,
-                        source.path.name,
+                image_payload = self._load_image_payload(source.path)
+                description = await self._describe_image(
+                    source.path,
+                    image_payload["base64"],
+                    image_payload["mimetype"],
+                )
+                if not description:
+                    self.logger.warning(
+                        "Skipped image because the configured multimodal LLM "
+                        f"returned no description: {source.path.name}"
                     )
-                except OSError as exc:
-                    self.logger.error(f"Failed to read image {source.path.name}: {exc}")
-                except Exception as exc:
-                    self.logger.error(
-                        "Failed to describe image %s with configured multimodal LLM "
-                        "(binding=%s, model=%s): %s",
-                        source.path.name,
-                        llm_client.config.binding,
-                        llm_client.config.model,
-                        exc,
-                    )
-                else:
-                    if not description:
-                        self.logger.warning(
-                            "Skipped image because the configured multimodal LLM "
-                            f"returned no description: {source.path.name}"
-                        )
-                    else:
-                        result = (
-                            source,
-                            description,
-                            {"image": image_payload["data_uri"]},
-                        )
-            finally:
-                completed += 1
-                if image_progress_callback:
-                    try:
-                        image_progress_callback(completed, total)
-                    except Exception:
-                        pass
-            return result
-
-        # gather preserves input order, so embedded/descriptions/contents stay
-        # aligned regardless of completion order.
-        results = await asyncio.gather(*(_describe_one(source) for source in sources))
-        for result in results:
-            if result is None:
-                continue
-            embedded.append(result[0])
-            descriptions.append(result[1])
-            contents.append(result[2])
+                    continue
+                contents.append({"image": image_payload["data_uri"]})
+                embedded.append(source)
+                descriptions.append(description)
+            except OSError as exc:
+                self.logger.error(f"Failed to read image {source.path.name}: {exc}")
+            except Exception as exc:
+                self.logger.error(
+                    "Failed to describe image %s with configured multimodal LLM "
+                    "(binding=%s, model=%s): %s",
+                    source.path.name,
+                    llm_client.config.binding,
+                    llm_client.config.model,
+                    exc,
+                )
 
         if not contents:
             return []
@@ -338,16 +236,8 @@ class LlamaIndexDocumentLoader:
             self.logger.info(f"Loaded image: {source.path.name} ({len(embedding)}D vector)")
         return nodes
 
-    def _log_skipped_images(self, sources: list[_ImageSource], reason: str) -> None:
-        for source in sources:
-            self.logger.warning(
-                "Skipped image because image indexing requires both multimodal "
-                f"embedding and multimodal LLM support; {reason}: {source.path.name}"
-            )
-
-    async def _describe_image(
-        self, llm_client: Any, file_path: Path, image_base64: str, mimetype: str
-    ) -> str:
+    async def _describe_image(self, file_path: Path, image_base64: str, mimetype: str) -> str:
+        llm_client = get_llm_client()
         response = await llm_client.complete(
             IMAGE_DESCRIPTION_PROMPT,
             system_prompt=IMAGE_DESCRIPTION_SYSTEM_PROMPT,
@@ -372,15 +262,7 @@ class LlamaIndexDocumentLoader:
             "mimetype": mimetype,
         }
 
-    def _append_if_nonempty(
-        self,
-        documents: list[Any],
-        file_path: Path,
-        text: str,
-        *,
-        parse_engine: str = "",
-        extracted_image_count: int = 0,
-    ) -> None:
+    def _append_if_nonempty(self, documents: list[Any], file_path: Path, text: str) -> None:
         if text.strip():
             documents.append(
                 Document(
@@ -393,16 +275,4 @@ class LlamaIndexDocumentLoader:
             )
             self.logger.info(f"Loaded: {file_path.name} ({len(text)} chars)")
         else:
-            if file_path.suffix.lower() == ".pdf" and extracted_image_count:
-                engine_label = parse_engine or "the active parser"
-                self.logger.warning(
-                    "Skipped empty document: %s. The %s engine extracted %d image(s) "
-                    "but no text. This is usually a scanned PDF; use an OCR-capable "
-                    "parsing engine such as MinerU or Docling with OCR enabled. "
-                    "Change the engine in Settings, Document Parsing.",
-                    file_path.name,
-                    engine_label,
-                    extracted_image_count,
-                )
-            else:
-                self.logger.warning(f"Skipped empty document: {file_path.name}")
+            self.logger.warning(f"Skipped empty document: {file_path.name}")

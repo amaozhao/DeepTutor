@@ -24,13 +24,11 @@ from typing import TYPE_CHECKING, Any
 import uuid
 
 from deeptutor.core.tool_protocol import BaseTool, ToolDefinition, ToolParameter, ToolResult
-from deeptutor.services.imagegen import GenerationProviderError, generate_image
-from deeptutor.services.path_service import get_path_service
+from deeptutor.services import generation_http, imagegen, path_service, videogen
 from deeptutor.services.sandbox.artifacts import (
     collect_public_artifacts,
     render_artifacts_for_tool,
 )
-from deeptutor.services.videogen import generate_video
 
 if TYPE_CHECKING:
     from deeptutor.services.sandbox.artifacts import SandboxArtifact
@@ -69,7 +67,7 @@ def _run_dir(injected: str | None, kind: str) -> Path:
     if injected:
         base = Path(injected)
     else:
-        base = get_path_service().get_task_workspace("chat", "media_gen") / "media"
+        base = path_service.get_path_service().get_task_workspace("chat", "media_gen") / "media"
     run = base / f"{kind}_{uuid.uuid4().hex[:12]}"
     run.mkdir(parents=True, exist_ok=True)
     return run
@@ -161,10 +159,10 @@ class ImagegenTool(BaseTool):
         count = max(1, min(count, 4))
 
         try:
-            images = await generate_image(prompt, size=size, n=count)
+            images = await imagegen.generate_image(prompt, size=size, n=count)
         except ValueError as exc:  # not configured
             return ToolResult(content=str(exc), success=False)
-        except GenerationProviderError as exc:
+        except generation_http.GenerationProviderError as exc:
             logger.warning("imagegen failed: %s", exc)
             return ToolResult(content=f"Image generation failed: {exc}", success=False)
 
@@ -231,7 +229,7 @@ class VideogenTool(BaseTool):
                 logger.debug("videogen progress emit failed", exc_info=True)
 
         try:
-            video, content_type = await generate_video(
+            video, content_type = await videogen.generate_video(
                 prompt,
                 aspect_ratio=aspect_ratio,
                 duration=duration,
@@ -239,7 +237,7 @@ class VideogenTool(BaseTool):
             )
         except ValueError as exc:  # not configured
             return ToolResult(content=str(exc), success=False)
-        except GenerationProviderError as exc:
+        except generation_http.GenerationProviderError as exc:
             logger.warning("videogen failed: %s", exc)
             return ToolResult(content=f"Video generation failed: {exc}", success=False)
 

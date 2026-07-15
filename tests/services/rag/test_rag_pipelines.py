@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import asyncio
+import gc
 import importlib
 import logging
 from typing import Any, Dict
+import warnings
 
 import pytest
 
@@ -105,6 +107,20 @@ def test_ragservice_prefers_authoritative_config_over_stale_metadata(tmp_path) -
     service = RAGService(kb_base_dir=str(tmp_path))
 
     assert service._resolve_provider("kb") == "lightrag"
+
+
+def test_raw_log_capture_does_not_leak_coroutine_without_running_loop(tmp_path) -> None:
+    async def event_sink(event_type: str, message: str, metadata: dict) -> None:
+        pass
+
+    service = RAGService(kb_base_dir=str(tmp_path))
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always", RuntimeWarning)
+        with service._capture_raw_logs(event_sink):
+            logging.getLogger("deeptutor.rag.shutdown").warning("shutdown-like log")
+        gc.collect()
+
+    assert not any("was never awaited" in str(item.message) for item in caught)
 
 
 @pytest.mark.asyncio

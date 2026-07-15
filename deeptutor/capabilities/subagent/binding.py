@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from deeptutor.core.context import UnifiedContext
 from deeptutor.knowledge.kb_types import SUBAGENT_KB_TYPE
-from deeptutor.multi_user.knowledge_access import resolve_kb_metadata
+from deeptutor.multi_user import knowledge_access
 
 # Cached per extension: a {"name", "kind", "cwd", "partner_id"} dict, or ""
 # once we've looked and found none. Absence of the key means "not resolved yet".
@@ -37,7 +37,7 @@ def _resolve(context: UnifiedContext) -> dict[str, str] | None:
         ref = str(ref).strip()
         if not ref:
             continue
-        meta = resolve_kb_metadata(ref)
+        meta = knowledge_access.resolve_kb_metadata(ref)
         if not meta or meta.get("type") != SUBAGENT_KB_TYPE:
             continue
         kind = str(meta.get("agent_kind") or "").strip()
@@ -64,7 +64,7 @@ def subagent_refs(context: UnifiedContext) -> set[str]:
         ref = str(ref).strip()
         if not ref:
             continue
-        meta = resolve_kb_metadata(ref)
+        meta = knowledge_access.resolve_kb_metadata(ref)
         if (
             meta
             and meta.get("type") == SUBAGENT_KB_TYPE

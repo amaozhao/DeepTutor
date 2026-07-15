@@ -6,15 +6,15 @@ import asyncio
 from typing import Any
 
 from deeptutor.core.tool_protocol import BaseTool, ToolDefinition, ToolParameter, ToolResult
-from deeptutor.tools.brainstorm import brainstorm
+import deeptutor.tools.brainstorm as brainstorm_tool
 from deeptutor.tools.builtin.common import _PromptHintsMixin
-from deeptutor.tools.reason import reason
-from deeptutor.tools.web_search import web_search
+import deeptutor.tools.reason as reason_tool
+import deeptutor.tools.web_search as web_search_tool
 
 try:
-    from deeptutor.tools.paper_search_tool import ArxivSearchTool
+    from deeptutor.tools import paper_search_tool
 except ModuleNotFoundError:  # pragma: no cover - optional arxiv dependency
-    ArxivSearchTool = None
+    paper_search_tool = None
 
 
 class BrainstormTool(_PromptHintsMixin, BaseTool):
@@ -38,7 +38,7 @@ class BrainstormTool(_PromptHintsMixin, BaseTool):
         )
 
     async def execute(self, **kwargs: Any) -> ToolResult:
-        result = await brainstorm(
+        result = await brainstorm_tool.brainstorm(
             topic=kwargs.get("topic", ""),
             context=kwargs.get("context", ""),
             api_key=kwargs.get("api_key"),
@@ -65,7 +65,7 @@ class WebSearchTool(_PromptHintsMixin, BaseTool):
         output_dir = kwargs.get("output_dir")
         verbose = kwargs.get("verbose", False)
         result = await asyncio.to_thread(
-            web_search,
+            web_search_tool.web_search,
             query=query,
             output_dir=output_dir,
             verbose=verbose,
@@ -112,7 +112,7 @@ class ReasonTool(_PromptHintsMixin, BaseTool):
         )
 
     async def execute(self, **kwargs: Any) -> ToolResult:
-        result = await reason(
+        result = await reason_tool.reason(
             query=kwargs.get("query", ""),
             context=kwargs.get("context", ""),
             api_key=kwargs.get("api_key"),
@@ -157,7 +157,7 @@ class PaperSearchToolWrapper(_PromptHintsMixin, BaseTool):
         )
 
     async def execute(self, **kwargs: Any) -> ToolResult:
-        if ArxivSearchTool is None:
+        if paper_search_tool is None:
             return ToolResult(
                 content="arXiv search is unavailable because the arxiv dependency is not installed.",
                 sources=[],
@@ -165,7 +165,7 @@ class PaperSearchToolWrapper(_PromptHintsMixin, BaseTool):
             )
 
         try:
-            papers = await ArxivSearchTool().search_papers(
+            papers = await paper_search_tool.ArxivSearchTool().search_papers(
                 query=kwargs.get("query", ""),
                 max_results=kwargs.get("max_results", 3),
                 years_limit=kwargs.get("years_limit", 3),

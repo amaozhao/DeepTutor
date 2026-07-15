@@ -8,8 +8,8 @@ from typing import Any
 
 from deeptutor.core.tool_protocol import BaseTool, ToolDefinition, ToolParameter, ToolResult
 from deeptutor.knowledge.manifest import KB_FILES_DEFAULT_LIMIT, KB_FILES_MAX_LIMIT
+from deeptutor.tools import rag_tool
 from deeptutor.tools.builtin.common import _PromptHintsMixin
-from deeptutor.tools.rag_tool import rag_search
 
 
 def _rag_sources(result: dict[str, Any], *, query: str, kb_name: str) -> list[dict[str, Any]]:
@@ -52,7 +52,7 @@ class RAGTool(_PromptHintsMixin, BaseTool):
             if key not in {"query", "kb_name", "event_sink"}
         }
 
-        result = await rag_search(
+        result = await rag_tool.rag_search(
             query=query,
             kb_name=kb_name,
             event_sink=event_sink,

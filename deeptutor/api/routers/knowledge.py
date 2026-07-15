@@ -86,7 +86,7 @@ try:
 except ModuleNotFoundError:  # pragma: no cover - optional llamaindex extra
     validate_storage_embeddings = None
 # Initialize logger with config
-from deeptutor.services.rag.embedding_signature import signature_from_embedding_config
+from deeptutor.services.rag import embedding_signature
 from deeptutor.services.rag.file_routing import FileTypeRouter
 from deeptutor.services.rag.index_probe import inspect_provider_version
 from deeptutor.utils.document_extractor import (
@@ -881,7 +881,7 @@ async def reindex_knowledge_base(
         kb_dir = kb_base_dir / kb_name
         signature_hash = kb_provider
         if provider_uses_embedding_versions(kb_provider):
-            signature = signature_from_embedding_config()
+            signature = embedding_signature.signature_from_embedding_config()
             if signature is None:
                 raise HTTPException(
                     status_code=409,

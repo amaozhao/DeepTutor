@@ -82,6 +82,8 @@ class ProcessLogHandler(logging.Handler):
                 try:
                     loop = asyncio.get_running_loop()
                 except RuntimeError:
+                    if inspect.iscoroutine(result):
+                        result.close()
                     return
                 asyncio.ensure_future(result, loop=loop)
         except Exception:

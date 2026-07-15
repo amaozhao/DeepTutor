@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-import sys
 
 import pytest
 
@@ -126,7 +125,7 @@ def test_save_grant_logs_when_file_lock_is_unavailable(
         def flock(*_args):
             raise OSError("no flock")
 
-    monkeypatch.setitem(sys.modules, "fcntl", _BrokenFcntl)
+    monkeypatch.setattr(grants, "fcntl_module", _BrokenFcntl)
     caplog.set_level(logging.WARNING, logger="deeptutor.multi_user.grants")
 
     save_grant(grantable_alice, {"enabled_tools": ["reason"]})

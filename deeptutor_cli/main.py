@@ -10,7 +10,7 @@ import typer
 
 from deeptutor.app import DeepTutorApp
 from deeptutor.logging import configure_logging
-from deeptutor.runtime.launcher import start as start_web
+from deeptutor.runtime import launcher
 from deeptutor.runtime.mode import RunMode, set_mode
 from deeptutor.services.config import HTTP_KEEP_ALIVE_TIMEOUT, get_ws_max_size
 from deeptutor.services.setup import get_backend_port
@@ -133,7 +133,7 @@ def start(
 ) -> None:
     """Launch backend + frontend together. Source installs default to production."""
 
-    start_web(home=home, dev=dev)
+    launcher.start(home=home, dev=dev)
 
 
 @app.command()

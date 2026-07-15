@@ -41,7 +41,7 @@ from deeptutor.api.routers.auth import ws_auth_failed, ws_require_auth
 from deeptutor.api.security import require_ws_turn_rate_limit
 from deeptutor.core.stream_bus import get_bus
 from deeptutor.multi_user.context import get_current_user, reset_current_user
-from deeptutor.services.session import get_turn_runtime_manager
+from deeptutor.services import session as session_services
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -92,7 +92,7 @@ async def unified_websocket(ws: WebSocket) -> None:
     async def subscribe_turn(turn_id: str, after_seq: int = 0) -> None:
 
         async def _forward() -> None:
-            runtime = get_turn_runtime_manager()
+            runtime = session_services.get_turn_runtime_manager()
             async for event in runtime.subscribe_turn(turn_id, after_seq=after_seq):
                 await safe_send(event)
 
@@ -102,7 +102,7 @@ async def unified_websocket(ws: WebSocket) -> None:
     async def subscribe_session(session_id: str, after_seq: int = 0) -> None:
 
         async def _forward() -> None:
-            runtime = get_turn_runtime_manager()
+            runtime = session_services.get_turn_runtime_manager()
             async for event in runtime.subscribe_session(session_id, after_seq=after_seq):
                 await safe_send(event)
 
@@ -125,7 +125,7 @@ async def unified_websocket(ws: WebSocket) -> None:
                 if not await allow_turn_start("start"):
                     continue
 
-                runtime = get_turn_runtime_manager()
+                runtime = session_services.get_turn_runtime_manager()
                 try:
                     _, turn = await runtime.start_turn(msg)
                 except RuntimeError as exc:
@@ -175,7 +175,7 @@ async def unified_websocket(ws: WebSocket) -> None:
                     await safe_send({"type": "error", "content": "Missing session_id."})
                     continue
 
-                runtime = get_turn_runtime_manager()
+                runtime = session_services.get_turn_runtime_manager()
                 active_turn = await runtime.store.get_active_turn(session_id)
                 if active_turn:
                     # Verify the turn has a live execution; stale persisted
@@ -226,7 +226,7 @@ async def unified_websocket(ws: WebSocket) -> None:
                     await safe_send({"type": "error", "content": "Missing turn_id."})
                     continue
 
-                runtime = get_turn_runtime_manager()
+                runtime = session_services.get_turn_runtime_manager()
                 cancelled = await runtime.cancel_turn(turn_id)
                 if not cancelled:
                     await safe_send({"type": "error", "content": f"Turn not found: {turn_id}"})
@@ -256,7 +256,7 @@ async def unified_websocket(ws: WebSocket) -> None:
                         cleaned.append({"questionId": qid, "text": str(entry.get("text") or "")})
                     answers = cleaned or None
 
-                runtime = get_turn_runtime_manager()
+                runtime = session_services.get_turn_runtime_manager()
                 accepted = await runtime.submit_user_reply(turn_id, text=text_str, answers=answers)
                 if not accepted:
                     await safe_send(
@@ -275,7 +275,7 @@ async def unified_websocket(ws: WebSocket) -> None:
                     await safe_send({"type": "error", "content": "Missing session_id."})
                     continue
 
-                runtime = get_turn_runtime_manager()
+                runtime = session_services.get_turn_runtime_manager()
                 overrides = msg.get("overrides") if isinstance(msg.get("overrides"), dict) else None
                 try:
                     _, turn = await runtime.regenerate_last_turn(

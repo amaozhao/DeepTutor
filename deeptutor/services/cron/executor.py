@@ -14,8 +14,8 @@ from deeptutor.multi_user.models import CurrentUser
 from deeptutor.multi_user.paths import local_admin_user, scope_for_user, user_context
 from deeptutor.partners.bus.events import InboundMessage, OutboundMessage
 from deeptutor.runtime.orchestrator import ChatOrchestrator
+from deeptutor.services import partners as partner_services
 from deeptutor.services.cron.service import CronJob
-from deeptutor.services.partners import get_partner_manager
 from deeptutor.services.session import get_sqlite_session_store
 
 logger = logging.getLogger(__name__)
@@ -84,7 +84,7 @@ async def _maybe_send_desktop_notification(job: CronJob, text: str) -> None:
 
 async def _execute_partner_job(job: CronJob) -> tuple[str, str | None]:
     """Run the partner turn and publish the reply through the original channel."""
-    instance = get_partner_manager().get_partner(job.owner.partner_id)
+    instance = partner_services.get_partner_manager().get_partner(job.owner.partner_id)
     if not instance or not instance.running or not instance.runner:
         return "skipped", "partner not running"
 

@@ -10,7 +10,7 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException
 
 from deeptutor.knowledge.providers import validate_registered_provider
-from deeptutor.services.config import get_kb_config_service
+from deeptutor.services import config as config_services
 from deeptutor.services.rag.factory import DEFAULT_PROVIDER
 from deeptutor.services.rag.index_probe import has_ready_provider_index
 
@@ -36,7 +36,7 @@ def _current_kb_base_dir() -> Path:
 async def get_all_kb_configs():
     """Get all knowledge base configurations from centralized config file."""
     try:
-        service = get_kb_config_service()
+        service = config_services.get_kb_config_service()
         return service.get_all_configs()
     except Exception as exc:
         logger.error("Error getting KB configs: %s", exc)
@@ -47,7 +47,7 @@ async def get_all_kb_configs():
 async def get_kb_config(kb_name: str):
     """Get configuration for a specific knowledge base."""
     try:
-        service = get_kb_config_service()
+        service = config_services.get_kb_config_service()
         config = service.get_kb_config(kb_name)
         return {"kb_name": kb_name, "config": config}
     except Exception as exc:
@@ -62,7 +62,7 @@ async def update_kb_config(kb_name: str, config: dict):
         config = dict(config or {})
         if "rag_provider" in config:
             requested_provider = validate_registered_provider(config.get("rag_provider"))
-            service = get_kb_config_service()
+            service = config_services.get_kb_config_service()
             current_config = service.get_kb_config(kb_name)
             current_provider = validate_registered_provider(
                 current_config.get("rag_provider") or DEFAULT_PROVIDER
@@ -91,7 +91,7 @@ async def update_kb_config(kb_name: str, config: dict):
                 }
             config["rag_provider"] = requested_provider
         else:
-            service = get_kb_config_service()
+            service = config_services.get_kb_config_service()
 
         service.set_kb_config(kb_name, config)
         return {"status": "success", "kb_name": kb_name, "config": service.get_kb_config(kb_name)}
@@ -106,7 +106,7 @@ async def update_kb_config(kb_name: str, config: dict):
 async def sync_configs_from_metadata():
     """Sync all KB configurations from their metadata.json files to centralized config."""
     try:
-        service = get_kb_config_service()
+        service = config_services.get_kb_config_service()
         service.sync_all_from_metadata(_current_kb_base_dir())
         return {"status": "success", "message": "Configurations synced from metadata files"}
     except Exception as exc:

@@ -1,67 +1,55 @@
 [build-system]
-requires = ["setuptools>=61.0", "wheel"]
+requires = ["setuptools>=83.0.0", "wheel>=0.47.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "deeptutor-cli"
 dynamic = ["version"]
 description = "CLI-only distribution for DeepTutor"
-# Match the main package: Python 3.14 is supported, while the forward cap keeps
-# future interpreters out until compiled dependencies publish compatible wheels.
-requires-python = ">=3.11,<3.15"
+# Capped below 3.14 to match the main `deeptutor` package (issue #664): 3.14
+# lacks wheels for some compiled base deps (e.g. faiss-cpu), so pip falls back
+# to a source build that fails. Refuse 3.14 cleanly instead.
+requires-python = ">=3.11,<3.14"
 readme = "README.md"
 license = {text = "Apache-2.0"}
 dependencies = [
-    "PyYAML>=6.0",
-    "jinja2>=3.1.0",
-    "openai>=1.30.0",
-    "tiktoken>=0.5.0",
-    "aiohttp>=3.9.4",
-    "httpx>=0.27.0",
-    "requests>=2.32.2",
-    "ddgs>=9.9.1",
-    "nest_asyncio>=1.5.8",
-    "tenacity>=8.0.0",
-    "pydantic>=2.0.0",
-    "pydantic-settings>=2.0.0",
-    "jsonschema>=4.20.0,<5.0.0",
-    "aiosqlite>=0.19.0",
-    "typer>=0.9.0",
-    "rich>=13.0.0",
-    "prompt_toolkit>=3.0.36",
-    "pyte>=0.8.1",
-    # Imported eagerly by the shared LLM provider stack.  These must remain
-    # core dependencies: even `deeptutor --help` imports that stack.
-    "loguru>=0.7.3,<1.0.0",
-    "json-repair>=0.57.0,<1.0.0",
-    # MCP client. This distribution ships the configurable MCP tool surface, so
-    # it needs the client without an optional extra (issue #792).
-    "mcp>=1.26.0,<2.0.0",
-    "pageindex>=0.2.10,<0.3.0",
-    "anthropic>=0.30.0",
-    "dashscope>=1.14.0",
-    "perplexityai>=0.1.0",
-    "oauth-cli-kit>=0.1.1",
-    "llama-index>=0.14.12",
-    # PyStemmer 2.x has no Python 3.14 wheel; the runtime falls back to vector
-    # retrieval when this optional BM25 integration is absent.
-    "llama-index-retrievers-bm25>=0.7.1,<0.8.0; python_version < '3.14'",
+    "PyYAML>=6.0.3",
+    "jinja2>=3.1.6",
+    "openai>=2.45.0",
+    "tiktoken>=0.13.0",
+    "aiohttp>=3.14.1",
+    "httpx>=0.28.1",
+    "requests>=2.33.1,<2.34.0",  # arxiv 4.0.0 requires requests <2.34
+    "ddgs>=9.14.4",
+    "nest_asyncio>=1.6.0",
+    "tenacity>=9.1.4",
+    "pydantic>=2.13.4",
+    "pydantic-settings>=2.14.2",
+    "aiosqlite>=0.22.1",
+    "typer>=0.25.1,<0.26.0",  # safety 3.8.1 requires typer <0.26
+    "rich>=15.0.0",
+    "prompt_toolkit>=3.0.52",
+    "pyte>=0.8.2",
+    "anthropic>=0.116.0",
+    "dashscope>=1.26.3",
+    "perplexityai>=0.40.0",
+    "oauth-cli-kit>=0.1.6",
+    "llama-index>=0.14.23",
+    "llama-index-retrievers-bm25>=0.7.1,<0.8.0",
     # FAISS vector store: ANN retrieval replacing SimpleVectorStore brute force for
     # large KBs (issue #552); imported lazily with SimpleVectorStore fallback.
-    "llama-index-vector-stores-faiss>=0.4.0,<1.0.0",
-    "faiss-cpu>=1.8.0,<2.0.0; python_version < '3.14'",
-    "faiss-cpu>=1.12.0,<2.0.0; python_version >= '3.14'",
-    "PyMuPDF>=1.26.0",
-    "numpy>=1.24.0,<3.0.0",
-    "arxiv>=2.0.0",
-    "python-docx>=1.1.0",
-    "openpyxl>=3.1.0",
-    "python-pptx>=1.0.0",
-    "pypdf>=4.0.0",
-    "pdfplumber>=0.11.0",
-    "reportlab>=4.0.0",
+    "llama-index-vector-stores-faiss>=0.6.0,<1.0.0",
+    "faiss-cpu>=1.14.3,<2.0.0",
+    "PyMuPDF>=1.28.0",
+    "numpy>=2.5.1,<3.0.0",
+    "arxiv>=4.0.0",
+    "python-docx>=1.2.0",
+    "openpyxl>=3.1.5",
+    "python-pptx>=1.0.2",
+    "pypdf>=6.14.2",
+    "pdfplumber>=0.11.10,<0.12.0",
+    "reportlab>=5.0.0",
     "defusedxml>=0.7.1",
-    "youtube-transcript-api>=1.2.0,<2.0.0",
 ]
 
 [project.scripts]
@@ -78,17 +66,3 @@ version = {attr = "deeptutor.__version__.__version__"}
 where = ["../.."]
 include = ["deeptutor*", "deeptutor_cli*"]
 exclude = ["deeptutor_web*"]
-
-# This distribution includes the shared agent implementations. Keep their
-# runtime prompt/config assets in the wheel as the full distribution does.
-[tool.setuptools.package-data]
-deeptutor = [
-    "**/*.yaml",
-    "**/*.yml",
-    "**/*.md",
-    "**/*.json",
-    "**/*.sh",
-    "**/*.j2",
-    "**/*.jinja",
-]
-deeptutor_cli = ["**/*.md"]

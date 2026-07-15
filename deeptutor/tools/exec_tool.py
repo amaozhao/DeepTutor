@@ -18,10 +18,10 @@ from typing import Any
 
 from deeptutor.core.i18n import t
 from deeptutor.core.tool_protocol import BaseTool, ToolDefinition, ToolParameter, ToolResult
+from deeptutor.services import sandbox as sandbox_services
 from deeptutor.services.sandbox import (
     ExecRequest,
     ResourceLimits,
-    get_sandbox_service,
 )
 from deeptutor.services.sandbox.artifacts import (
     collect_public_artifacts,
@@ -118,7 +118,7 @@ class ExecTool(BaseTool):
             mounts=tuple(mounts),
             limits=limits,
         )
-        result = await get_sandbox_service().run(request, user_id=user_id)
+        result = await sandbox_services.get_sandbox_service().run(request, user_id=user_id)
         artifacts = []
         artifact_rows: list[dict[str, object]] = []
         if workdir:
