@@ -1,7 +1,6 @@
 from contextlib import contextmanager
 import logging
 from pathlib import Path
-import sys
 
 from deeptutor.multi_user import identity, paths
 from deeptutor.multi_user.context import reset_current_user, set_current_user
@@ -48,7 +47,7 @@ def test_identity_logs_when_auth_store_file_lock_is_unavailable(
         def flock(*_args):
             raise OSError("no flock")
 
-    monkeypatch.setitem(sys.modules, "fcntl", _BrokenFcntl)
+    monkeypatch.setattr(identity, "fcntl_module", _BrokenFcntl)
     caplog.set_level(logging.WARNING, logger="deeptutor.multi_user.identity")
 
     identity.save_user("alice", "h1", role="user")

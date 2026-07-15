@@ -28,7 +28,7 @@ import tempfile
 from typing import TYPE_CHECKING, Any
 
 from deeptutor.core.tool_protocol import BaseTool, ToolDefinition, ToolParameter, ToolResult
-from deeptutor.services.subagent import get_backend
+from deeptutor.services import subagent as subagent_services
 from deeptutor.services.subagent.images import materialize_images
 from deeptutor.services.subagent.sessions import remember_session
 
@@ -105,7 +105,7 @@ class ConsultSubagentTool(BaseTool):
                 success=False,
             )
 
-        backend = get_backend(str(spec.get("kind") or ""))
+        backend = subagent_services.get_backend(str(spec.get("kind") or ""))
         if backend is None:
             return ToolResult(
                 content=f"Unknown subagent backend: {spec.get('kind')!r}", success=False

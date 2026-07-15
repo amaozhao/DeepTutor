@@ -12,15 +12,14 @@ from typing import Any
 from uuid import uuid4
 import wave
 
-from deeptutor.services.embedding.client import EmbeddingClient, reset_embedding_client
+from deeptutor.services import imagegen as imagegen_services
+from deeptutor.services import llm as llm_services
+from deeptutor.services import search as search_services
+from deeptutor.services import videogen as videogen_services
+from deeptutor.services import voice as voice_services
+from deeptutor.services.embedding import client as embedding_client
 from deeptutor.services.embedding.config import EmbeddingConfig
-from deeptutor.services.imagegen import generate_image
-from deeptutor.services.llm import clear_llm_config_cache, get_token_limit_kwargs
-from deeptutor.services.llm import complete as llm_complete
 from deeptutor.services.llm.config import LLMConfig
-from deeptutor.services.search import web_search
-from deeptutor.services.videogen import probe_video
-from deeptutor.services.voice import synthesize_speech, transcribe_audio
 
 from .context_window_detection import detect_context_window
 from .loader import get_agent_params
@@ -175,7 +174,7 @@ class ConfigTestRunner:
             return catalog
         model["dimension"] = str(actual_dimension)
         saved = service.save(catalog)
-        reset_embedding_client()
+        embedding_client.reset_embedding_client()
         return saved
 
     @staticmethod
@@ -224,7 +223,7 @@ class ConfigTestRunner:
         }
 
     async def _test_llm(self, run: TestRun, catalog: dict[str, Any]) -> None:
-        clear_llm_config_cache()
+        llm_services.clear_llm_config_cache()
         run.emit("info", "Loading LLM config from the active catalog selection.")
         resolved = resolve_llm_runtime_config(catalog=catalog)
         llm_config = LLMConfig(
@@ -249,13 +248,13 @@ class ConfigTestRunner:
         probe_params = get_agent_params("llm_probe")
         max_tokens = _coerce_int(probe_params.get("max_tokens"), 1024)
         temperature = _coerce_float(probe_params.get("temperature"), 0.1)
-        token_kwargs: dict[str, Any] = get_token_limit_kwargs(
+        token_kwargs: dict[str, Any] = llm_services.get_token_limit_kwargs(
             llm_config.model, max_tokens=max_tokens
         )
         run.emit("info", f"Token options: {json.dumps(token_kwargs)}")
         if llm_config.reasoning_effort:
             run.emit("info", f"Reasoning effort: {llm_config.reasoning_effort}")
-        response = await llm_complete(
+        response = await llm_services.complete(
             model=llm_config.model,
             prompt="Say 'OK' and identify the model you are using.",
             system_prompt="Respond briefly but include your model identity if possible.",
@@ -336,7 +335,7 @@ class ConfigTestRunner:
             "info",
             "Probing native max dimension with a small batch (sending no `dimensions=` param).",
         )
-        client = EmbeddingClient(config)
+        client = embedding_client.EmbeddingClient(config)
         probe_texts = [
             "DeepTutor embedding smoke test",
             "DeepTutor retrieval batch probe",
@@ -445,7 +444,9 @@ class ConfigTestRunner:
         if resolved.fallback_reason:
             run.emit("warning", resolved.fallback_reason)
         run.emit("info", "Running search query: DeepTutor configuration health check")
-        result = web_search("DeepTutor configuration health check", provider=provider)
+        result = search_services.web_search(
+            "DeepTutor configuration health check", provider=provider
+        )
         run.emit(
             "response",
             "Search result received.",
@@ -467,7 +468,7 @@ class ConfigTestRunner:
         run.emit("info", f"Request target: {resolved.base_url}")
         sample = "DeepTutor voice check. 这是一段语音合成测试。"
         run.emit("info", "Synthesizing a short sample clip.")
-        audio, content_type = await synthesize_speech(sample, catalog=catalog)
+        audio, content_type = await voice_services.synthesize_speech(sample, catalog=catalog)
         run.emit(
             "response",
             f"Received {len(audio)} bytes of {content_type}.",
@@ -496,7 +497,7 @@ class ConfigTestRunner:
             wav.setframerate(16000)
             wav.writeframes(b"\x00\x00" * 16000)
         run.emit("info", "Uploading a 1s silent probe clip to validate the endpoint.")
-        transcript = await transcribe_audio(
+        transcript = await voice_services.transcribe_audio(
             buffer.getvalue(),
             catalog=catalog,
             filename="probe.wav",
@@ -518,7 +519,7 @@ class ConfigTestRunner:
         )
         run.emit("info", f"Request target: {resolved.base_url}")
         run.emit("info", "Generating a single test image (this is a billable call).")
-        images = await generate_image(
+        images = await imagegen_services.generate_image(
             "A small minimalist test icon of a blue book on a white background.",
             catalog=catalog,
             n=1,
@@ -548,7 +549,9 @@ class ConfigTestRunner:
             "Submitting a probe task to validate endpoint + auth + model. "
             "The render is not awaited (it is slow and billable).",
         )
-        task_id = await probe_video("A short test clip of a calm ocean wave.", catalog=catalog)
+        task_id = await videogen_services.probe_video(
+            "A short test clip of a calm ocean wave.", catalog=catalog
+        )
         run.emit(
             "response",
             "Video task accepted — connection is valid.",

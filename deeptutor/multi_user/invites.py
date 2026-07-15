@@ -7,9 +7,8 @@ import json
 import secrets
 from typing import Any
 
-from . import paths
+from . import paths, shared_state
 from .identity import auth_store_write_lock
-from .shared_state import load_invites, postgres_enabled, update_invites
 
 
 def _invite_file():
@@ -22,7 +21,7 @@ def _utc_now() -> str:
 
 def _read() -> dict[str, dict[str, Any]]:
     if _postgres_enabled():
-        return load_invites()
+        return shared_state.load_invites()
     try:
         target = _invite_file()
         if not target.exists():
@@ -60,7 +59,7 @@ def create_invite(*, email: str = "", created_by: str = "") -> dict[str, Any]:
             invites[code] = record
             return record
 
-        return update_invites(mutate)
+        return shared_state.update_invites(mutate)
     with auth_store_write_lock():
         invites = _read()
         code = secrets.token_urlsafe(18)
@@ -93,7 +92,7 @@ def delete_invite(code: str) -> bool:
             invites.pop(code, None)
             return True
 
-        return bool(update_invites(mutate))
+        return bool(shared_state.update_invites(mutate))
     with auth_store_write_lock():
         invites = _read()
         if code not in invites:
@@ -123,7 +122,7 @@ def consume_invite(code: str, *, email: str) -> dict[str, Any] | None:
             invites[normalized_code] = record
             return record
 
-        return update_invites(mutate)
+        return shared_state.update_invites(mutate)
     with auth_store_write_lock():
         invites = _read()
         record = invites.get(normalized_code)
@@ -156,7 +155,7 @@ def unconsume_invite(code: str, *, email: str) -> bool:
             invites[normalized_code] = record
             return True
 
-        return bool(update_invites(mutate))
+        return bool(shared_state.update_invites(mutate))
     with auth_store_write_lock():
         invites = _read()
         record = invites.get(normalized_code)
@@ -171,4 +170,4 @@ def unconsume_invite(code: str, *, email: str) -> bool:
 
 def _postgres_enabled() -> bool:
 
-    return postgres_enabled()
+    return shared_state.postgres_enabled()

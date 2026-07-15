@@ -24,7 +24,11 @@ from deeptutor.services.sandbox import Mount
 
 
 class _Registry:
+    def __init__(self) -> None:
+        self.calls = 0
+
     async def execute(self, name: str, **kwargs: Any) -> ToolResult:
+        self.calls += 1
         return ToolResult(content="ok", success=True)
 
 
@@ -72,3 +76,32 @@ async def test_tool_call_event_args_exclude_private_kwargs() -> None:
     # The whole event must survive strict JSON serialization — this is what
     # the WS push and the turn-event store both rely on.
     json.dumps(tool_calls[0].to_dict())
+
+
+@pytest.mark.asyncio
+async def test_overflow_tool_calls_receive_matching_stub_results() -> None:
+    registry = _Registry()
+    calls = [
+        {
+            "id": f"call_{index}",
+            "name": "exec",
+            "arguments": json.dumps({"index": index}),
+        }
+        for index in range(12)
+    ]
+
+    outcome = await dispatch_tool_calls(
+        tool_calls=calls,
+        context=UnifiedContext(session_id="s1", user_message="hi"),
+        stream=StreamBus(),
+        source="chat",
+        stage="responding",
+        iteration_index=0,
+        registry=registry,
+    )
+
+    assert registry.calls == 8
+    assert [message["tool_call_id"] for message in outcome.tool_messages] == [
+        call["id"] for call in calls
+    ]
+    assert all("skipped" in message["content"] for message in outcome.tool_messages[8:])

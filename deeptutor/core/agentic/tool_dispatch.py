@@ -91,6 +91,7 @@ async def dispatch_tool_calls(
     """Execute tool calls in parallel and assemble a :class:`DispatchOutcome`."""
     registry = registry or get_tool_registry()
 
+    overflow_indices: set[int] = set()
     if len(tool_calls) > MAX_PARALLEL_TOOL_CALLS:
         if too_many_tool_calls_message:
             await stream.progress(
@@ -99,7 +100,7 @@ async def dispatch_tool_calls(
                 stage=stage,
                 metadata={"trace_kind": "warning"},
             )
-        tool_calls = tool_calls[:MAX_PARALLEL_TOOL_CALLS]
+        overflow_indices = set(range(MAX_PARALLEL_TOOL_CALLS, len(tool_calls)))
 
     prepared = _prepare_tool_args(tool_calls, context, kwarg_augmenter)
     # Collapse duplicates within this parallel batch. Models occasionally
@@ -115,7 +116,9 @@ async def dispatch_tool_calls(
     # also hidden from the user-facing trace stream to avoid duplicate Ask
     # Me rows/cards during the live turn.
     duplicate_of = _detect_duplicate_calls(prepared)
-    suppress_ui_indices = {idx for idx in duplicate_of if prepared[idx][1] == "ask_user"}
+    suppress_ui_indices = overflow_indices | {
+        idx for idx in duplicate_of if prepared[idx][1] == "ask_user"
+    }
     per_tool_trace_meta = _build_per_tool_trace_meta(
         prepared,
         context=context,
@@ -145,6 +148,15 @@ async def dispatch_tool_calls(
         )
 
     async def _run_one(tool_index: int) -> dict[str, Any]:
+        if tool_index in overflow_indices:
+            return {
+                "result_text": (
+                    "(tool call skipped because this assistant message exceeded "
+                    f"the parallel tool-call limit of {MAX_PARALLEL_TOOL_CALLS}; "
+                    "retry it in the next round.)"
+                ),
+                "sources": [],
+            }
         primary_idx = duplicate_of.get(tool_index)
         if primary_idx is not None:
             primary_call_id = prepared[primary_idx][0]

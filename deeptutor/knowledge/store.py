@@ -11,7 +11,7 @@ import sys
 
 from deeptutor.knowledge.kb_types import is_connected_kb
 from deeptutor.services.embedding import get_embedding_config
-from deeptutor.services.rag.embedding_signature import signature_from_embedding_config
+from deeptutor.services.rag import embedding_signature
 from deeptutor.services.rag.factory import (
     DEFAULT_PROVIDER,
     KNOWN_PROVIDERS,
@@ -83,7 +83,7 @@ def _reconcile_embedding_flags(
     embedding_fingerprint=_get_embedding_fingerprint,
 ) -> bool:
     fp = embedding_fingerprint()
-    signature = signature_from_embedding_config()
+    signature = embedding_signature.signature_from_embedding_config()
     changed = False
 
     if signature is None and not fp:

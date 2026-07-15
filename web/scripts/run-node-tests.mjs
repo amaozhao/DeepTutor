@@ -52,8 +52,8 @@ if (testFiles.length === 0) {
 }
 
 run(process.execPath, [
-  "-r",
-  "./scripts/register-node-test-aliases.cjs",
+  "--require",
+  path.join(webRoot, "scripts", "alias.cjs"),
   "--test",
   ...testFiles,
 ]);

@@ -12,8 +12,8 @@ from pydantic import BaseModel
 from deeptutor.api.routers.auth import require_admin
 from deeptutor.api.utils.tool_options import build_tool_options
 from deeptutor.knowledge.manager import KnowledgeBaseManager
+from deeptutor.services import partners as partner_services
 from deeptutor.services.config.model_catalog import ModelCatalogService
-from deeptutor.services.partners import get_partner_manager
 from deeptutor.services.skill.hub import HubError, install_from_hub
 from deeptutor.services.skill.service import (
     InvalidSkillNameError,
@@ -115,7 +115,7 @@ def _admin_partner_summary() -> list[dict[str, Any]]:
             "description": item.get("description") or "",
             "emoji": item.get("emoji") or "",
         }
-        for item in get_partner_manager().list_partners()
+        for item in partner_services.get_partner_manager().list_partners()
     ]
 
 

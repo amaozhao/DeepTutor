@@ -45,11 +45,15 @@ def __getattr__(name: str):
         "BUILTIN_TOOL_TYPES",
         "COMING_SOON_TOOL_NAMES",
         "COMING_SOON_TOOL_TYPES",
+    }:
+        module = importlib.import_module(f"{__name__}.registry")
+        return getattr(module, name)
+    if name in {
         "CONFIGURABLE_BUILTIN_TOOL_NAMES",
         "TOOL_ALIASES",
         "USER_TOGGLEABLE_TOOL_NAMES",
     }:
-        module = importlib.import_module(f"{__name__}.registry")
+        module = importlib.import_module(f"{__name__}.names")
         return getattr(module, name)
     if name in {"RAGTool", "ReadSourceTool"}:
         module = importlib.import_module(f"{__name__}.context")

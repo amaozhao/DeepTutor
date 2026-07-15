@@ -21,7 +21,7 @@ import sqlite3
 
 import yaml
 
-from deeptutor.multi_user.paths import get_admin_path_service
+from deeptutor.multi_user import paths as multi_user_paths
 from deeptutor.services.memory.paths import Surface
 from deeptutor.services.memory.snapshot.entity import Entity
 from deeptutor.services.path_service import get_path_service
@@ -308,7 +308,7 @@ def read_partner_entities() -> list[Entity]:
     when the active scope IS the admin's own memory; a regular user's memory
     view must not see the admin's partner conversations.
     """
-    admin_root = get_admin_path_service().workspace_root.resolve()
+    admin_root = multi_user_paths.get_admin_path_service().workspace_root.resolve()
     if get_path_service().workspace_root.resolve() != admin_root:
         return []
     partners_root = admin_root / "partners"

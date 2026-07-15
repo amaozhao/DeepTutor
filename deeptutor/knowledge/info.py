@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from deeptutor.knowledge.kb_types import external_root_of
-from deeptutor.services.rag.embedding_signature import signature_from_embedding_config
+from deeptutor.services.rag import embedding_signature
 from deeptutor.services.rag.factory import normalize_provider_name, provider_uses_embedding_versions
 from deeptutor.services.rag.index_probe import (
     inspect_kb_versions,
@@ -148,7 +148,7 @@ def get_info(base_dir: Path, kb_name: str, kb_config: dict, is_default: bool) ->
 
     kb_probe_dir = kb_dir if dir_exists else None
     rag_initialized = has_ready_provider
-    active_signature = signature_from_embedding_config()
+    active_signature = embedding_signature.signature_from_embedding_config()
     if provider_uses_embedding_versions(rag_provider):
         matched_entry = (
             find_matching_version(kb_probe_dir, active_signature)

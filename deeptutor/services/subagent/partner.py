@@ -25,7 +25,7 @@ from typing import TYPE_CHECKING
 import uuid
 
 from deeptutor.core.stream import StreamEventType
-from deeptutor.services.partners import get_partner_manager
+from deeptutor.services import partners
 from deeptutor.services.subagent.base import OnEvent, SubagentBackend
 from deeptutor.services.subagent.config import BackendConfig
 from deeptutor.services.subagent.types import (
@@ -85,7 +85,7 @@ class PartnerBackend(SubagentBackend):
         if not pid:
             return ConsultResult(success=False, error="No partner is bound to this connection.")
 
-        manager = get_partner_manager()
+        manager = partners.get_partner_manager()
         if not manager.partner_exists(pid):
             return ConsultResult(success=False, error=f"Partner '{pid}' no longer exists.")
 

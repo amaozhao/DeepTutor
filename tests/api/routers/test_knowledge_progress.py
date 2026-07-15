@@ -82,4 +82,6 @@ def test_clear_progress_uses_writable_kb_resolver(monkeypatch, tmp_path: Path) -
 
 def test_task_stream_route_is_still_mounted() -> None:
     app = _build_app()
-    assert "/api/v1/knowledge/tasks/{task_id}/stream" in {route.path for route in app.routes}
+    assert str(app.url_path_for("stream_task_logs", task_id="task")) == (
+        "/api/v1/knowledge/tasks/task/stream"
+    )

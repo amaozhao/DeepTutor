@@ -138,8 +138,8 @@ def build_embedding_func():
     """Wrap DeepTutor's embedding client in LightRAG's ``EmbeddingFunc``."""
     try:
         embedding_func_type = importlib.import_module("lightrag.utils").EmbeddingFunc
-    except (ImportError, AttributeError) as exc:
-        raise LightRagNotAvailableError("LightRAG is not installed.")
+    except ModuleNotFoundError as exc:
+        raise LightRagNotAvailableError("LightRAG is not installed.") from exc
 
     cfg = embedding_service.get_embedding_config()
     dim = int(getattr(cfg, "dim", 0) or 0)

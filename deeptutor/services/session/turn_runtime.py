@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING, Any
 
 from deeptutor.agents.notebook import NotebookAnalysisAgent
 from deeptutor.api.routers.settings import get_enabled_optional_tools
-from deeptutor.book.context import build_book_context
+from deeptutor.book import context as book_context_services
 from deeptutor.core.context import UnifiedContext
 from deeptutor.core.stream import StreamEvent, StreamEventType
 from deeptutor.multi_user.context import get_current_user
@@ -28,23 +28,20 @@ from deeptutor.multi_user.paths import get_admin_path_service
 from deeptutor.multi_user.skill_access import assigned_skill_ids
 from deeptutor.multi_user.tool_access import allowed_optional_tools
 from deeptutor.multi_user.usage import enforce_current_user_quota, record_current_user_usage
-from deeptutor.runtime.orchestrator import ChatOrchestrator
+from deeptutor.runtime import orchestrator as runtime_orchestrator
 from deeptutor.runtime.request_contracts import validate_capability_config
-from deeptutor.services.config import get_model_catalog_service
+from deeptutor.services import config as config_services
+from deeptutor.services import memory as memory_services
+from deeptutor.services import persona as persona_services
+from deeptutor.services import skill as skill_services
 from deeptutor.services.llm import stream as llm_stream
 from deeptutor.services.llm.utils import clean_thinking_tags
-from deeptutor.services.memory import get_memory_store
 from deeptutor.services.model_selection import LLMSelection, apply_llm_selection_to_catalog
-from deeptutor.services.model_selection.runtime import (
-    activate_llm_selection,
-)
-from deeptutor.services.model_selection.runtime import (
-    reset_llm_selection as _reset_active_llm_selection,
-)
+from deeptutor.services.model_selection import runtime as model_selection_runtime
 from deeptutor.services.notebook import get_notebook_manager
-from deeptutor.services.persona import PersonaService, get_persona_service
+from deeptutor.services.persona import PersonaService
+from deeptutor.services.session import context_builder as session_context
 from deeptutor.services.session.attachments import prepare_attachments
-from deeptutor.services.session.context_builder import ContextBuilder
 from deeptutor.services.session.events import (
     artifact_attachments as _artifact_attachments,
 )
@@ -104,7 +101,6 @@ from deeptutor.services.session.source_inventory import (
     serialize_referenced_transcript,
 )
 from deeptutor.services.session.store import get_session_store
-from deeptutor.services.skill import get_skill_service
 from deeptutor.services.skill.service import SkillService, render_skills_manifest
 
 if TYPE_CHECKING:
@@ -338,7 +334,7 @@ class TurnRuntimeManager:
         if llm_selection:
             try:
                 apply_llm_selection_to_catalog(
-                    get_model_catalog_service().load(),
+                    config_services.get_model_catalog_service().load(),
                     LLMSelection.from_payload(llm_selection),
                 )
             except ValueError as exc:
@@ -713,7 +709,7 @@ class TurnRuntimeManager:
         stream_done_sent = False
         llm_scope_token: Token[LLMConfig | None] | None = None
         reset_active_llm_selection: Callable[[Token[LLMConfig | None] | None], None] | None = (
-            _reset_active_llm_selection
+            model_selection_runtime.reset_llm_selection
         )
         # One queue per turn for ``ask_user`` style pause-resume.
         # Created here (BEFORE the orchestrator runs) so the pipeline can
@@ -755,7 +751,9 @@ class TurnRuntimeManager:
             notebook_references = payload.get("notebook_references", []) or []
             history_references = payload.get("history_references", []) or []
             question_notebook_references = payload.get("question_notebook_references", []) or []
-            book_context_result = build_book_context(payload.get("book_references", []) or [])
+            book_context_result = book_context_services.build_book_context(
+                payload.get("book_references", []) or []
+            )
             book_references = book_context_result.references
             memory_references = _extract_memory_references(payload)
             notebook_context = ""
@@ -788,11 +786,13 @@ class TurnRuntimeManager:
                         capability=capability_name or "chat",
                     )
 
-            llm_config, llm_scope_token = activate_llm_selection(payload.get("llm_selection"))
+            llm_config, llm_scope_token = model_selection_runtime.activate_llm_selection(
+                payload.get("llm_selection")
+            )
 
             current_user = get_current_user()
             enforce_current_user_quota()
-            builder = ContextBuilder(self.store)
+            builder = session_context.ContextBuilder(self.store)
 
             async def _emit_context_event(event: StreamEvent) -> None:
                 if event.source in {"context", "context_builder"}:
@@ -806,7 +806,7 @@ class TurnRuntimeManager:
                 on_event=_emit_context_event,
                 leaf_message_id=branch_parent_id,
             )
-            memory_store = get_memory_store()
+            memory_store = memory_services.get_memory_store()
             memory_context = memory_store.read_l3_concat() if memory_references else ""
 
             # Persona: at most one behaviour preset per turn, eagerly
@@ -817,7 +817,9 @@ class TurnRuntimeManager:
             requested_persona = str(payload.get("persona") or "").strip()
             persona_context = ""
             if requested_persona:
-                persona_context = get_persona_service().load_for_context(requested_persona)
+                persona_context = persona_services.get_persona_service().load_for_context(
+                    requested_persona
+                )
                 if not persona_context and not current_user.is_admin:
                     persona_context = PersonaService(
                         root=get_admin_path_service().get_workspace_dir() / "personas"
@@ -829,7 +831,7 @@ class TurnRuntimeManager:
             # builtin, plus admin-assigned for non-admin users) and pulls
             # full content on demand via ``read_skill``. ``always`` skills
             # are the exception — their bodies are injected eagerly.
-            user_skill_service = get_skill_service()
+            user_skill_service = skill_services.get_skill_service()
             skill_entries = user_skill_service.summary_entries()
             always_blocks = [user_skill_service.load_always_for_context()]
             if not current_user.is_admin:
@@ -1091,7 +1093,7 @@ class TurnRuntimeManager:
                 },
             )
 
-            orch = ChatOrchestrator()
+            orch = runtime_orchestrator.ChatOrchestrator()
             pending_done_event: StreamEvent | None = None
             async for event in orch.handle(context):
                 turn_usage_summary = _merge_usage_summary(

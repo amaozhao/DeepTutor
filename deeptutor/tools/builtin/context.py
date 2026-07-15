@@ -5,8 +5,8 @@ from __future__ import annotations
 from typing import Any
 
 from deeptutor.core.tool_protocol import BaseTool, ToolDefinition, ToolParameter, ToolResult
+from deeptutor.tools import rag_tool
 from deeptutor.tools.builtin.common import _PromptHintsMixin
-from deeptutor.tools.rag_tool import rag_search
 
 
 class RAGTool(_PromptHintsMixin, BaseTool):
@@ -42,7 +42,7 @@ class RAGTool(_PromptHintsMixin, BaseTool):
             if key not in {"query", "kb_name", "event_sink"}
         }
 
-        result = await rag_search(
+        result = await rag_tool.rag_search(
             query=query,
             kb_name=kb_name,
             event_sink=event_sink,

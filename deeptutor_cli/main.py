@@ -10,7 +10,7 @@ import typer
 
 from deeptutor.app import DeepTutorApp
 from deeptutor.logging import configure_logging
-from deeptutor.runtime.launcher import start as start_web
+from deeptutor.runtime import launcher
 from deeptutor.runtime.mode import RunMode, set_mode
 from deeptutor.services.config import get_ws_max_size
 from deeptutor.services.setup import get_backend_port
@@ -128,7 +128,7 @@ def start(
 ) -> None:
     """Launch backend + frontend together. Press Ctrl+C to stop."""
 
-    start_web(home=home)
+    launcher.start(home=home)
 
 
 @app.command()

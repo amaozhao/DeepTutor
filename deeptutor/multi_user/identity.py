@@ -21,8 +21,6 @@ except ImportError:  # pragma: no cover - Windows
 from . import shared_state
 from .models import Role
 from .paths import PROJECT_ROOT, SYSTEM_ROOT, migrate_legacy_multi_user_tree
-from .shared_state import load_or_create_auth_secret as _postgres_secret
-from .shared_state import postgres_enabled, update_users
 
 logger = logging.getLogger(__name__)
 
@@ -252,7 +250,7 @@ def _load_users_unlocked(
 
 def _postgres_enabled() -> bool:
 
-    return postgres_enabled()
+    return shared_state.postgres_enabled()
 
 
 def _postgres_load_users(
@@ -329,7 +327,7 @@ def save_user(username: str, hashed_password: str, role: Role = "user") -> dict[
             users[username] = record
             return record
 
-        return update_users(mutate)
+        return shared_state.update_users(mutate)
     USERS_FILE.parent.mkdir(parents=True, exist_ok=True)
     # Read-modify-write must be atomic so concurrent first-time registrations
     # cannot each see an empty store and each promote themselves to admin.
@@ -381,7 +379,7 @@ def create_user(username: str, hashed_password: str, role: Role = "user") -> dic
             users[username] = record
             return record
 
-        return update_users(mutate)
+        return shared_state.update_users(mutate)
     USERS_FILE.parent.mkdir(parents=True, exist_ok=True)
     with auth_store_write_lock():
         users = _load_users_unlocked()
@@ -424,7 +422,7 @@ def record_terms_acceptance(
             users[username]["privacy_version"] = privacy_version
             return True
 
-        return bool(update_users(mutate))
+        return bool(shared_state.update_users(mutate))
     if not USERS_FILE.exists():
         return False
     with auth_store_write_lock():
@@ -477,7 +475,7 @@ def delete_user(username: str) -> bool:
             users.pop(username, None)
             return True
 
-        return bool(update_users(mutate))
+        return bool(shared_state.update_users(mutate))
     if not USERS_FILE.exists():
         return False
     with auth_store_write_lock():
@@ -504,7 +502,7 @@ def update_password(username: str, hashed_password: str) -> bool:
             _bump_token_version(users[username])
             return True
 
-        return bool(update_users(mutate))
+        return bool(shared_state.update_users(mutate))
     if not USERS_FILE.exists():
         return False
     with auth_store_write_lock():
@@ -531,7 +529,7 @@ def set_disabled(username: str, disabled: bool, reason: str = "") -> bool:
             users[username]["disabled_reason"] = next_reason
             return True
 
-        return bool(update_users(mutate))
+        return bool(shared_state.update_users(mutate))
     if not USERS_FILE.exists():
         return False
     with auth_store_write_lock():
@@ -562,7 +560,7 @@ def revoke_sessions(username: str) -> bool:
             _bump_token_version(users[username])
             return True
 
-        return bool(update_users(mutate))
+        return bool(shared_state.update_users(mutate))
     if not USERS_FILE.exists():
         return False
     with auth_store_write_lock():
@@ -584,7 +582,7 @@ def set_avatar(username: str, avatar: str) -> bool:
             users[username]["avatar"] = avatar
             return True
 
-        return bool(update_users(mutate))
+        return bool(shared_state.update_users(mutate))
     if not USERS_FILE.exists():
         return False
     with auth_store_write_lock():
@@ -653,7 +651,7 @@ def set_role(username: str, role: Role) -> bool:
             _bump_token_version(users[username])
             return True
 
-        return bool(update_users(mutate))
+        return bool(shared_state.update_users(mutate))
     if not USERS_FILE.exists():
         return False
     with auth_store_write_lock():
@@ -675,7 +673,7 @@ def load_or_create_auth_secret() -> str:
         except Exception as exc:
             logger.warning("Failed to read local auth secret seed at %s: %s", SECRET_FILE, exc)
             seed = ""
-        return _postgres_secret(seed)
+        return shared_state.load_or_create_auth_secret(seed)
     migrate_legacy_multi_user_tree()
     try:
         if SECRET_FILE.exists():

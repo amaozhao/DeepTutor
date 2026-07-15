@@ -17,14 +17,11 @@ import shutil
 import subprocess
 from typing import Any
 
-from .cloud import parse_cloud
-from .config import (
-    MinerUConfig,
-    MinerUError,
-    resolve_mineru_config,
-)
-from .local import parse_pdf_with_mineru
-from .models import model_env_overrides
+from . import cloud, local, models
+from . import config as mineru_config
+
+MinerUConfig = mineru_config.MinerUConfig
+MinerUError = mineru_config.MinerUError
 
 logger = logging.getLogger(__name__)
 
@@ -49,14 +46,14 @@ def parse_pdf_to_workdir(
     lines from whichever backend runs — raw CLI output locally, task-state
     summaries from the cloud poller. Raises :class:`MinerUError` on failure.
     """
-    cfg = config or resolve_mineru_config()
+    cfg = config or mineru_config.resolve_mineru_config()
     pdf_path = Path(pdf_path)
     output_base = Path(output_base)
     output_base.mkdir(parents=True, exist_ok=True)
 
     if cfg.is_cloud:
         logger.info("Parsing %s via MinerU cloud API", pdf_path.name)
-        return parse_cloud(pdf_path, output_base, cfg, on_progress=on_output)
+        return cloud.parse_cloud(pdf_path, output_base, cfg, on_progress=on_output)
 
     return _parse_local(pdf_path, output_base, config=cfg, on_output=on_output)
 
@@ -136,10 +133,12 @@ def _parse_local(
 
     # A lazy first-parse model download must honor the configured source and
     # custom address, not just the explicit Download button.
-    download_env = model_env_overrides(config.model_download_source, config.model_download_endpoint)
+    download_env = models.model_env_overrides(
+        config.model_download_source, config.model_download_endpoint
+    )
 
     logger.info("Parsing %s via local MinerU CLI (%s)", pdf_path.name, cli_command or "PATH")
-    ok = parse_pdf_with_mineru(
+    ok = local.parse_pdf_with_mineru(
         str(pdf_path),
         str(output_base),
         on_output=on_output,

@@ -53,7 +53,7 @@ from deeptutor.learning.policy import (
 from deeptutor.learning.scheduler import SpacedRepetitionScheduler
 from deeptutor.learning.service import LearningService
 from deeptutor.learning.storage import LearningStore
-from deeptutor.services.session.sqlite_store import get_sqlite_session_store
+from deeptutor.services import session as session_services
 
 if TYPE_CHECKING:
     from deeptutor.learning.service import LearningService
@@ -112,7 +112,7 @@ async def _resolve_pending_choice(
     if not has_option_bodies(options):
         try:
             options = await recover_options_from_turn(
-                get_sqlite_session_store(), turn_id, pending.prompt
+                session_services.get_sqlite_session_store(), turn_id, pending.prompt
             )
         except Exception:
             logger.warning("Failed to recover legacy mastery choice options", exc_info=True)
@@ -145,7 +145,9 @@ async def _sync_mastery_attempt_to_question_bank(
         "is_correct": is_correct,
     }
     try:
-        await get_sqlite_session_store().upsert_notebook_entries(session_id, [item])
+        await session_services.get_sqlite_session_store().upsert_notebook_entries(
+            session_id, [item]
+        )
     except Exception:
         logger.warning(
             "Failed to sync mastery question %s to question bank for session %s",

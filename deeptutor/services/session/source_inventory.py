@@ -32,12 +32,11 @@ from __future__ import annotations
 import logging
 from typing import Any, Sequence
 
-from deeptutor.book.context import build_book_context
-from deeptutor.multi_user.context import get_current_user
-from deeptutor.services.notebook import get_notebook_manager
-from deeptutor.services.partners import get_partner_manager
+from deeptutor.book import context as book_context
+from deeptutor.multi_user import context as multi_user_context
+from deeptutor.services import notebook, partners
+from deeptutor.services.session import questions
 from deeptutor.services.session.protocol import SessionStoreProtocol
-from deeptutor.services.session.questions import format_question_bank_entry
 from deeptutor.services.session.sources import (
     MANIFEST_PREVIEW_CHARS_FRESH,
     SourceEntry,
@@ -319,7 +318,7 @@ async def _collect_from_user_message(
     notebook_refs = snap.get("notebookReferences") or []
     if notebook_refs:
         try:
-            records = get_notebook_manager().get_records_by_references(list(notebook_refs))
+            records = notebook.get_notebook_manager().get_records_by_references(list(notebook_refs))
         except Exception:
             records = []
         for rec in records:
@@ -483,7 +482,7 @@ def _resolve_book_section(book_reference: dict[str, Any]) -> tuple[str, str]:
     source id stays stable). Returns ``("", "")`` on failure.
     """
     try:
-        result = build_book_context([book_reference])
+        result = book_context.build_book_context([book_reference])
     except Exception:
         logger.debug("Failed to resolve historical book reference", exc_info=True)
         return "", ""
@@ -621,10 +620,10 @@ def _load_partner_session(ref: str, *, language: str = "en") -> tuple[str, str]:
     if not pid or not session_key:
         return "", ""
 
-    if not get_current_user().is_admin:
+    if not multi_user_context.get_current_user().is_admin:
         return "", ""
     try:
-        manager = get_partner_manager()
+        manager = partners.get_partner_manager()
         if not manager.partner_exists(pid):
             return "", ""
         messages = manager.get_history(pid, session_key=session_key, limit=400)
@@ -689,7 +688,7 @@ async def _load_question_entry(store: SessionStoreProtocol, entry_id: int) -> tu
         entry = None
     if not entry:
         return "", ""
-    block = format_question_bank_entry(entry)
+    block = questions.format_question_bank_entry(entry)
     if not block.strip():
         return "", ""
     stem_source = str(entry.get("question", "") or "Untitled question")

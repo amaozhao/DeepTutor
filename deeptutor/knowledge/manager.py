@@ -18,7 +18,7 @@ from deeptutor.knowledge.kb_types import (
 )
 from deeptutor.services.config import get_kb_config_service
 from deeptutor.services.pocketbase_client import get_pb_client, is_pocketbase_enabled
-from deeptutor.services.rag.embedding_signature import signature_from_embedding_config
+from deeptutor.services.rag import embedding_signature
 from deeptutor.services.rag.factory import (
     DEFAULT_PROVIDER,
     KNOWN_PROVIDERS,
@@ -226,7 +226,7 @@ class KnowledgeBaseManager:
             # Record the active signature + the on-disk version registry so
             # the UI can render version chips without recomputing.
             try:
-                sig = signature_from_embedding_config()
+                sig = embedding_signature.signature_from_embedding_config()
                 if sig is not None:
                     kb_config["embedding_signature"] = sig.hash()
                 kb_dir = self.base_dir / name
@@ -569,7 +569,9 @@ class KnowledgeBaseManager:
     def get_rag_storage_path(self, name: str | None = None) -> Path:
         """Get active index storage path for a knowledge base."""
         kb_dir = self.get_knowledge_base_path(name)
-        active_storage = resolve_storage_dir_for_read(kb_dir, signature_from_embedding_config())
+        active_storage = resolve_storage_dir_for_read(
+            kb_dir, embedding_signature.signature_from_embedding_config()
+        )
         legacy_storage = kb_dir / "rag_storage"
         if active_storage is not None:
             return active_storage

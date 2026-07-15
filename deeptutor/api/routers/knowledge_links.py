@@ -11,8 +11,8 @@ from pydantic import BaseModel
 
 from deeptutor.services.rag.factory import DEFAULT_PROVIDER
 from deeptutor.services.rag.linked_kb import assert_path_allowed, probe_linked_folder
+from deeptutor.services.rag.pipelines.lightrag_server import probe as lightrag_probe
 from deeptutor.services.rag.pipelines.lightrag_server.config import SUPPORTED_MODES
-from deeptutor.services.rag.pipelines.lightrag_server.probe import probe_server
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -147,7 +147,7 @@ async def probe_lightrag_server_route(payload: ProbeLightRagServerRequest):
     server_url = (payload.server_url or "").strip()
     if not server_url:
         raise HTTPException(status_code=400, detail="server_url is required.")
-    result = await probe_server(server_url, payload.api_key or "")
+    result = await lightrag_probe.probe_server(server_url, payload.api_key or "")
     return result.to_dict()
 
 
@@ -160,7 +160,7 @@ async def connect_lightrag_server_route(payload: ConnectLightRagServerRequest):
     if not name or not server_url:
         raise HTTPException(status_code=400, detail="Both name and server_url are required.")
 
-    result = await probe_server(server_url, payload.api_key or "")
+    result = await lightrag_probe.probe_server(server_url, payload.api_key or "")
     if not result.ok:
         raise HTTPException(
             status_code=400, detail=result.error or "Could not connect to the LightRAG server."

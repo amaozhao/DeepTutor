@@ -22,11 +22,10 @@ from deeptutor.multi_user.skill_access import (
     assigned_skill_infos,
 )
 from deeptutor.services.skill import get_skill_service
+from deeptutor.services.skill import hub as skill_hub
 from deeptutor.services.skill.hub import (
     ClawHubProvider,
     HubError,
-    get_hub_provider,
-    install_from_hub,
 )
 from deeptutor.services.skill.service import (
     InvalidSkillNameError,
@@ -159,7 +158,7 @@ async def hub_catalog(hub: str = "eduhub", q: str = "", limit: int = 50) -> dict
     """
 
     try:
-        provider = get_hub_provider(hub)
+        provider = skill_hub.get_hub_provider(hub)
     except HubError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     if not isinstance(provider, ClawHubProvider):
@@ -176,7 +175,7 @@ async def hub_detail(slug: str, hub: str = "eduhub") -> dict[str, object]:
     """Full metadata + SKILL.md body for one hub skill (browser detail view)."""
 
     try:
-        provider = get_hub_provider(hub)
+        provider = skill_hub.get_hub_provider(hub)
     except HubError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     if not isinstance(provider, ClawHubProvider):
@@ -245,7 +244,7 @@ async def install_skill(payload: InstallSkillRequest) -> dict[str, object]:
     service = get_skill_service()
     try:
         outcome = await asyncio.to_thread(
-            install_from_hub,
+            skill_hub.install_from_hub,
             payload.ref,
             service=service,
             rename_to=payload.name,
