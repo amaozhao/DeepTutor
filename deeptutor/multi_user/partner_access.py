@@ -19,7 +19,7 @@ from typing import Any
 
 from fastapi import HTTPException
 
-from deeptutor.services.partners import get_partner_manager
+from deeptutor.services import partners as partner_services
 
 from .context import get_current_user
 from .grants import load_grant
@@ -74,7 +74,7 @@ def visible_partner_cards() -> list[dict[str, Any]]:
     """Partners the current user may consult: all for an admin, or just the
     assigned subset for a non-admin. Returns identity-only card dicts."""
 
-    everything = get_partner_manager().list_partners()
+    everything = partner_services.get_partner_manager().list_partners()
     user = get_current_user()
     if user.is_admin:
         return [_project_card(item) for item in everything]

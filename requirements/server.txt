@@ -11,22 +11,23 @@
 -r cli.txt
 
 # --- API server ---
-fastapi>=0.100.0
-uvicorn[standard]>=0.24.0
-websockets>=12.0
-python-multipart>=0.0.6
+fastapi>=0.139.0
+uvicorn[standard]>=0.51.0
+# lark-oapi 1.7.1 requires websockets <16 when partner extras share the env.
+websockets>=15.0.1,<16.0
+python-multipart>=0.0.32
 
 # --- Authentication ---
-bcrypt>=4.0.0
-python-jose[cryptography]>=3.3.0
-psycopg[binary]>=3.2.0,<4.0.0
+bcrypt>=5.0.0
+python-jose[cryptography]>=3.5.0
+psycopg[binary]>=3.3.4,<4.0.0
 
 # --- PocketBase (optional sidecar backend) ---
 # Only used when integrations.pocketbase_url is configured.
-pocketbase>=0.12.0
+pocketbase>=0.17.3
 
 # --- LLM provider runtime (unconditionally imported by provider_core) ---
 loguru>=0.7.3,<1.0.0
-json-repair>=0.57.0,<1.0.0
+json-repair>=0.61.4,<1.0.0
 # Built-in cron service (chat & partner scheduled tasks)
-croniter>=6.0.0,<7.0.0
+croniter>=6.2.4,<7.0.0

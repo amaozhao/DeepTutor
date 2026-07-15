@@ -7,7 +7,7 @@ import time
 from typing import Any
 
 from deeptutor.agents._shared.capability_result import emit_capability_result
-from deeptutor.agents.math_animator.pipeline import MathAnimatorPipeline
+from deeptutor.agents.math_animator import pipeline as math_animator_pipeline
 from deeptutor.agents.math_animator.request_config import (
     validate_math_animator_request_config,
 )
@@ -18,7 +18,7 @@ from deeptutor.core.stream_bus import StreamBus
 from deeptutor.core.trace import build_trace_metadata, merge_trace_metadata, new_call_id
 from deeptutor.i18n import StatusI18n
 from deeptutor.runtime.request_contracts import get_capability_request_schema
-from deeptutor.services.llm.config import get_llm_config
+from deeptutor.services.llm import config as llm_config_services
 
 
 class MathAnimatorCapability(BaseCapability):
@@ -51,11 +51,11 @@ class MathAnimatorCapability(BaseCapability):
                 "or `pip install -r requirements/math-animator.txt`."
             )
 
-        llm_config = get_llm_config()
+        llm_config = llm_config_services.get_llm_config()
         request_config = validate_math_animator_request_config(context.config_overrides)
         usage = UsageTracker(model=getattr(llm_config, "model", None))
         i18n = StatusI18n(self.name, context.language, module="math_animator")
-        pipeline = MathAnimatorPipeline(
+        pipeline = math_animator_pipeline.MathAnimatorPipeline(
             api_key=llm_config.api_key,
             base_url=llm_config.base_url,
             api_version=llm_config.api_version,

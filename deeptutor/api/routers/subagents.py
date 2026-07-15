@@ -27,18 +27,18 @@ from deeptutor.api.routers.auth import require_admin
 from deeptutor.knowledge.kb_types import SUBAGENT_KB_TYPE
 from deeptutor.multi_user.knowledge_access import current_kb_manager
 from deeptutor.multi_user.partner_access import assert_partner_allowed, visible_partner_cards
-from deeptutor.services.partners import get_partner_manager
+from deeptutor.services import partners as partner_services
+from deeptutor.services import subagent as subagent_services
 from deeptutor.services.rag.linked_kb import assert_path_allowed
 from deeptutor.services.subagent import (
     PARTNER_BACKEND_KIND,
     detect_all,
-    get_backend,
     list_backend_kinds,
     load_subagent_settings,
     save_subagent_settings,
     settings_from_dict,
 )
-from deeptutor.services.subagent.models import list_backend_options, sync_backend_options
+from deeptutor.services.subagent import models as subagent_models
 from deeptutor.services.subagent.sessions import (
     forget_connection,
     get_session,
@@ -79,7 +79,7 @@ async def detect_subagents():
 @router.get("/backends/options")
 async def backend_options():
     """Synced model + reasoning-effort options per backend (settings page sync)."""
-    options = await list_backend_options()
+    options = await subagent_models.list_backend_options()
     return {"backends": [o.to_dict() for o in options]}
 
 
@@ -90,11 +90,11 @@ async def sync_backend(kind: str):
     For Claude Code this scrapes its ``/model`` TUI live and caches the result;
     for Codex it re-reads the CLI-maintained cache.
     """
-    backend = get_backend(kind)
+    backend = subagent_services.get_backend(kind)
     if backend is None or not getattr(backend, "local_cli", True):
         # Only local CLIs have a model catalog to sync; partners run their own.
         raise HTTPException(status_code=400, detail=f"Unknown agent kind: {kind!r}")
-    options = await sync_backend_options(kind)
+    options = await subagent_models.sync_backend_options(kind)
     return options.to_dict()
 
 
@@ -163,7 +163,7 @@ async def create_connection(payload: ConnectSubagentRequest):
         # own isolated scope — connecting just lets the user consult it in chat.
         assert_partner_allowed(partner_id)
 
-        if not get_partner_manager().partner_exists(partner_id):
+        if not partner_services.get_partner_manager().partner_exists(partner_id):
             raise HTTPException(status_code=400, detail=f"No partner named {partner_id!r}.")
     else:
         raw_cwd = (payload.cwd or "").strip()
@@ -236,7 +236,7 @@ async def message_connection(name: str, payload: SubagentMessageRequest):
     kind = str(meta.get("agent_kind") or "")
     cwd = str(meta.get("cwd") or "")
     partner_id = str(meta.get("partner_id") or "")
-    backend = get_backend(kind)
+    backend = subagent_services.get_backend(kind)
     if backend is None:
         raise HTTPException(status_code=400, detail=f"Unknown agent kind: {kind!r}")
 

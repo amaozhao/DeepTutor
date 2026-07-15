@@ -34,10 +34,7 @@ from pathlib import Path
 import re
 from typing import Any
 
-from deeptutor.services.subagent.claude_models import (
-    load_cached_claude_models,
-    sync_claude_models,
-)
+from deeptutor.services.subagent import claude_models
 from deeptutor.services.subagent.process import probe_version
 from deeptutor.services.subagent.registry import get_backend
 
@@ -139,7 +136,7 @@ async def _claude_options() -> BackendOptions:
     ok, text = await probe_version([backend.cli_command, "--version"]) if backend else (False, "")
     # Prefer a live-synced catalog (scraped from ``/model``); fall back to the
     # curated aliases until the user syncs.
-    cached, synced_at = load_cached_claude_models()
+    cached, synced_at = claude_models.load_cached_claude_models()
     pairs = [(m["slug"], m["display_name"]) for m in cached] or list(_CLAUDE_MODELS)
     return BackendOptions(
         kind="claude_code",
@@ -321,7 +318,7 @@ async def sync_backend_options(kind: str) -> BackendOptions:
     --refresh``. The rest have nothing external to refresh.
     """
     if kind == "claude_code":
-        await sync_claude_models()  # writes the cache that _claude_options reads
+        await claude_models.sync_claude_models()  # writes the cache that _claude_options reads
         return await _claude_options()
     if kind in ("opencode", "mimo"):
         return await _PROVIDERS[kind](refresh=True)

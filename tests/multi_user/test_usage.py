@@ -9,9 +9,9 @@ import pytest
 
 from deeptutor.api.routers import voice as voice_router
 from deeptutor.multi_user.grants import normalize_grant, save_grant
+from deeptutor.multi_user.quota import empty_quota
 from deeptutor.multi_user.usage import (
     UsageQuotaExceeded,
-    empty_quota,
     enforce_current_user_quota,
     record_usage,
     usage_summary,

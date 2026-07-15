@@ -38,11 +38,8 @@ from deeptutor.multi_user.paths import user_context
 from deeptutor.partners.bus.events import InboundMessage, OutboundMessage
 from deeptutor.partners.bus.queue import MessageBus
 from deeptutor.partners.helpers import detect_image_mime
-from deeptutor.runtime.orchestrator import ChatOrchestrator
-from deeptutor.services.model_selection.runtime import (
-    activate_llm_selection,
-    reset_llm_selection,
-)
+from deeptutor.runtime import orchestrator as runtime_orchestrator
+from deeptutor.services.model_selection import runtime as model_selection_runtime
 from deeptutor.services.partners.commands import PartnerCommandHandler
 from deeptutor.services.partners.scope import partner_user
 from deeptutor.services.partners.sessions import PartnerSessionStore
@@ -285,7 +282,7 @@ class PartnerRunner:
             # they happen, so with progress muted we keep buffered delivery.
             wants_stream = is_im and send_progress and bool(msg.metadata.get("_wants_stream"))
 
-            _config, llm_token = activate_llm_selection(selection)
+            _config, llm_token = model_selection_runtime.activate_llm_selection(selection)
             # Everything — rag / skills / notebooks AND memory — resolves to the
             # partner's own synthetic workspace. The partner-only memory tools
             # (partner_read / partner_memorize / partner_search, force-mounted by
@@ -295,7 +292,7 @@ class PartnerRunner:
             # are suppressed on partner turns, so no admin memory override is
             # needed here (and the partner can never write the owner's memory).
             with user_context(partner_user(self.partner_id, name=self.config.name)):
-                orchestrator = ChatOrchestrator()
+                orchestrator = runtime_orchestrator.ChatOrchestrator()
                 async for event in orchestrator.handle(context):
                     if on_event is not None:
                         await on_event(event)
@@ -346,7 +343,7 @@ class PartnerRunner:
             logger.exception("Partner %s turn crashed", self.partner_id)
             errors.append(f"{type(exc).__name__}: {exc}")
         finally:
-            reset_llm_selection(llm_token)
+            model_selection_runtime.reset_llm_selection(llm_token)
 
         if not final_text.strip():
             final_text = terminator_text.strip()

@@ -7,12 +7,12 @@ from typing import Any
 import uuid
 
 from deeptutor.core.tool_protocol import BaseTool, ToolDefinition, ToolParameter, ToolResult
+from deeptutor.services import sandbox as sandbox_services
 from deeptutor.services.path_service import get_path_service
 from deeptutor.services.sandbox import (
     ExecRequest,
     Mount,
     ResourceLimits,
-    get_sandbox_service,
 )
 from deeptutor.services.sandbox.artifacts import (
     collect_public_artifacts,
@@ -144,7 +144,7 @@ class CodeExecutionTool(_PromptHintsMixin, BaseTool):
             mounts=mounts,
             limits=limits,
         )
-        result = await get_sandbox_service().run(request, user_id=user_id)
+        result = await sandbox_services.get_sandbox_service().run(request, user_id=user_id)
 
         # The source file, compiled binary, and stdin scratch are inputs we
         # wrote ourselves — exclude them so only program-generated files

@@ -24,7 +24,7 @@ import os
 from pathlib import Path
 from typing import Any, Optional
 
-from deeptutor.services.rag.embedding_signature import signature_from_embedding_config
+from deeptutor.services.rag import embedding_signature
 from deeptutor.services.rag.factory import (
     DEFAULT_PROVIDER,
     GRAPHRAG_PROVIDER,
@@ -176,7 +176,7 @@ def probe_linked_folder(folder_path: str, provider: str) -> ProbeResult:
 
 def _check_embedding(provider: str, version: dict, result: ProbeResult) -> None:
     """Compare the index's embedding identity against the active config."""
-    current = signature_from_embedding_config()
+    current = embedding_signature.signature_from_embedding_config()
     compat = result.embedding
     compat.current_model = current.model if current else None
 

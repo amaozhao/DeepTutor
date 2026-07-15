@@ -6,9 +6,9 @@ import json
 import logging
 from typing import Any
 
-from deeptutor.agents.vision_solver.vision_solver_agent import VisionSolverAgent
+from deeptutor.agents.vision_solver import vision_solver_agent
 from deeptutor.core.tool_protocol import BaseTool, ToolDefinition, ToolParameter, ToolResult
-from deeptutor.services.llm.config import get_llm_config
+from deeptutor.services.llm import config as llm_config_services
 from deeptutor.tools.builtin.common import _PromptHintsMixin
 
 logger = logging.getLogger(__name__)
@@ -61,8 +61,8 @@ class GeoGebraAnalysisTool(_PromptHintsMixin, BaseTool):
         if not image_base64.startswith("data:"):
             image_base64 = f"data:image/png;base64,{image_base64}"
 
-        llm_config = get_llm_config()
-        agent = VisionSolverAgent(
+        llm_config = llm_config_services.get_llm_config()
+        agent = vision_solver_agent.VisionSolverAgent(
             api_key=llm_config.api_key,
             base_url=llm_config.base_url,
             language=language,

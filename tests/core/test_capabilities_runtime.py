@@ -25,6 +25,12 @@ from deeptutor.runtime.bootstrap.builtin_capabilities import BUILTIN_CAPABILITY_
 def _install_module(
     monkeypatch: pytest.MonkeyPatch, fullname: str, **attrs: Any
 ) -> types.ModuleType:
+    existing = sys.modules.get(fullname)
+    if existing is not None:
+        for key, value in attrs.items():
+            monkeypatch.setattr(existing, key, value)
+        return existing
+
     parts = fullname.split(".")
     for idx in range(1, len(parts)):
         pkg_name = ".".join(parts[:idx])

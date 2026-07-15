@@ -19,8 +19,8 @@ from typing import Any
 from deeptutor.agents._shared.capability_result import emit_capability_result
 from deeptutor.agents.math_animator.pipeline import MathAnimatorPipeline
 from deeptutor.agents.math_animator.request_config import MathAnimatorRequestConfig
+from deeptutor.agents.visualize import pipeline as visualize_pipeline
 from deeptutor.agents.visualize.models import ReviewResult
-from deeptutor.agents.visualize.pipeline import VisualizePipeline
 from deeptutor.agents.visualize.utils import build_fallback_html, validate_visualization
 from deeptutor.core.agentic.usage import UsageTracker
 from deeptutor.core.capability_protocol import BaseCapability, CapabilityManifest
@@ -33,7 +33,7 @@ from deeptutor.runtime.request_contracts import (
     get_capability_request_schema,
     validate_visualize_request_config,
 )
-from deeptutor.services.llm.config import get_llm_config
+from deeptutor.services.llm import config as llm_config_services
 
 logger = logging.getLogger(__name__)
 
@@ -73,13 +73,13 @@ class VisualizeCapability(BaseCapability):
         render_mode = request_config.render_mode
         i18n = StatusI18n(self.name, context.language, module="visualize")
 
-        llm_config_for_usage = get_llm_config()
+        llm_config_for_usage = llm_config_services.get_llm_config()
         usage = UsageTracker(model=getattr(llm_config_for_usage, "model", None))
 
-        llm_config = get_llm_config()
+        llm_config = llm_config_services.get_llm_config()
         history_context = str(context.metadata.get("conversation_context_text", "") or "").strip()
 
-        pipeline = VisualizePipeline(
+        pipeline = visualize_pipeline.VisualizePipeline(
             api_key=llm_config.api_key,
             base_url=llm_config.base_url,
             api_version=llm_config.api_version,
@@ -308,7 +308,7 @@ class VisualizeCapability(BaseCapability):
             style_hint=visualize_config.style_hint,
         )
 
-        llm_config = get_llm_config()
+        llm_config = llm_config_services.get_llm_config()
         pipeline = MathAnimatorPipeline(
             api_key=llm_config.api_key,
             base_url=llm_config.base_url,

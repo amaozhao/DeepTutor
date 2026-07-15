@@ -14,11 +14,10 @@ try:
 except ImportError:  # pragma: no cover - Windows
     fcntl_module = None
 
-from . import paths
+from . import paths, shared_state
 from .context import get_current_user
 from .grants import load_grant
 from .quota import normalize_quota
-from .shared_state import postgres_enabled, record_usage_event, usage_events
 
 _LOCK = threading.Lock()
 
@@ -130,7 +129,7 @@ def record_usage(
         "usage": metrics,
     }
     if _postgres_enabled():
-        record_usage_event(event)
+        shared_state.record_usage_event(event)
         return event
     with usage_ledger_lock():
         with _usage_file().open("a", encoding="utf-8") as handle:
@@ -150,7 +149,7 @@ def _empty_metrics() -> dict[str, int | float]:
 
 def _read_events() -> list[dict[str, Any]]:
     if _postgres_enabled():
-        return usage_events()
+        return shared_state.usage_events()
     target = _usage_file()
     events: list[dict[str, Any]] = []
     with usage_ledger_lock():
@@ -169,7 +168,7 @@ def _read_events() -> list[dict[str, Any]]:
 
 def _postgres_enabled() -> bool:
 
-    return postgres_enabled()
+    return shared_state.postgres_enabled()
 
 
 def usage_summary(user_id: str | None = None, *, now: datetime | None = None) -> dict[str, Any]:

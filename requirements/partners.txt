@@ -13,29 +13,29 @@
 -r server.txt
 
 # --- MCP client (deferred tools for chat + partners) ---
-mcp>=1.26.0,<2.0.0
+mcp>=1.28.1,<2.0.0
 
 # --- Channel SDKs ---
-python-telegram-bot[socks]>=22.6,<23.0
+python-telegram-bot[socks]>=22.8,<23.0
 # wecom (WeCom AI Bot WebSocket client)
 wecom-aibot-sdk>=1.0.8,<2.0.0
-lark-oapi>=1.5.0,<2.0.0
-dingtalk-stream>=0.24.0,<1.0.0
-slack-sdk>=3.39.0,<4.0.0
-slackify-markdown>=0.2.0,<1.0.0
-qq-botpy>=1.2.0,<2.0.0
-python-socketio>=5.16.0,<6.0.0
-msgpack>=1.1.0,<2.0.0
-python-socks[asyncio]>=2.8.0,<3.0.0
+lark-oapi>=1.7.1,<2.0.0
+dingtalk-stream>=0.24.3,<1.0.0
+slack-sdk>=3.43.0,<4.0.0
+slackify-markdown>=0.2.4,<1.0.0
+qq-botpy>=1.2.1,<2.0.0
+python-socketio>=5.16.3,<6.0.0
+msgpack>=1.2.1,<2.0.0
+python-socks[asyncio]>=2.8.2,<3.0.0
 socksio>=1.0.0,<2.0.0
 websocket-client>=1.9.0,<2.0.0
-zulip>=0.8.0,<1.0.0
-# slack-sdk Socket Mode + napcat need the async `websockets` lib — pin it
-# explicitly instead of relying on dingtalk-stream/lark-oapi transitives.
-websockets>=12.0
+zulip>=0.9.1,<1.0.0
+# slack-sdk Socket Mode + napcat need the async `websockets` lib. The latest
+# lark-oapi (1.7.1) still requires websockets <16.
+websockets>=15.0.1,<16.0
 # napcat (OneBot v11) media downloads
-aiohttp>=3.10.0,<4.0.0
+aiohttp>=3.14.1,<4.0.0
 # msteams Bot Framework token validation
-PyJWT[crypto]>=2.8.0,<3.0.0
+PyJWT[crypto]>=2.13.0,<3.0.0
 # weixin QR-code login
-qrcode>=7.4.0,<9.0.0
+qrcode>=8.2,<9.0.0

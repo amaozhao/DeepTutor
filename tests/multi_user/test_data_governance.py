@@ -5,7 +5,6 @@ import io
 import json
 import logging
 from pathlib import Path
-import sys
 import zipfile
 
 from fastapi import FastAPI, HTTPException
@@ -445,6 +444,8 @@ def test_audit_writes_use_local_file_lock(mu_isolated_root):
 
 
 def test_audit_logs_when_file_lock_is_unavailable(mu_isolated_root, monkeypatch, caplog):
+    audit = __import__("deeptutor.multi_user.audit", fromlist=["*"])
+
     class _BrokenFcntl:
         LOCK_EX = 1
         LOCK_UN = 2
@@ -453,7 +454,7 @@ def test_audit_logs_when_file_lock_is_unavailable(mu_isolated_root, monkeypatch,
         def flock(*_args):
             raise OSError("no flock")
 
-    monkeypatch.setitem(sys.modules, "fcntl", _BrokenFcntl)
+    monkeypatch.setattr(audit, "fcntl_module", _BrokenFcntl)
 
     with caplog.at_level(logging.WARNING, logger="deeptutor.multi_user.audit"):
         log_admin_action("user_create", target_user_id="u1", summary={"username": "alice"})

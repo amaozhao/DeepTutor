@@ -19,8 +19,7 @@ except ImportError:  # pragma: no cover - Windows
 
 from fastapi import HTTPException, Request, status
 
-from deeptutor.multi_user import paths
-from deeptutor.multi_user.shared_state import allow_rate_hit, clear_rate_hits, postgres_enabled
+from deeptutor.multi_user import paths, shared_state
 from deeptutor.services.config import (
     load_auth_settings,
     load_integrations_settings,
@@ -85,7 +84,9 @@ class FileSlidingWindowRateLimiter:
         if limit <= 0:
             return False
         if _postgres_shared_state_enabled():
-            return allow_rate_hit(key, limit=limit, window_seconds=window_seconds, now=current)
+            return shared_state.allow_rate_hit(
+                key, limit=limit, window_seconds=window_seconds, now=current
+            )
         path = self._path_for(key)
         try:
             path.parent.mkdir(parents=True, exist_ok=True)
@@ -132,7 +133,7 @@ class FileSlidingWindowRateLimiter:
     def clear(self) -> None:
         self._fallback.clear()
         if _postgres_shared_state_enabled():
-            clear_rate_hits()
+            shared_state.clear_rate_hits()
             return
         try:
             for child in self.root.glob("*.json"):
@@ -152,7 +153,7 @@ _WORKER_ENV_VARS = ("WEB_CONCURRENCY", "UVICORN_WORKERS", "GUNICORN_WORKERS")
 
 def _postgres_shared_state_enabled() -> bool:
 
-    return postgres_enabled()
+    return shared_state.postgres_enabled()
 
 
 def client_ip(request: Request) -> str:

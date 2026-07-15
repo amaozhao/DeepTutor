@@ -12,13 +12,7 @@ import json
 from rich.console import Console
 import typer
 
-from deeptutor.services.config import (
-    load_config_with_main,
-    load_system_settings,
-    resolve_embedding_runtime_config,
-    resolve_llm_runtime_config,
-    resolve_search_runtime_config,
-)
+from deeptutor.services import config as config_services
 
 console = Console()
 
@@ -28,9 +22,9 @@ def register(app: typer.Typer) -> None:
     def config_show() -> None:
         """Show current configuration."""
 
-        system_settings = load_system_settings()
-        llm_runtime = resolve_llm_runtime_config()
-        search_runtime = resolve_search_runtime_config()
+        system_settings = config_services.load_system_settings()
+        llm_runtime = config_services.resolve_llm_runtime_config()
+        search_runtime = config_services.resolve_search_runtime_config()
         llm_info = {
             "binding_hint": llm_runtime.binding_hint,
             "provider": llm_runtime.provider_name,
@@ -42,7 +36,7 @@ def register(app: typer.Typer) -> None:
             "api_key": "***" if llm_runtime.api_key else "(not set)",
         }
         try:
-            embedding_runtime = resolve_embedding_runtime_config()
+            embedding_runtime = config_services.resolve_embedding_runtime_config()
             embedding_info = {
                 "status": "configured",
                 "binding_hint": embedding_runtime.binding_hint,
@@ -62,7 +56,7 @@ def register(app: typer.Typer) -> None:
             }
 
         try:
-            main_cfg = load_config_with_main("main.yaml")
+            main_cfg = config_services.load_config_with_main("main.yaml")
         except Exception:
             main_cfg = {}
 

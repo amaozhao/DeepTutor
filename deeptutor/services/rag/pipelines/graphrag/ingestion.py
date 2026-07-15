@@ -17,7 +17,8 @@ import logging
 from pathlib import Path
 from typing import Iterable
 
-from deeptutor.services.parsing import ParserError, get_parse_service
+from deeptutor.services import parsing as parsing_services
+from deeptutor.services.parsing import ParserError
 from deeptutor.services.rag.file_routing import FileTypeRouter
 
 from . import storage
@@ -39,7 +40,7 @@ def _unique_txt_path(target_dir: Path, source: Path, used: set[str]) -> Path:
 
 def _extract_parser_text(path: Path) -> str:
     try:
-        parsed = get_parse_service().parse(path)
+        parsed = parsing_services.get_parse_service().parse(path)
     except ParserError as exc:
         logger.error("GraphRAG ingestion: failed to parse %s: %s", path.name, exc)
         return ""
