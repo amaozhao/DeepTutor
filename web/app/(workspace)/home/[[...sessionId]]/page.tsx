@@ -1852,12 +1852,16 @@ export default function ChatPage() {
               />
             </div>
           </div>
-          <div className="mx-auto flex w-full max-w-[960px] flex-1 min-h-0 flex-col overflow-hidden px-6">
+          <div className="flex w-full flex-1 min-h-0 flex-col">
             {sessionLoading ? (
-              <SessionLoadingView onCancel={cancelSessionLoad} />
+              <div className="flex w-full flex-1 min-h-0 items-center justify-center px-6">
+                <div className="w-full max-w-[960px]">
+                  <SessionLoadingView onCancel={cancelSessionLoad} />
+                </div>
+              </div>
             ) : !hasMessages ? (
-              <div className="flex flex-1 min-h-0 flex-col items-center justify-end pb-14 animate-fade-in">
-                <div className="flex items-center justify-center gap-4">
+              <div className="flex w-full flex-1 min-h-0 items-end justify-center pb-14 animate-fade-in px-6">
+                <div className="w-full max-w-[960px] flex items-center justify-center gap-4">
                   <img
                     src="/logo_black.png"
                     alt="DeepTutor"
@@ -1877,7 +1881,7 @@ export default function ChatPage() {
                 data-chat-scroll-root="true"
                 onScroll={handleMessagesScroll}
                 onClick={handleMessagesClick}
-                className={`mx-auto w-full flex-1 min-h-0 space-y-9 overflow-y-auto pr-4 [scrollbar-gutter:stable] ${hasMessages ? "pt-6" : "pt-2 pb-6"}`}
+                className={`w-full flex-1 min-h-0 overflow-y-auto [scrollbar-gutter:stable] ${hasMessages ? "pt-6" : "pt-2 pb-6"}`}
                 style={
                   hasMessages
                     ? (() => {
@@ -1899,22 +1903,24 @@ export default function ChatPage() {
                     : undefined
                 }
               >
-                <ChatMessageList
-                  messages={state.messages}
-                  isStreaming={state.isStreaming}
-                  sessionId={state.sessionId}
-                  language={state.language}
-                  onCopyAssistantMessage={copyAssistantMessage}
-                  onRegenerateMessage={handleRegenerateMessage}
-                  onConfirmOutline={handleConfirmOutline}
-                  onPreviewAttachment={handlePreviewMessageAttachment}
-                  onDeleteTurn={deleteTurn}
-                  selectedBranches={state.selectedBranches}
-                  onEditMessage={editMessage}
-                  onSwitchBranch={switchBranch}
-                  onSubmitUserReply={submitUserReply}
-                />
-                <div ref={messagesEndRef} className="h-px w-full shrink-0" />
+                <div className="mx-auto w-full max-w-[960px] space-y-9 px-6">
+                  <ChatMessageList
+                    messages={state.messages}
+                    isStreaming={state.isStreaming}
+                    sessionId={state.sessionId}
+                    language={state.language}
+                    onCopyAssistantMessage={copyAssistantMessage}
+                    onRegenerateMessage={handleRegenerateMessage}
+                    onConfirmOutline={handleConfirmOutline}
+                    onPreviewAttachment={handlePreviewMessageAttachment}
+                    onDeleteTurn={deleteTurn}
+                    selectedBranches={state.selectedBranches}
+                    onEditMessage={editMessage}
+                    onSwitchBranch={switchBranch}
+                    onSubmitUserReply={submitUserReply}
+                  />
+                  <div ref={messagesEndRef} className="h-px w-full shrink-0" />
+                </div>
               </div>
             )}
 
