@@ -586,7 +586,7 @@ def _assert_provider_ready(provider: str) -> None:
 
 
 def _enforce_provider_formats(provider: str, files: list[UploadFile]) -> None:
-    """PageIndex ingests PDF/Markdown only — reject other formats up front."""
+    """Reject files PageIndex's document endpoint does not accept, up front."""
     if provider != PAGEINDEX_PROVIDER:
         return
     from deeptutor.services.rag.pipelines.pageindex.pipeline import SUPPORTED_EXTENSIONS
@@ -599,10 +599,11 @@ def _enforce_provider_formats(provider: str, files: list[UploadFile]) -> None:
         and Path(f.filename).suffix.lower() not in SUPPORTED_EXTENSIONS
     ]
     if unsupported:
+        supported = ", ".join(sorted(SUPPORTED_EXTENSIONS))
         raise HTTPException(
             status_code=400,
             detail=(
-                "PageIndex knowledge bases accept PDF and Markdown only. "
+                f"PageIndex knowledge bases accept: {supported}. "
                 f"Unsupported: {', '.join(unsupported[:5])}."
             ),
         )
@@ -1046,6 +1047,16 @@ async def update_pageindex_pipeline_config(payload: PageIndexConfigUpdate):
             api_base_url = payload.api_base_url.strip()
 
         service.save_pageindex({"api_key": api_key, "api_base_url": api_base_url})
+
+        # The built-in pageindex MCP server derives its URL/Bearer header from
+        # these settings — resync connections so key changes apply immediately.
+        try:
+            from deeptutor.services.mcp import get_mcp_manager
+
+            await get_mcp_manager().reload()
+        except Exception:
+            logger.warning("MCP reload after PageIndex config change failed", exc_info=True)
+
         return _pageindex_config_payload()
     except Exception as e:
         logger.error(f"Error updating PageIndex config: {e}")
