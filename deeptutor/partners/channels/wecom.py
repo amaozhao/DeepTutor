@@ -84,13 +84,11 @@ class WecomChannel(BaseChannel):
 
         # Create WebSocket client
         self._client = WSClient(
-            {
-                "bot_id": self.config.bot_id,
-                "secret": self.config.secret,
-                "reconnect_interval": 1000,
-                "max_reconnect_attempts": -1,  # Infinite reconnect
-                "heartbeat_interval": 30000,
-            }
+            self.config.bot_id,
+            self.config.secret,
+            reconnect_interval=1000,
+            max_reconnect_attempts=-1,  # Infinite reconnect
+            heartbeat_interval=30000,
         )
 
         # Register event handlers
@@ -109,7 +107,7 @@ class WecomChannel(BaseChannel):
         logger.info("No public IP required - using WebSocket to receive events")
 
         # Connect
-        await self._client.connect_async()
+        await self._client.connect()
 
         # Keep running until stopped
         while self._running:
@@ -122,11 +120,11 @@ class WecomChannel(BaseChannel):
             await self._client.disconnect()
         logger.info("WeCom bot stopped")
 
-    async def _on_connected(self, frame: Any) -> None:
+    async def _on_connected(self, frame: Any = None) -> None:
         """Handle WebSocket connected event."""
         logger.info("WeCom WebSocket connected")
 
-    async def _on_authenticated(self, frame: Any) -> None:
+    async def _on_authenticated(self, frame: Any = None) -> None:
         """Handle authentication success event."""
         logger.info("WeCom authenticated successfully")
 
