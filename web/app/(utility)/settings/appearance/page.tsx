@@ -1,18 +1,91 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import type { CodeBlockThemeId } from "@/components/common/code-block-themes";
+import { CODE_BLOCK_THEME_OPTIONS } from "@/components/common/code-block-themes";
+import { Toggle } from "@/components/settings/Toggle";
 import { useSettings } from "@/components/settings/SettingsContext";
 import { ThemePreviewCard } from "@/components/settings/ThemePreviewCard";
+import {
+  CODE_BLOCK_SETTINGS_EVENT,
+  CODE_BLOCK_SHOW_LINE_NUMBERS_STORAGE_KEY,
+  CODE_BLOCK_WRAP_LONG_LINES_STORAGE_KEY,
+  readStoredCodeBlockShowLineNumbers,
+  readStoredCodeBlockWrapLongLines,
+} from "@/context/app-shell-storage";
 import {
   SettingRow,
   SettingSection,
   SettingsPageHeader,
+  selectClass,
+  selectOptionClass,
 } from "@/components/settings/shared";
 
 export default function AppearanceSettingsPage() {
   const { t } = useTranslation();
-  const { theme, language, updateTheme, updateLanguage } = useSettings();
+  const {
+    theme,
+    language,
+    codeBlockTheme,
+    updateTheme,
+    updateLanguage,
+    updateCodeBlockTheme,
+    updateCodeBlockShowLineNumbers,
+    updateCodeBlockWrapLongLines,
+  } = useSettings();
+  const [showLineNumbersChecked, setShowLineNumbersChecked] = useState(false);
+  const [wrapLongLinesChecked, setWrapLongLinesChecked] = useState(false);
+
+  useEffect(() => {
+    const syncFromStorage = () => {
+      setShowLineNumbersChecked(readStoredCodeBlockShowLineNumbers());
+      setWrapLongLinesChecked(readStoredCodeBlockWrapLongLines());
+    };
+
+    const onStorage = (event: StorageEvent) => {
+      if (event.key === CODE_BLOCK_SHOW_LINE_NUMBERS_STORAGE_KEY) {
+        setShowLineNumbersChecked(readStoredCodeBlockShowLineNumbers());
+      }
+      if (event.key === CODE_BLOCK_WRAP_LONG_LINES_STORAGE_KEY) {
+        setWrapLongLinesChecked(readStoredCodeBlockWrapLongLines());
+      }
+    };
+
+    const onCodeBlockSettings = (event: Event) => {
+      const detail = (
+        event as CustomEvent<{
+          codeBlockShowLineNumbers?: boolean;
+          codeBlockWrapLongLines?: boolean;
+        }>
+      ).detail;
+      if (detail?.codeBlockShowLineNumbers !== undefined) {
+        setShowLineNumbersChecked(Boolean(detail.codeBlockShowLineNumbers));
+      }
+      if (detail?.codeBlockWrapLongLines !== undefined) {
+        setWrapLongLinesChecked(Boolean(detail.codeBlockWrapLongLines));
+      }
+    };
+
+    syncFromStorage();
+    window.addEventListener("storage", onStorage);
+    window.addEventListener(CODE_BLOCK_SETTINGS_EVENT, onCodeBlockSettings);
+    return () => {
+      window.removeEventListener("storage", onStorage);
+      window.removeEventListener(CODE_BLOCK_SETTINGS_EVENT, onCodeBlockSettings);
+    };
+  }, []);
+
+  const handleShowLineNumbersChange = (next: boolean) => {
+    setShowLineNumbersChecked(next);
+    void updateCodeBlockShowLineNumbers(next);
+  };
+
+  const handleWrapLongLinesChange = (next: boolean) => {
+    setWrapLongLinesChecked(next);
+    void updateCodeBlockWrapLongLines(next);
+  };
 
   return (
     <div data-tour="tour-appearance">
@@ -86,6 +159,65 @@ export default function AppearanceSettingsPage() {
             )}
           </p>
         </div>
+      </SettingSection>
+
+      <SettingSection
+        title={t("Code blocks")}
+        description={t(
+          "Choose how code snippets look across the app. Changes apply immediately to saved and streamed responses.",
+        )}
+      >
+        <SettingRow
+          title={t("Syntax theme")}
+          description={t(
+            "Select the Prism theme used for highlighted code blocks.",
+          )}
+          control={
+            <select
+              value={codeBlockTheme}
+              onChange={(event) =>
+                void updateCodeBlockTheme(event.target.value as CodeBlockThemeId)
+              }
+              className={`${selectClass} min-w-[220px] pr-8`}
+            >
+              {CODE_BLOCK_THEME_OPTIONS.map((option) => (
+                <option
+                  key={option.id}
+                  value={option.id}
+                  className={selectOptionClass}
+                >
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          }
+        />
+
+        <SettingRow
+          title={t("Show line numbers")}
+          description={t(
+            "Display a gutter with line numbers beside each code block.",
+          )}
+          control={
+            <Toggle
+              checked={showLineNumbersChecked}
+              onChange={handleShowLineNumbersChange}
+            />
+          }
+        />
+
+        <SettingRow
+          title={t("Wrap long lines")}
+          description={t(
+            "Wrap long code lines instead of forcing horizontal scrolling.",
+          )}
+          control={
+            <Toggle
+              checked={wrapLongLinesChecked}
+              onChange={handleWrapLongLinesChange}
+            />
+          }
+        />
       </SettingSection>
     </div>
   );
