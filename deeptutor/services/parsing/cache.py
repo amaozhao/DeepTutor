@@ -136,8 +136,15 @@ def _absolutize_img_paths(blocks: list[dict], content_dir: Path) -> list[dict]:
         if not isinstance(block, dict):
             continue
         img_path = block.get("img_path")
-        if img_path and not Path(img_path).is_absolute():
-            block["img_path"] = str(content_dir / img_path)
+        if not isinstance(img_path, str) or not img_path:
+            continue
+        p = Path(img_path)
+        if p.is_absolute():
+            continue
+        if ".." in p.parts:
+            logger.warning("Skipping traversal img_path in content_list: %s", img_path)
+            continue
+        block["img_path"] = str(content_dir / img_path)
     return blocks
 
 
