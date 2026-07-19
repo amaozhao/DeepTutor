@@ -3,7 +3,12 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 
-import { readStoredCodeBlockShowLineNumbers, readStoredCodeBlockWrapLongLines, writeStoredCodeBlockShowLineNumbers, writeStoredCodeBlockWrapLongLines } from "@/context/app-shell-storage";
+import {
+  readStoredCodeBlockShowLineNumbers,
+  readStoredCodeBlockWrapLongLines,
+  writeStoredCodeBlockShowLineNumbers,
+  writeStoredCodeBlockWrapLongLines,
+} from "@/context/app-shell-storage";
 
 const settingsContextPath = path.join(
   process.cwd(),
@@ -19,7 +24,8 @@ function readSettingsContextSource() {
 function mockWindow() {
   global.window = {
     localStorage: {
-      getItem: (key: string) => (global.window as any).localStorage._storage[key] ?? null,
+      getItem: (key: string) =>
+        (global.window as any).localStorage._storage[key] ?? null,
       setItem: (key: string, value: string) => {
         (global.window as any).localStorage._storage[key] = value;
       },
@@ -46,12 +52,20 @@ test("readStoredCodeBlockWrapLongLines returns true when localStorage has string
 
 test("readStoredCodeBlockShowLineNumbers returns false when localStorage is undefined (SSR)", () => {
   (global.window as any) = undefined as any;
-  assert.equal(readStoredCodeBlockShowLineNumbers(), false, "Should return default false when window is undefined");
+  assert.equal(
+    readStoredCodeBlockShowLineNumbers(),
+    false,
+    "Should return default false when window is undefined",
+  );
 });
 
 test("readStoredCodeBlockWrapLongLines returns false when localStorage is undefined (SSR)", () => {
   (global.window as any) = undefined as any;
-  assert.equal(readStoredCodeBlockWrapLongLines(), false, "Should return default false when window is undefined");
+  assert.equal(
+    readStoredCodeBlockWrapLongLines(),
+    false,
+    "Should return default false when window is undefined",
+  );
 });
 
 test("settings-context: code-block boolean switches hydrate after first render", () => {

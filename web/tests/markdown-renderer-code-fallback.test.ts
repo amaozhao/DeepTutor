@@ -20,10 +20,7 @@ test("rich-markdown-renderer: non-rich multiline fallback documents settings bou
 });
 
 test("simple-markdown-renderer: compatibility fallback documents settings boundary", () => {
-  assert.match(
-    simpleRendererSource,
-    /compatibility fallback/i,
-  );
+  assert.match(simpleRendererSource, /compatibility fallback/i);
   assert.match(
     simpleRendererSource,
     /does not consume the[\s\S]*code-block theme registry/i,

@@ -40,11 +40,8 @@ export default function RichCodeBlock({
   lang: string;
   className?: string;
 }) {
-  const {
-    codeBlockTheme,
-    codeBlockShowLineNumbers,
-    codeBlockWrapLongLines,
-  } = useAppShell();
+  const { codeBlockTheme, codeBlockShowLineNumbers, codeBlockWrapLongLines } =
+    useAppShell();
   const normalizedLang = (lang || "").toLowerCase();
   const isPlain = PLAIN_LANGS.has(normalizedLang);
   const syntaxTheme = getCodeBlockTheme(codeBlockTheme);

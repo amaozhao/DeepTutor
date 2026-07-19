@@ -43,7 +43,9 @@ test("code-block-themes: every option has a non-empty label", () => {
 });
 
 test("code-block-themes: getCodeBlockTheme returns the correct style for valid IDs", () => {
-  const oneDarkOption = CODE_BLOCK_THEME_OPTIONS.find((opt) => opt.id === "oneDark");
+  const oneDarkOption = CODE_BLOCK_THEME_OPTIONS.find(
+    (opt) => opt.id === "oneDark",
+  );
   assert.ok(oneDarkOption, "oneDark option should exist");
 
   const style = getCodeBlockTheme("oneDark");
@@ -58,7 +60,9 @@ test("code-block-themes: getCodeBlockTheme returns the correct style for valid I
 });
 
 test("code-block-themes: getCodeBlockTheme falls back to oneDark for invalid IDs", () => {
-  const oneDarkStyle = CODE_BLOCK_THEME_OPTIONS.find((opt) => opt.id === "oneDark")?.style;
+  const oneDarkStyle = CODE_BLOCK_THEME_OPTIONS.find(
+    (opt) => opt.id === "oneDark",
+  )?.style;
   assert.ok(oneDarkStyle, "oneDark style should exist");
 
   const invalidStyle = getCodeBlockTheme("non-existent-theme");
@@ -72,7 +76,9 @@ test("code-block-themes: getCodeBlockTheme falls back to oneDark for invalid IDs
 });
 
 test("code-block-themes: getCodeBlockThemeBackground extracts background color", () => {
-  const oneDarkOption = CODE_BLOCK_THEME_OPTIONS.find((opt) => opt.id === "oneDark");
+  const oneDarkOption = CODE_BLOCK_THEME_OPTIONS.find(
+    (opt) => opt.id === "oneDark",
+  );
   assert.ok(oneDarkOption, "oneDark option should exist");
 
   const background = getCodeBlockThemeBackground(oneDarkOption.style);
@@ -95,7 +101,11 @@ test("code-block-themes: getCodeBlockThemeBackground handles backgroundColor-onl
   } as any;
 
   const background = getCodeBlockThemeBackground(backgroundColorOnlyStyle);
-  assert.strictEqual(background, "#fdf6e3", "backgroundColor-only themes should return their backgroundColor");
+  assert.strictEqual(
+    background,
+    "#fdf6e3",
+    "backgroundColor-only themes should return their backgroundColor",
+  );
 });
 
 test("code-block-themes: getCodeBlockThemeBackground prefers backgroundColor over background", () => {
@@ -107,7 +117,11 @@ test("code-block-themes: getCodeBlockThemeBackground prefers backgroundColor ove
   } as any;
 
   const background = getCodeBlockThemeBackground(bothPropertiesStyle);
-  assert.strictEqual(background, "#fdf6e3", "backgroundColor should take precedence over background");
+  assert.strictEqual(
+    background,
+    "#fdf6e3",
+    "backgroundColor should take precedence over background",
+  );
 });
 
 test("code-block-themes: all 46 theme IDs are from the installed Prism files", () => {
@@ -161,7 +175,11 @@ test("code-block-themes: all 46 theme IDs are from the installed Prism files", (
   ];
 
   const actualIds = CODE_BLOCK_THEME_OPTIONS.map((opt) => opt.id).sort();
-  assert.deepStrictEqual(actualIds, expectedIds.sort(), "Theme IDs should match expected list");
+  assert.deepStrictEqual(
+    actualIds,
+    expectedIds.sort(),
+    "Theme IDs should match expected list",
+  );
 });
 
 test("code-block-themes: every theme in expected list has a style", () => {

@@ -148,9 +148,21 @@ test("settings-context: boolean values survive reload cycle from localStorage", 
   assert.equal(readStoredCodeBlockShowLineNumbers(), true);
   assert.equal(readStoredCodeBlockWrapLongLines(), true);
 
-  assert.equal(readStoredCodeBlockTheme(), "dracula", "Theme should persist across reload");
-  assert.equal(readStoredCodeBlockShowLineNumbers(), true, "Show line numbers should persist across reload");
-  assert.equal(readStoredCodeBlockWrapLongLines(), true, "Wrap long lines should persist across reload");
+  assert.equal(
+    readStoredCodeBlockTheme(),
+    "dracula",
+    "Theme should persist across reload",
+  );
+  assert.equal(
+    readStoredCodeBlockShowLineNumbers(),
+    true,
+    "Show line numbers should persist across reload",
+  );
+  assert.equal(
+    readStoredCodeBlockWrapLongLines(),
+    true,
+    "Wrap long lines should persist across reload",
+  );
 
   const secondSync = sync({
     code_block_theme: "dracula",
@@ -158,8 +170,16 @@ test("settings-context: boolean values survive reload cycle from localStorage", 
     code_block_wrap_long_lines: true,
   });
 
-  assert.equal(secondSync.code_block_show_line_numbers, true, "Show line numbers should remain true after backend sync");
-  assert.equal(secondSync.code_block_wrap_long_lines, true, "Wrap long lines should remain true after backend sync");
+  assert.equal(
+    secondSync.code_block_show_line_numbers,
+    true,
+    "Show line numbers should remain true after backend sync",
+  );
+  assert.equal(
+    secondSync.code_block_wrap_long_lines,
+    true,
+    "Wrap long lines should remain true after backend sync",
+  );
 });
 
 test("settings-context: syncLoadedCodeBlockSettingsToAppShell handles string boolean representations from backend", () => {
@@ -173,10 +193,26 @@ test("settings-context: syncLoadedCodeBlockSettingsToAppShell handles string boo
     code_block_wrap_long_lines: "true",
   });
 
-  assert.equal(result.code_block_show_line_numbers, true, "String 'True' should be normalized to boolean true");
-  assert.equal(result.code_block_wrap_long_lines, true, "String 'true' should be normalized to boolean true");
-  assert.equal(readStoredCodeBlockShowLineNumbers(), true, "Line numbers should be stored as true");
-  assert.equal(readStoredCodeBlockWrapLongLines(), true, "Wrap long lines should be stored as true");
+  assert.equal(
+    result.code_block_show_line_numbers,
+    true,
+    "String 'True' should be normalized to boolean true",
+  );
+  assert.equal(
+    result.code_block_wrap_long_lines,
+    true,
+    "String 'true' should be normalized to boolean true",
+  );
+  assert.equal(
+    readStoredCodeBlockShowLineNumbers(),
+    true,
+    "Line numbers should be stored as true",
+  );
+  assert.equal(
+    readStoredCodeBlockWrapLongLines(),
+    true,
+    "Wrap long lines should be stored as true",
+  );
 });
 
 test("settings-context: backend values override localStorage values during sync", () => {
@@ -197,14 +233,38 @@ test("settings-context: backend values override localStorage values during sync"
   });
 
   // Verify backend values win
-  assert.equal(result.code_block_show_line_numbers, true, "Backend true should override localStorage false");
-  assert.equal(result.code_block_wrap_long_lines, true, "Backend true should override localStorage false");
-  assert.equal(result.code_block_theme, "dracula", "Backend theme should override localStorage theme");
+  assert.equal(
+    result.code_block_show_line_numbers,
+    true,
+    "Backend true should override localStorage false",
+  );
+  assert.equal(
+    result.code_block_wrap_long_lines,
+    true,
+    "Backend true should override localStorage false",
+  );
+  assert.equal(
+    result.code_block_theme,
+    "dracula",
+    "Backend theme should override localStorage theme",
+  );
 
   // Verify localStorage is updated to backend values
-  assert.equal(readStoredCodeBlockShowLineNumbers(), true, "localStorage should be updated to backend true");
-  assert.equal(readStoredCodeBlockWrapLongLines(), true, "localStorage should be updated to backend true");
-  assert.equal(readStoredCodeBlockTheme(), "dracula", "localStorage theme should be updated to backend value");
+  assert.equal(
+    readStoredCodeBlockShowLineNumbers(),
+    true,
+    "localStorage should be updated to backend true",
+  );
+  assert.equal(
+    readStoredCodeBlockWrapLongLines(),
+    true,
+    "localStorage should be updated to backend true",
+  );
+  assert.equal(
+    readStoredCodeBlockTheme(),
+    "dracula",
+    "localStorage theme should be updated to backend value",
+  );
 
   // This test would fail if a post-mount effect re-read from localStorage,
   // as it would overwrite the backend-loaded true values with the old false values.

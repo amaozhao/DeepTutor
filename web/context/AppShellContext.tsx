@@ -157,7 +157,9 @@ export function AppShellProvider({ children }: { children: React.ReactNode }) {
         setCodeBlockThemeState(normalizeCodeBlockTheme(detail.codeBlockTheme));
       }
       if (detail?.codeBlockShowLineNumbers !== undefined) {
-        setCodeBlockShowLineNumbersState(Boolean(detail.codeBlockShowLineNumbers));
+        setCodeBlockShowLineNumbersState(
+          Boolean(detail.codeBlockShowLineNumbers),
+        );
       }
       if (detail?.codeBlockWrapLongLines !== undefined) {
         setCodeBlockWrapLongLinesState(Boolean(detail.codeBlockWrapLongLines));
@@ -175,7 +177,10 @@ export function AppShellProvider({ children }: { children: React.ReactNode }) {
       window.removeEventListener(LANGUAGE_EVENT, onLanguage);
       window.removeEventListener(ACTIVE_SESSION_EVENT, onActiveSession);
       window.removeEventListener(SIDEBAR_COLLAPSED_EVENT, onSidebarCollapsed);
-      window.removeEventListener(CODE_BLOCK_SETTINGS_EVENT, onCodeBlockSettings);
+      window.removeEventListener(
+        CODE_BLOCK_SETTINGS_EVENT,
+        onCodeBlockSettings,
+      );
     };
   }, []);
 

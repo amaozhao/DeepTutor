@@ -33,13 +33,7 @@ import { setTheme as applyThemePreference } from "@/lib/theme";
 // ─── Domain types ─────────────────────────────────────────────────────────
 
 export type ServiceName =
-  | "llm"
-  | "embedding"
-  | "search"
-  | "tts"
-  | "stt"
-  | "imagegen"
-  | "videogen";
+  "llm" | "embedding" | "search" | "tts" | "stt" | "imagegen" | "videogen";
 
 export type CatalogModel = {
   id: string;
@@ -192,10 +186,7 @@ export type DiagnosticsResult = {
 };
 
 export type ServiceReadiness =
-  | "not_configured"
-  | "untested"
-  | "passed"
-  | "failed";
+  "not_configured" | "untested" | "passed" | "failed";
 
 type SettingsPayload = {
   ui: UiSettings;
@@ -723,32 +714,23 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   }, [diagnosticsResults]);
 
   // ── UI preferences ──────────────────────────────────────────────────────
-  const updateTheme = useCallback(
-    async (next: UiSettings["theme"]) => {
-      setTheme(next);
-      applyThemePreference(next);
-      await persistUiSettingsPatch({ theme: next });
-    },
-    [],
-  );
+  const updateTheme = useCallback(async (next: UiSettings["theme"]) => {
+    setTheme(next);
+    applyThemePreference(next);
+    await persistUiSettingsPatch({ theme: next });
+  }, []);
 
-  const updateLanguage = useCallback(
-    async (next: UiSettings["language"]) => {
-      setLanguage(next);
-      writeStoredLanguage(next);
-      await persistUiSettingsPatch({ language: next });
-    },
-    [],
-  );
+  const updateLanguage = useCallback(async (next: UiSettings["language"]) => {
+    setLanguage(next);
+    writeStoredLanguage(next);
+    await persistUiSettingsPatch({ language: next });
+  }, []);
 
-  const updateCodeBlockTheme = useCallback(
-    async (next: CodeBlockThemeId) => {
-      setCodeBlockTheme(next);
-      writeStoredCodeBlockTheme(next);
-      await persistUiSettingsPatch({ code_block_theme: next });
-    },
-    [],
-  );
+  const updateCodeBlockTheme = useCallback(async (next: CodeBlockThemeId) => {
+    setCodeBlockTheme(next);
+    writeStoredCodeBlockTheme(next);
+    await persistUiSettingsPatch({ code_block_theme: next });
+  }, []);
 
   const updateCodeBlockShowLineNumbers = useCallback(async (next: boolean) => {
     setCodeBlockShowLineNumbers(next);

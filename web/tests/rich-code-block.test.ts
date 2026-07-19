@@ -81,12 +81,16 @@ test("rich-code-block: highlighted blocks use selected theme background instead 
   mockSessionStorage = {};
 
   const html = renderCodeBlock("const value = 1;", "js");
-  const oneLightBackground = getCodeBlockThemeBackground(getCodeBlockTheme("oneLight"));
+  const oneLightBackground = getCodeBlockThemeBackground(
+    getCodeBlockTheme("oneLight"),
+  );
 
   assert.ok(oneLightBackground, "oneLight should expose a background color");
   assert.match(
     html,
-    new RegExp(`background(?:-color)?:${oneLightBackground.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`),
+    new RegExp(
+      `background(?:-color)?:${oneLightBackground.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`,
+    ),
   );
   assert.doesNotMatch(html, /background:#1f2937/);
 });

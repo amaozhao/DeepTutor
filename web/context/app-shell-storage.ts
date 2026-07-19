@@ -189,7 +189,8 @@ export function normalizeCodeBlockShowLineNumbers(
 }
 
 export function readStoredCodeBlockShowLineNumbers(): boolean {
-  if (typeof window === "undefined") return DEFAULT_CODE_BLOCK_SHOW_LINE_NUMBERS;
+  if (typeof window === "undefined")
+    return DEFAULT_CODE_BLOCK_SHOW_LINE_NUMBERS;
   try {
     const raw = window.localStorage.getItem(
       CODE_BLOCK_SHOW_LINE_NUMBERS_STORAGE_KEY,

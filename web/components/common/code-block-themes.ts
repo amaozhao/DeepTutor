@@ -122,11 +122,19 @@ export const CODE_BLOCK_THEME_OPTIONS: readonly CodeBlockThemeOption[] = [
   { id: "a11yDark", label: "A11Y Dark", style: a11yDark },
   { id: "a11yOneLight", label: "A11Y One Light", style: a11yOneLight },
   { id: "atomDark", label: "Atom Dark", style: atomDark },
-  { id: "base16AteliersulphurpoolLight", label: "Base16 Atelier Sulphurpool Light", style: base16AteliersulphurpoolLight },
+  {
+    id: "base16AteliersulphurpoolLight",
+    label: "Base16 Atelier Sulphurpool Light",
+    style: base16AteliersulphurpoolLight,
+  },
   { id: "cb", label: "CB", style: cb },
   { id: "coldarkCold", label: "Coldark Cold", style: coldarkCold },
   { id: "coldarkDark", label: "Coldark Dark", style: coldarkDark },
-  { id: "coyWithoutShadows", label: "Coy Without Shadows", style: coyWithoutShadows },
+  {
+    id: "coyWithoutShadows",
+    label: "Coy Without Shadows",
+    style: coyWithoutShadows,
+  },
   { id: "coy", label: "Coy", style: coy },
   { id: "darcula", label: "Darcula", style: darcula },
   { id: "dark", label: "Dark", style: dark },
@@ -155,7 +163,11 @@ export const CODE_BLOCK_THEME_OPTIONS: readonly CodeBlockThemeOption[] = [
   { id: "pojoaque", label: "Pojoaque", style: pojoaque },
   { id: "prism", label: "Prism", style: prism },
   { id: "shadesOfPurple", label: "Shades of Purple", style: shadesOfPurple },
-  { id: "solarizedDarkAtom", label: "Solarized Dark Atom", style: solarizedDarkAtom },
+  {
+    id: "solarizedDarkAtom",
+    label: "Solarized Dark Atom",
+    style: solarizedDarkAtom,
+  },
   { id: "solarizedlight", label: "Solarized Light", style: solarizedlight },
   { id: "synthwave84", label: "Synthwave 84", style: synthwave84 },
   { id: "tomorrow", label: "Tomorrow", style: tomorrow },
@@ -181,7 +193,9 @@ export function getCodeBlockTheme(id: string): PrismTheme {
  * Returns the background color if available, or undefined if not.
  * This is used for theme-derived background styling.
  */
-export function getCodeBlockThemeBackground(style: PrismTheme): string | undefined {
+export function getCodeBlockThemeBackground(
+  style: PrismTheme,
+): string | undefined {
   const preStyle = style['pre[class*="language-"]'];
   if (preStyle && typeof preStyle === "object") {
     const backgroundColor = preStyle.backgroundColor;

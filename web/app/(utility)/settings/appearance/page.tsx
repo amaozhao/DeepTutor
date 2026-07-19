@@ -94,7 +94,10 @@ export default function AppearanceSettingsPage() {
     window.addEventListener(CODE_BLOCK_SETTINGS_EVENT, onCodeBlockSettings);
     return () => {
       window.removeEventListener("storage", onStorage);
-      window.removeEventListener(CODE_BLOCK_SETTINGS_EVENT, onCodeBlockSettings);
+      window.removeEventListener(
+        CODE_BLOCK_SETTINGS_EVENT,
+        onCodeBlockSettings,
+      );
     };
   }, []);
 
@@ -195,7 +198,10 @@ export default function AppearanceSettingsPage() {
           <p className="mb-3 mt-1 text-[12px] leading-relaxed text-[var(--muted-foreground)]">
             {t("Updates live as you change the settings below.")}
           </p>
-          <RichCodeBlockPreview raw={CODE_BLOCK_PREVIEW_SNIPPET} lang="python" />
+          <RichCodeBlockPreview
+            raw={CODE_BLOCK_PREVIEW_SNIPPET}
+            lang="python"
+          />
         </div>
 
         <SettingRow
@@ -207,7 +213,9 @@ export default function AppearanceSettingsPage() {
             <select
               value={codeBlockTheme}
               onChange={(event) =>
-                void updateCodeBlockTheme(event.target.value as CodeBlockThemeId)
+                void updateCodeBlockTheme(
+                  event.target.value as CodeBlockThemeId,
+                )
               }
               className={`${selectClass} min-w-[220px] pr-8`}
             >
