@@ -37,7 +37,9 @@ type AttachmentSettingsPayload = {
   restart_required_for_larger_uploads: boolean;
 };
 
-function normalizeDraft(payload: AttachmentSettingsPayload): AttachmentSettings {
+function normalizeDraft(
+  payload: AttachmentSettingsPayload,
+): AttachmentSettings {
   return { ...payload.settings };
 }
 
@@ -139,9 +141,7 @@ export default function AttachmentSettingsPage() {
   }, [dirty, save, registerExtension]);
 
   const setField = (field: keyof AttachmentSettings) => (value: number) =>
-    setDraft((current) =>
-      current ? { ...current, [field]: value } : current,
-    );
+    setDraft((current) => (current ? { ...current, [field]: value } : current));
 
   const bounds = payload?.bounds;
 

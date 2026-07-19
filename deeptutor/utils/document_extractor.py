@@ -102,6 +102,7 @@ def _current_limits() -> tuple[int, int, int, int]:
             MAX_EXTRACTED_CHARS_TOTAL,
         )
 
+
 _PDF_MAGIC = b"%PDF-"
 _OOXML_MAGIC = b"PK\x03\x04"
 
