@@ -1,4 +1,8 @@
 import { apiFetch, apiUrl, wsUrl } from "@/lib/api";
+import {
+  runBookSocketOperation,
+  type BookWsEvent,
+} from "@/lib/book-ws-operation";
 import type {
   Book,
   BookDetail,
@@ -9,6 +13,17 @@ import type {
 } from "@/lib/book-types";
 
 const BASE = "/api/v1/book";
+
+function requestOverSocket<T extends BookWsEvent>(
+  message: BookWsEvent,
+  resultType: string,
+  onEvent?: (event: BookWsEvent) => void,
+): Promise<T> {
+  return runBookSocketOperation<T>(
+    () => new WebSocket(wsUrl(`${BASE}/ws`)),
+    { message, resultType, onEvent },
+  );
+}
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await apiFetch(apiUrl(`${BASE}${path}`), {
@@ -59,21 +74,36 @@ export const bookApi = {
       method: "POST",
       body: JSON.stringify(payload),
     }),
-  confirmProposal: (book_id: string, proposal?: BookProposal) =>
-    request<{ book: Book; spine: Spine }>("/books/confirm-proposal", {
-      method: "POST",
-      body: JSON.stringify({ book_id, proposal: proposal ?? null }),
-    }),
+  confirmProposal: (
+    book_id: string,
+    proposal?: BookProposal,
+    onEvent?: (event: BookWsEvent) => void,
+  ) =>
+    requestOverSocket<{
+      type: "confirm_proposal_result";
+      book: Book;
+      spine: Spine;
+    }>(
+      { type: "confirm_proposal", book_id, proposal: proposal ?? null },
+      "confirm_proposal_result",
+      onEvent,
+    ),
   confirmSpine: (book_id: string, spine?: Spine, auto_compile = true) =>
     request<{ pages: Page[] }>("/books/confirm-spine", {
       method: "POST",
       body: JSON.stringify({ book_id, spine: spine ?? null, auto_compile }),
     }),
-  compilePage: (book_id: string, page_id: string, force = false) =>
-    request<{ page: Page }>("/books/compile-page", {
-      method: "POST",
-      body: JSON.stringify({ book_id, page_id, force }),
-    }),
+  compilePage: (
+    book_id: string,
+    page_id: string,
+    force = false,
+    onEvent?: (event: BookWsEvent) => void,
+  ) =>
+    requestOverSocket<{ type: "compile_page_result"; page: Page }>(
+      { type: "compile_page", book_id, page_id, force },
+      "compile_page_result",
+      onEvent,
+    ),
   regenerateBlock: (
     book_id: string,
     page_id: string,
@@ -227,7 +257,7 @@ export async function getLegacyChatSession(
 
 // ── WebSocket helper ─────────────────────────────────────────────────
 
-export type BookWsEvent = { type: string; [key: string]: unknown };
+export type { BookWsEvent } from "@/lib/book-ws-operation";
 
 export function openBookSocket(
   onEvent: (event: BookWsEvent) => void,

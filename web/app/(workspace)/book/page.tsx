@@ -14,7 +14,7 @@ import { Loader2, MessageSquare } from "lucide-react";
 import { notify } from "@/lib/notifications";
 import { useTranslation } from "react-i18next";
 
-import { bookApi, openBookSocket } from "@/lib/book-api";
+import { bookApi, type BookWsEvent } from "@/lib/book-api";
 import type {
   Block,
   BlockType,
@@ -132,12 +132,12 @@ function BookPageInner() {
     return () => clearTimeout(timer);
   }, [toast]);
 
-  // ── Live WS event subscription ─────────────────────────────────────
+  // ── Live WS event handling ─────────────────────────────────────────
 
-  useEffect(() => {
-    if (!selectedBookId) return;
-    const socket = openBookSocket((event) => {
-      // Always feed the progress reducer so the timeline updates live.
+  const handleBookOperationEvent = useCallback(
+    (event: BookWsEvent) => {
+      // Each long-running operation owns its WebSocket. Feed those streamed
+      // events into the shared timeline and refresh persisted milestones.
       dispatchProgress(event);
 
       const meta =
@@ -146,23 +146,18 @@ function BookPageInner() {
         (event.content as string) || (meta.kind as string) || "",
       );
       if (
-        kind === "block_ready" ||
-        kind === "block_error" ||
-        kind === "page_compiled" ||
-        kind === "page_planned" ||
-        kind === "spine_ready"
+        selectedBookId &&
+        (kind === "block_ready" ||
+          kind === "block_error" ||
+          kind === "page_compiled" ||
+          kind === "page_planned" ||
+          kind === "spine_ready")
       ) {
         void loadBookDetail(selectedBookId);
       }
-    });
-    return () => {
-      try {
-        socket.close();
-      } catch {
-        // ignore
-      }
-    };
-  }, [selectedBookId, loadBookDetail]);
+    },
+    [selectedBookId, loadBookDetail],
+  );
 
   // ── Selectors ──────────────────────────────────────────────────────
 
@@ -288,7 +283,11 @@ function BookPageInner() {
     if (!pendingBook) return;
     setConfirmingProposal(true);
     try {
-      const result = await bookApi.confirmProposal(pendingBook.id, edited);
+      const result = await bookApi.confirmProposal(
+        pendingBook.id,
+        edited,
+        handleBookOperationEvent,
+      );
       setPendingBook(result.book);
       setPendingProposal(null);
       await loadBookDetail(result.book.id);
@@ -322,7 +321,12 @@ function BookPageInner() {
       if (!selectedBookId) return;
       setCompilingPageId(pageId);
       try {
-        await bookApi.compilePage(selectedBookId, pageId, force);
+        await bookApi.compilePage(
+          selectedBookId,
+          pageId,
+          force,
+          handleBookOperationEvent,
+        );
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         notify(`Compile failed: ${msg}`, { tone: "error", durationMs: 8000 });
@@ -332,7 +336,7 @@ function BookPageInner() {
         await loadBookDetail(selectedBookId);
       }
     },
-    [selectedBookId, loadBookDetail],
+    [selectedBookId, loadBookDetail, handleBookOperationEvent],
   );
 
   const handleSelectPage = (pageId: string) => {
