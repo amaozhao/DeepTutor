@@ -1299,11 +1299,13 @@ class QuestionPipeline:
         try:
             parsed = json.loads(text)
         except json.JSONDecodeError:
-            obj = re.search(r"\{[\s\S]*\}", text)
-            if obj is None:
+            # raw_decode stops at the first complete value so trailing prose
+            # that itself contains braces cannot poison the slice.
+            start = text.find("{")
+            if start == -1:
                 return {}
             try:
-                parsed = json.loads(obj.group(0))
+                parsed, _end = json.JSONDecoder().raw_decode(text[start:])
             except json.JSONDecodeError:
                 return {}
         return parsed if isinstance(parsed, dict) else {}
