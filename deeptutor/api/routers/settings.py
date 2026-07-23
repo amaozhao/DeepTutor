@@ -112,8 +112,11 @@ class UISettingsUpdate(BaseModel):
     from the frontend.
     """
 
-    theme: str | None = None
-    language: str | None = None
+    # Same Literal domains as UISettings — a None default keeps them optional
+    # for exclude_unset partial merges, but an explicit value is still validated
+    # so PUT /ui cannot persist a theme/language the app can't render.
+    theme: Literal["light", "dark", "glass", "snow"] | None = None
+    language: Literal["zh", "en"] | None = None
     sidebar_description: str | None = None
     sidebar_nav_order: SidebarNavOrder | None = None
     code_block_theme: str | None = None
