@@ -19,10 +19,11 @@ function requestOverSocket<T extends BookWsEvent>(
   resultType: string,
   onEvent?: (event: BookWsEvent) => void,
 ): Promise<T> {
-  return runBookSocketOperation<T>(
-    () => new WebSocket(wsUrl(`${BASE}/ws`)),
-    { message, resultType, onEvent },
-  );
+  return runBookSocketOperation<T>(() => new WebSocket(wsUrl(`${BASE}/ws`)), {
+    message,
+    resultType,
+    onEvent,
+  });
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {

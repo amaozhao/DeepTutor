@@ -67,7 +67,11 @@ def subagent_refs(context: UnifiedContext) -> set[str]:
         if not ref:
             continue
         meta = resolve_kb_metadata(ref)
-        if meta and meta.get("type") == SUBAGENT_KB_TYPE and str(meta.get("agent_kind") or "").strip():
+        if (
+            meta
+            and meta.get("type") == SUBAGENT_KB_TYPE
+            and str(meta.get("agent_kind") or "").strip()
+        ):
             refs.add(ref)
     return refs
 

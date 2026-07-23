@@ -25,6 +25,7 @@ backend means adding a provider here, nothing else changes.
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 import json
 import logging
@@ -293,7 +294,7 @@ async def _mimo_options(*, refresh: bool = False) -> BackendOptions:
 
 
 # One provider per backend kind — the discovery order is the settings order.
-_PROVIDERS = {
+_PROVIDERS: dict[str, Callable[..., Awaitable[BackendOptions]]] = {
     "claude_code": _claude_options,
     "codex": _codex_options,
     "gemini": _gemini_options,

@@ -229,7 +229,10 @@ const GEMINI_PERMISSION_MODES: { value: string; label: Lang }[] = [
   },
   {
     value: "acceptEdits",
-    label: { zh: "自动接受编辑（auto_edit）", en: "Auto-accept edits (auto_edit)" },
+    label: {
+      zh: "自动接受编辑（auto_edit）",
+      en: "Auto-accept edits (auto_edit)",
+    },
   },
   {
     value: "default",
@@ -357,8 +360,7 @@ export function SubagentSettingsEditor({ kind }: { kind: string }) {
     [options, config.effort, save],
   );
 
-  const displayName =
-    options?.display_name ?? DISPLAY_NAMES[kind] ?? kind;
+  const displayName = options?.display_name ?? DISPLAY_NAMES[kind] ?? kind;
 
   return (
     <div>

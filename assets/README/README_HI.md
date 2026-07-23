@@ -61,7 +61,7 @@ DeepTutor एक agent-native learning workspace है जो tutoring, problem
 
 - **हर मोड के लिए एक रनटाइम** — Chat, Quiz, Research, Visualize, Solve और Mastery Path एक ही agent loop पर चलते हैं, इसलिए आप objective बदलते हैं, engine नहीं, और context learner के साथ बना रहता है।
 - **जुड़ा हुआ लर्निंग कॉन्टेक्स्ट** — Knowledge bases, books, Co-Writer drafts, notebooks, question banks, personas, और Memory सभी workflows में उपलब्ध रहते हैं, isolated tools में बंद रहने की बजाय।
-- **सब-एजेंट और Partners** — किसी भी turn से live Claude Code, Codex, या Partner से सलाह लें (या उनकी पिछली conversations import करें), और same brain पर persistent IM companions चलाएं।
+- **सब-एजेंट और Partners** — किसी भी turn से एक live coding CLI (Claude Code, Codex, Gemini, Kimi, opencode, या MiMo) या एक Partner से सलाह लें (या उनकी पिछली conversations import करें), और same brain पर persistent IM companions चलाएं।
 - **मल्टी-इंजन नॉलेज** — LlamaIndex, PageIndex, GraphRAG, LightRAG या linked Obsidian vault के साथ versioned RAG libraries, pluggable document parsing के साथ।
 - **एक्सटेंसिबल टूल्स और स्किल्स** — built-in tools, MCP servers, image / video / voice generation models, और EduHub से installable community skills।
 - **इंस्पेक्टेबल मेमोरी** — L1 traces, L2 surface summaries, और L3 synthesis personalization को visible और editable बनाते हैं, एक Memory Graph के साथ जो हर दावे को उसके साक्ष्य तक trace करता है।
@@ -75,7 +75,7 @@ DeepTutor चार installation paths के साथ आता है। व�
 <details>
 <summary><b>Option 1 — PyPI से Install करें</b> · पूरा local Web app + CLI, clone की जरूरत नहीं</summary>
 
-पूरा local Web app + CLI, clone की जरूरत नहीं। **Python 3.11+** और PATH पर **Node.js 20+** runtime चाहिए (`deeptutor start` packaged Next.js standalone server को spawn करता है)।
+पूरा local Web app + CLI, clone की जरूरत नहीं। **Python 3.11–3.13** और PATH पर **Node.js 20+** runtime चाहिए (`deeptutor start` packaged Next.js standalone server को spawn करता है)।
 
 ```bash
 mkdir -p my-deeptutor && cd my-deeptutor
@@ -93,7 +93,7 @@ deeptutor start    # backend + frontend शुरू करता है; termin
 <details>
 <summary><b>Option 2 — Source से Install करें</b> · checkout के विरुद्ध develop करें</summary>
 
-Checkout के विरुद्ध development के लिए। CI और Docker से match करने के लिए **Python 3.11+** और **Node.js 22 LTS** उपयोग करें।
+Checkout के विरुद्ध development के लिए। CI और Docker से match करने के लिए **Python 3.11–3.13** और **Node.js 22 LTS** उपयोग करें।
 
 ```bash
 git clone https://github.com/HKUDS/DeepTutor.git
@@ -364,7 +364,7 @@ Channel layer schema-driven है और installed extras और configured cre
 <img src="../../assets/figs/web-1.4.6+/myagents/00-overview.png" alt="DeepTutor My Agents workspace" width="900">
 </div>
 
-My Agents दूसरे agents को DeepTutor के लिए context बनाता है, और दो अलग काम करता है। **लाइव एजेंट connect करें** — आपकी machine पर Claude Code या Codex CLI, या आपके Partners में से एक — और इसे chat turn के अंदर से consult करें: DeepTutor actually दूसरे agent को *run* करता है और इसके काम को `consult_subagent` tool के जरिए Activity panel में stream करता है। इसे Agent chip से select करें (या `@` type करें), और set करें कि consult कितने rounds ले सकता है।
+My Agents दूसरे agents को DeepTutor के लिए context बनाता है, और दो अलग काम करता है। **लाइव एजेंट connect करें** — आपकी machine पर एक Claude Code, Codex, Gemini, Kimi, opencode, या MiMo Code CLI, या आपके Partners में से एक — और इसे chat turn के अंदर से consult करें: DeepTutor actually दूसरे agent को *run* करता है और इसके काम को `consult_subagent` tool के जरिए Activity panel में stream करता है। इसे Agent chip से select करें (या `@` type करें), और set करें कि consult कितने rounds ले सकता है।
 
 <div align="center">
 <img src="../../assets/figs/web-1.4.6+/home/08-subagent%20demo%20with%20claude%20code.png" alt="Claude Code subagent को live consult करना" width="900">
@@ -470,7 +470,7 @@ Memory Graph पूरा pyramid दिखाता है — L3 synthesis cen
 <img src="../../assets/figs/web-1.4.6+/settings/00-setting%20overview.png" alt="DeepTutor settings hub" width="900">
 </div>
 
-Settings operational control plane है, एक live status strip (Backend, LLM, Embedding, Search) और प्रत्येक area के लिए एक card के साथ: **Appearance** (theme + UI language), **Network** (API base, ports, CORS), **Models** (LLM, Embedding, Search, Text-to-Speech, Speech-to-Text, Image Generation, Video Generation), **Knowledge Base** (document parsing engine), **Chat** (tools, MCP servers, per-capability parameters, attachment caps), **Partners & Agents** (वे subagents जिन्हें आप turn से consult कर सकते हैं), और **Memory** (consolidator के budgets)।
+Settings operational control plane है, एक live status strip (Backend, LLM, Embedding, Search) और प्रत्येक area के लिए एक card के साथ: **Appearance** (theme, UI language, code-block styling), **Network** (API base, ports, CORS), **Models** (LLM, Embedding, Search, Text-to-Speech, Speech-to-Text, Image Generation, Video Generation), **Knowledge Base** (document parsing engine), **Chat** (tools, MCP servers, per-capability parameters, attachment caps), **Partners & Agents** (वे subagents जिन्हें आप turn से consult कर सकते हैं), और **Memory** (consolidator के budgets)।
 
 <div align="center">
 <img src="../../assets/figs/web-1.4.6+/settings/01-appearance%20settings.png" alt="DeepTutor appearance settings and themes" width="900">

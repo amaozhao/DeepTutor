@@ -48,6 +48,8 @@ def _find_duplicate_preference(doc: Document, section: str, text: str):
         if entry.section == section and _normalize_pref_text(entry.text) == target:
             return entry
     return None
+
+
 _NO_MEMORY = (
     "(No memory available — interact with DeepTutor and update from the Memory page to build one.)"
 )

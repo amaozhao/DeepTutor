@@ -80,10 +80,7 @@ export function runBookSocketOperation<T extends BookWsEvent = BookWsEvent>(
     };
 
     socket.onerror = () => {
-      finish(
-        () => reject(new Error("Book WebSocket connection failed")),
-        true,
-      );
+      finish(() => reject(new Error("Book WebSocket connection failed")), true);
     };
 
     socket.onclose = () => {

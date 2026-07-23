@@ -61,7 +61,7 @@ O DeepTutor é um espaço de trabalho de aprendizagem nativo de agentes que cone
 
 - **Um runtime para todos os modos** — Chat, Quiz, Research, Visualize, Solve e Mastery Path correm no mesmo loop de agente, pelo que muda o objetivo, não o motor, e o contexto acompanha o utilizador.
 - **Contexto de aprendizado conectado** — bases de conhecimento, livros, rascunhos Co-Writer, cadernos, bancos de questões, personas e Memory permanecem disponíveis em todos os fluxos de trabalho em vez de viverem em ferramentas isoladas.
-- **Subagentes e Partners** — consultar um Claude Code, Codex ou Partner ao vivo a partir de qualquer turno (ou importar as suas conversas anteriores), e correr companheiros IM persistentes no mesmo cérebro.
+- **Subagentes e Partners** — consultar uma CLI de programação ao vivo (Claude Code, Codex, Gemini, Kimi, opencode ou MiMo) ou um Partner a partir de qualquer turno (ou importar as suas conversas anteriores), e correr companheiros IM persistentes no mesmo cérebro.
 - **Conhecimento multi-motor** — bibliotecas RAG com versões: LlamaIndex, PageIndex, GraphRAG, LightRAG ou um vault Obsidian vinculado, com análise de documentos conectável.
 - **Ferramentas e habilidades extensíveis** — ferramentas integradas, servidores MCP, modelos de geração de imagem / vídeo / voz e habilidades da comunidade instaláveis do EduHub.
 - **Memória inspecionável** — rastreamentos L1, resumos de superfície L2 e síntese L3 tornam a personalização visível e editável, com um Memory Graph que rastreia cada afirmação até à sua evidência.
@@ -75,7 +75,7 @@ O DeepTutor inclui quatro caminhos de instalação. Todos partilham um layout de
 <details>
 <summary><b>Opção 1 — Instalar a partir do PyPI</b> · aplicação web local completa + CLI, sem necessidade de clonar</summary>
 
-Aplicação web local completa + CLI, sem necessidade de clonar. Requer **Python 3.11+** e um runtime **Node.js 20+** no PATH (o servidor standalone Next.js empacotado é iniciado por `deeptutor start`).
+Aplicação web local completa + CLI, sem necessidade de clonar. Requer **Python 3.11–3.13** e um runtime **Node.js 20+** no PATH (o servidor standalone Next.js empacotado é iniciado por `deeptutor start`).
 
 ```bash
 mkdir -p my-deeptutor && cd my-deeptutor
@@ -93,7 +93,7 @@ Após `deeptutor start`, abra a URL do frontend impressa no terminal — por pre
 <details>
 <summary><b>Opção 2 — Instalar a partir do Código-Fonte</b> · desenvolver num checkout</summary>
 
-Para desenvolvimento num checkout. Use **Python 3.11+** e **Node.js 22 LTS** para coincidir com CI e Docker.
+Para desenvolvimento num checkout. Use **Python 3.11–3.13** e **Node.js 22 LTS** para coincidir com CI e Docker.
 
 ```bash
 git clone https://github.com/HKUDS/DeepTutor.git
@@ -376,7 +376,7 @@ A camada de canais é orientada por esquema e pode ligar-se a plataformas IM com
 <img src="../../assets/figs/web-1.4.6+/myagents/00-overview.png" alt="Espaço de trabalho Meus Agentes DeepTutor" width="900">
 </div>
 
-Meus Agentes transforma outros agentes em contexto para o DeepTutor, e faz duas coisas distintas. **Conectar um agente ao vivo** — um Claude Code ou Codex CLI na sua máquina, ou um dos seus Partners — e consultá-lo a partir de dentro de um turno de chat: o DeepTutor *executa* mesmo o outro agente e transmite o seu trabalho para o painel de Atividade via a ferramenta `consult_subagent`. Selecione-o com o chip de Agente (ou escreva `@`), e defina quantas rondas a consulta pode ter.
+Meus Agentes transforma outros agentes em contexto para o DeepTutor, e faz duas coisas distintas. **Conectar um agente ao vivo** — um Claude Code, Codex, Gemini, Kimi, opencode ou MiMo Code CLI na sua máquina, ou um dos seus Partners — e consultá-lo a partir de dentro de um turno de chat: o DeepTutor *executa* mesmo o outro agente e transmite o seu trabalho para o painel de Atividade via a ferramenta `consult_subagent`. Selecione-o com o chip de Agente (ou escreva `@`), e defina quantas rondas a consulta pode ter.
 
 <div align="center">
 <img src="../../assets/figs/web-1.4.6+/home/08-subagent%20demo%20with%20claude%20code.png" alt="Consultar um subagente Claude Code ao vivo" width="900">
@@ -482,7 +482,7 @@ O Memory Graph mostra toda a pirâmide — síntese L3 no centro, L2 no anel do 
 <img src="../../assets/figs/web-1.4.6+/settings/00-setting%20overview.png" alt="Hub de configurações DeepTutor" width="900">
 </div>
 
-Configurações é o plano de controlo operacional, com uma faixa de estado em tempo real (Backend, LLM, Embedding, Search) e um cartão por área: **Aparência** (tema + idioma da UI), **Rede** (base de API, portas, CORS), **Modelos** (LLM, Embedding, Search, Text-to-Speech, Speech-to-Text, Geração de Imagem, Geração de Vídeo), **Base de Conhecimento** (motor de análise de documentos), **Chat** (ferramentas, servidores MCP, parâmetros por capacidade, limites de anexos), **Partners e Agentes** (os subagentes que pode consultar a partir de um turno) e **Memória** (os orçamentos do consolidador).
+Configurações é o plano de controlo operacional, com uma faixa de estado em tempo real (Backend, LLM, Embedding, Search) e um cartão por área: **Aparência** (tema, idioma da UI, estilo de blocos de código), **Rede** (base de API, portas, CORS), **Modelos** (LLM, Embedding, Search, Text-to-Speech, Speech-to-Text, Geração de Imagem, Geração de Vídeo), **Base de Conhecimento** (motor de análise de documentos), **Chat** (ferramentas, servidores MCP, parâmetros por capacidade, limites de anexos), **Partners e Agentes** (os subagentes que pode consultar a partir de um turno) e **Memória** (os orçamentos do consolidador).
 
 <div align="center">
 <img src="../../assets/figs/web-1.4.6+/settings/01-appearance%20settings.png" alt="Configurações de aparência e temas DeepTutor" width="900">

@@ -134,9 +134,7 @@ class DashScopeMultiModalEmbeddingAdapter(BaseEmbeddingAdapter):
         self._raise_on_error(resp, model_name)
         return self._parse_response(resp, model_name, request)
 
-    async def _embed_text(
-        self, request: EmbeddingRequest, model_name: str
-    ) -> EmbeddingResponse:
+    async def _embed_text(self, request: EmbeddingRequest, model_name: str) -> EmbeddingResponse:
         try:
             from dashscope import TextEmbedding
         except ImportError as exc:

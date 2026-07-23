@@ -60,7 +60,11 @@ def obsidian_vault_refs(context: UnifiedContext) -> set[str]:
         if not ref:
             continue
         meta = resolve_kb_metadata(ref)
-        if meta and meta.get("type") == OBSIDIAN_KB_TYPE and str(meta.get("vault_path") or "").strip():
+        if (
+            meta
+            and meta.get("type") == OBSIDIAN_KB_TYPE
+            and str(meta.get("vault_path") or "").strip()
+        ):
             refs.add(ref)
     return refs
 

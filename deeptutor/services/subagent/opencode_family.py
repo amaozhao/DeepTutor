@@ -320,11 +320,19 @@ class OpencodeFamilyBackend(SubagentBackend):
             tool_state = part.get("state") if isinstance(part.get("state"), dict) else {}
             status = str(tool_state.get("status") or "")
             if status == "running":
-                await emit(EVENT_TOOL, _render_tool_header(part, tool_state), part,
-                           {"merge_id": f"tool:{pid}"} if pid else None)
+                await emit(
+                    EVENT_TOOL,
+                    _render_tool_header(part, tool_state),
+                    part,
+                    {"merge_id": f"tool:{pid}"} if pid else None,
+                )
             elif status == "completed":
-                await emit(EVENT_TOOL, _render_tool_header(part, tool_state), part,
-                           {"merge_id": f"tool:{pid}"} if pid else None)
+                await emit(
+                    EVENT_TOOL,
+                    _render_tool_header(part, tool_state),
+                    part,
+                    {"merge_id": f"tool:{pid}"} if pid else None,
+                )
                 output = _truncate(str(tool_state.get("output") or ""))
                 await emit(EVENT_TOOL_RESULT, output or "(empty result)", part)
             elif status == "error":

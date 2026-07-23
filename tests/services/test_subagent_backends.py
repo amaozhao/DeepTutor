@@ -919,7 +919,9 @@ def test_gemini_command_build_fresh_resume_and_approval_mapping() -> None:
     resumed = backend._build_command(
         "again",
         session_id="s1",
-        config=BackendConfig(system_prompt="be brief", permission_mode="acceptEdits", model="flash"),
+        config=BackendConfig(
+            system_prompt="be brief", permission_mode="acceptEdits", model="flash"
+        ),
     )
     assert resumed[1:3] == ["-p", "again"]  # no instruction prefix on resume
     assert resumed[resumed.index("--approval-mode") + 1] == "auto_edit"
@@ -963,7 +965,12 @@ async def test_gemini_deltas_accumulate_and_tools_split_blocks() -> None:
         {"type": "message", "role": "user", "content": "the echoed prompt"},
         {"type": "message", "role": "assistant", "content": "Let me ", "delta": True},
         {"type": "message", "role": "assistant", "content": "check.", "delta": True},
-        {"type": "tool_use", "tool_name": "Shell", "tool_id": "c1", "parameters": {"command": "ls"}},
+        {
+            "type": "tool_use",
+            "tool_name": "Shell",
+            "tool_id": "c1",
+            "parameters": {"command": "ls"},
+        },
         {"type": "tool_result", "tool_id": "c1", "status": "success", "output": "a.py"},
         {"type": "message", "role": "assistant", "content": "Found it.", "delta": True},
         {"type": "result", "timestamp": "t", "status": "success"},
@@ -1126,17 +1133,35 @@ async def test_opencode_deltas_type_out_and_updated_finalizes() -> None:
         },
         {
             "type": "message.part.delta",
-            "properties": {"sessionID": "ses_1", "messageID": "m1", "partID": "p1", "field": "text", "delta": "Hel"},
+            "properties": {
+                "sessionID": "ses_1",
+                "messageID": "m1",
+                "partID": "p1",
+                "field": "text",
+                "delta": "Hel",
+            },
         },
         {
             "type": "message.part.delta",
-            "properties": {"sessionID": "ses_1", "messageID": "m1", "partID": "p1", "field": "text", "delta": "lo."},
+            "properties": {
+                "sessionID": "ses_1",
+                "messageID": "m1",
+                "partID": "p1",
+                "field": "text",
+                "delta": "lo.",
+            },
         },
         # the completed part carries the authoritative cumulative text
         {
             "type": "message.part.updated",
             "properties": {
-                "part": {"id": "p1", "sessionID": "ses_1", "type": "text", "text": "Hello.", "time": {"start": 1, "end": 2}},
+                "part": {
+                    "id": "p1",
+                    "sessionID": "ses_1",
+                    "type": "text",
+                    "text": "Hello.",
+                    "time": {"start": 1, "end": 2},
+                },
             },
         },
     ]
@@ -1151,11 +1176,19 @@ async def test_opencode_reasoning_deltas_use_reasoning_channel() -> None:
     events = [
         {
             "type": "message.part.updated",
-            "properties": {"part": {"id": "r1", "sessionID": "ses_1", "type": "reasoning", "text": ""}},
+            "properties": {
+                "part": {"id": "r1", "sessionID": "ses_1", "type": "reasoning", "text": ""}
+            },
         },
         {
             "type": "message.part.delta",
-            "properties": {"sessionID": "ses_1", "messageID": "m1", "partID": "r1", "field": "text", "delta": "hmm"},
+            "properties": {
+                "sessionID": "ses_1",
+                "messageID": "m1",
+                "partID": "r1",
+                "field": "text",
+                "delta": "hmm",
+            },
         },
     ]
     _, emitted = await _drive_opencode(events)
@@ -1216,11 +1249,16 @@ async def test_opencode_session_error_and_foreign_session_filtering() -> None:
         # another session's traffic must not leak into this consult's trace
         {
             "type": "message.part.updated",
-            "properties": {"part": {"id": "x", "sessionID": "ses_OTHER", "type": "text", "text": "hi"}},
+            "properties": {
+                "part": {"id": "x", "sessionID": "ses_OTHER", "type": "text", "text": "hi"}
+            },
         },
         {
             "type": "session.error",
-            "properties": {"sessionID": "ses_1", "error": {"name": "ProviderError", "data": {"message": "boom"}}},
+            "properties": {
+                "sessionID": "ses_1",
+                "error": {"name": "ProviderError", "data": {"message": "boom"}},
+            },
         },
     ]
     state, emitted = await _drive_opencode(events)

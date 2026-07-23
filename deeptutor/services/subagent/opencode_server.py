@@ -94,9 +94,7 @@ async def acquire_server(
         return handle
 
 
-async def _spawn(
-    cli_command: str, *, cwd: str, env_prefix: str, username: str
-) -> ServerHandle:
+async def _spawn(cli_command: str, *, cwd: str, env_prefix: str, username: str) -> ServerHandle:
     port = _free_port()
     password = secrets.token_urlsafe(16)
     env = {

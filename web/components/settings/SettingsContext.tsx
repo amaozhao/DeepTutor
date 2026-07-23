@@ -28,7 +28,13 @@ import { setTheme as applyThemePreference } from "@/lib/theme";
 // ─── Domain types ─────────────────────────────────────────────────────────
 
 export type ServiceName =
-  "llm" | "embedding" | "search" | "tts" | "stt" | "imagegen" | "videogen";
+  | "llm"
+  | "embedding"
+  | "search"
+  | "tts"
+  | "stt"
+  | "imagegen"
+  | "videogen";
 
 export type CatalogModel = {
   id: string;
@@ -181,7 +187,10 @@ export type DiagnosticsResult = {
 };
 
 export type ServiceReadiness =
-  "not_configured" | "untested" | "passed" | "failed";
+  | "not_configured"
+  | "untested"
+  | "passed"
+  | "failed";
 
 type SettingsPayload = {
   ui: UiSettings;
