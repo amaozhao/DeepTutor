@@ -12,6 +12,7 @@ run_code_workspace/
 deeptutor/agents/question/reference_papers/
 deeptutor/services/rag/eg_only_for_analysis/
 /docs/*
+!/docs/deployment.md
 !/docs/SAAS_READINESS_REVIEW.md
 !/docs/SAAS_TASK_PLAN.md
 !/docs/SAAS_DEPLOYMENT_RUNBOOK.md
