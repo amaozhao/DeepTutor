@@ -40,6 +40,11 @@ from deeptutor.services.subagent.registry import get_backend
 
 logger = logging.getLogger(__name__)
 
+
+def load_cached_claude_models() -> tuple[list[dict[str, str]], str]:
+    return claude_models.load_cached_claude_models()
+
+
 # Claude Code: curated fallback used until a live ``/model`` sync populates the
 # cache (see ``claude_models``). The aliases + ``[1m]`` variants mirror the
 # ``/model`` picker; the UI also accepts a free-text model name.
@@ -136,7 +141,7 @@ async def _claude_options() -> BackendOptions:
     ok, text = await probe_version([backend.cli_command, "--version"]) if backend else (False, "")
     # Prefer a live-synced catalog (scraped from ``/model``); fall back to the
     # curated aliases until the user syncs.
-    cached, synced_at = claude_models.load_cached_claude_models()
+    cached, synced_at = load_cached_claude_models()
     pairs = [(m["slug"], m["display_name"]) for m in cached] or list(_CLAUDE_MODELS)
     return BackendOptions(
         kind="claude_code",

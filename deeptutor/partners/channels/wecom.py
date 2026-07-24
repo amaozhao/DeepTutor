@@ -16,11 +16,6 @@ from deeptutor.partners.config.paths import get_media_dir
 from deeptutor.partners.config.schema import DeliveryOverrides
 
 WECOM_AVAILABLE = importlib.util.find_spec("wecom_aibot_sdk") is not None
-if WECOM_AVAILABLE:
-    from wecom_aibot_sdk import WSClient, generate_req_id
-else:  # pragma: no cover - optional dependency
-    WSClient = None
-    generate_req_id = None
 
 
 class WecomConfig(DeliveryOverrides):
@@ -80,11 +75,12 @@ class WecomChannel(BaseChannel):
             logger.error("WeCom bot_id and secret not configured")
             return
 
+        sdk = importlib.import_module("wecom_aibot_sdk")
         self._running = True
-        self._generate_req_id = generate_req_id
+        self._generate_req_id = sdk.generate_req_id
 
         # Create WebSocket client
-        self._client = WSClient(
+        self._client = sdk.WSClient(
             self.config.bot_id,
             self.config.secret,
             reconnect_interval=1000,
