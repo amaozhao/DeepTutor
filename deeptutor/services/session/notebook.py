@@ -219,30 +219,17 @@ def find_entry(
     *,
     json_loads: JsonLoads,
 ) -> dict[str, Any] | None:
-    if turn_id is not None:
-        row = conn.execute(
-            """
-            SELECT n.*, COALESCE(s.title, '') AS session_title
-            FROM notebook_entries n
-            LEFT JOIN sessions s ON s.id = n.session_id
-            WHERE n.session_id = ?
-              AND n.turn_id = ?
-              AND n.question_id = ?
-            """,
-            (session_id, turn_id, question_id),
-        ).fetchone()
-    else:
-        row = conn.execute(
-            """
-            SELECT n.*, COALESCE(s.title, '') AS session_title
-            FROM notebook_entries n
-            LEFT JOIN sessions s ON s.id = n.session_id
-            WHERE n.session_id = ? AND n.question_id = ?
-            ORDER BY n.updated_at DESC, n.id DESC
-            LIMIT 1
-            """,
-            (session_id, question_id),
-        ).fetchone()
+    row = conn.execute(
+        """
+        SELECT n.*, COALESCE(s.title, '') AS session_title
+        FROM notebook_entries n
+        LEFT JOIN sessions s ON s.id = n.session_id
+        WHERE n.session_id = ?
+          AND n.turn_id = ?
+          AND n.question_id = ?
+        """,
+        (session_id, turn_id if turn_id is not None else "", question_id),
+    ).fetchone()
     return serialize_entry(row, json_loads=json_loads) if row is not None else None
 
 

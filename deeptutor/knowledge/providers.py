@@ -12,9 +12,9 @@ from deeptutor.services.rag.factory import (
     PAGEINDEX_PROVIDER,
     normalize_provider_name,
 )
-from deeptutor.services.rag.pipelines.graphrag.config import is_graphrag_available
-from deeptutor.services.rag.pipelines.lightrag.config import is_lightrag_available
-from deeptutor.services.rag.pipelines.pageindex.config import is_pageindex_configured
+from deeptutor.services.rag.pipelines.graphrag import config as graphrag_config
+from deeptutor.services.rag.pipelines.lightrag import config as lightrag_config
+from deeptutor.services.rag.pipelines.pageindex import config as pageindex_config
 from deeptutor.services.rag.pipelines.pageindex.pipeline import SUPPORTED_EXTENSIONS
 
 
@@ -26,7 +26,7 @@ def validate_registered_provider(raw_provider: str | None) -> str:
 def assert_provider_ready(provider: str) -> None:
     """Block creating/using a KB whose engine isn't ready."""
     if provider == PAGEINDEX_PROVIDER:
-        if not is_pageindex_configured():
+        if not pageindex_config.is_pageindex_configured():
             raise HTTPException(
                 status_code=400,
                 detail=(
@@ -37,7 +37,7 @@ def assert_provider_ready(provider: str) -> None:
             )
 
     if provider == GRAPHRAG_PROVIDER:
-        if not is_graphrag_available():
+        if not graphrag_config.is_graphrag_available():
             raise HTTPException(
                 status_code=400,
                 detail=(
@@ -48,7 +48,7 @@ def assert_provider_ready(provider: str) -> None:
             )
 
     if provider == LIGHTRAG_PROVIDER:
-        if not is_lightrag_available():
+        if not lightrag_config.is_lightrag_available():
             raise HTTPException(
                 status_code=400,
                 detail=(

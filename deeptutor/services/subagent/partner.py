@@ -41,6 +41,7 @@ from deeptutor.services.subagent.types import (
 
 if TYPE_CHECKING:  # avoid importing the core/partner packages at module load
     from deeptutor.core.stream import StreamEvent
+    from deeptutor.services.partners.manager import PartnerManager
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +50,10 @@ PARTNER_BACKEND_KIND = "partner"
 # Cap on how much of a tool-call's args / a tool result we echo into the trace
 # line — keeps the sidebar readable without dropping the event.
 _MAX_LINE_CHARS = 600
+
+
+def get_partner_manager() -> "PartnerManager":
+    return partners.get_partner_manager()
 
 
 class PartnerBackend(SubagentBackend):
@@ -85,7 +90,7 @@ class PartnerBackend(SubagentBackend):
         if not pid:
             return ConsultResult(success=False, error="No partner is bound to this connection.")
 
-        manager = partners.get_partner_manager()
+        manager = get_partner_manager()
         if not manager.partner_exists(pid):
             return ConsultResult(success=False, error=f"Partner '{pid}' no longer exists.")
 
