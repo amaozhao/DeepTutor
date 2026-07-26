@@ -34,7 +34,7 @@ zulip>=0.9.1,<1.0.0
 # lark-oapi (1.7.1) still requires websockets <16.
 websockets>=15.0.1,<16.0
 # napcat (OneBot v11) media downloads
-aiohttp>=3.14.1,<4.0.0
+aiohttp>=3.14.3,<4.0.0
 # msteams Bot Framework token validation
 PyJWT[crypto]>=2.13.0,<3.0.0
 # weixin QR-code login

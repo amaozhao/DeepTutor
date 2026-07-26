@@ -22,9 +22,9 @@ dependencies = [
     # Core runtime
     "PyYAML>=6.0.3",
     "jinja2>=3.1.6",
-    "openai>=2.45.0",
+    "openai>=2.48.0",
     "tiktoken>=0.13.0",
-    "aiohttp>=3.14.1",
+    "aiohttp>=3.14.3",
     "httpx>=0.28.1",
     # arxiv 4.0.0 requires requests <2.34.
     "requests>=2.33.1,<2.34.0",
@@ -34,14 +34,15 @@ dependencies = [
     "pydantic>=2.13.4",
     "pydantic-settings>=2.14.2",
     "aiosqlite>=0.22.1",
-    "typer>=0.25.1,<0.26.0",  # safety 3.8.1 requires typer <0.26
+    # Docling caps Typer below 0.25; 0.24.2 is the latest compatible release.
+    "typer>=0.24.2,<0.25.0",
     "rich>=15.0.0",
     "prompt_toolkit>=3.0.52",
     "pyte>=0.8.2",  # in-memory terminal emulator: scrape Claude Code's /model TUI on sync
     # Full app dependencies included by default for `pip install deeptutor`.
-    "anthropic>=0.116.0",
-    "dashscope>=1.26.3",
-    "perplexityai>=0.40.0",
+    "anthropic>=0.120.0",
+    "dashscope>=1.26.4",
+    "perplexityai>=0.42.0",
     "oauth-cli-kit>=0.1.6",
     "llama-index>=0.14.23",
     "llama-index-retrievers-bm25>=0.7.1,<0.8.0",
@@ -51,7 +52,8 @@ dependencies = [
     "llama-index-vector-stores-faiss>=0.6.0,<1.0.0",
     "faiss-cpu>=1.14.3,<2.0.0",
     "PyMuPDF>=1.28.0",
-    "numpy>=2.5.1,<3.0.0",
+    "numpy>=2.4.6,<2.5.0; python_version < '3.12'",
+    "numpy>=2.5.1,<3.0.0; python_version >= '3.12'",
     "arxiv>=4.0.0",
     "python-docx>=1.2.0",
     "openpyxl>=3.1.5",
@@ -60,7 +62,7 @@ dependencies = [
     "pdfplumber>=0.11.10,<0.12.0",
     "reportlab>=5.0.0",
     "defusedxml>=0.7.1",
-    "fastapi>=0.139.0",
+    "fastapi>=0.140.0",
     "uvicorn[standard]>=0.51.0",
     # lark-oapi 1.7.1 requires websockets <16.
     "websockets>=15.0.1,<16.0",
@@ -70,7 +72,7 @@ dependencies = [
     "psycopg[binary]>=3.3.4,<4.0.0",
     "pocketbase>=0.17.3",
     "loguru>=0.7.3,<1.0.0",
-    "json-repair>=0.61.4,<1.0.0",
+    "json-repair>=0.61.7,<1.0.0",
     "croniter>=6.2.4,<7.0.0",
 ]
 
@@ -83,9 +85,9 @@ deeptutor = "deeptutor_cli.main:main"
 # under `packaging/deeptutor-cli` uses the same list without Web assets/server deps.
 cli = [
     # LLM provider SDKs
-    "anthropic>=0.116.0",
-    "dashscope>=1.26.3",
-    "perplexityai>=0.40.0",
+    "anthropic>=0.120.0",
+    "dashscope>=1.26.4",
+    "perplexityai>=0.42.0",
     "oauth-cli-kit>=0.1.6",
     # RAG (LlamaIndex)
     "llama-index>=0.14.23",
@@ -96,7 +98,8 @@ cli = [
     "llama-index-vector-stores-faiss>=0.6.0,<1.0.0",
     "faiss-cpu>=1.14.3,<2.0.0",
     "PyMuPDF>=1.28.0",
-    "numpy>=2.5.1,<3.0.0",
+    "numpy>=2.4.6,<2.5.0; python_version < '3.12'",
+    "numpy>=2.5.1,<3.0.0; python_version >= '3.12'",
     "arxiv>=4.0.0",
     # Document text extraction (chat attachments) + office-skill authoring libs
     "python-docx>=1.2.0",
@@ -112,7 +115,7 @@ cli = [
 # already included in the public `deeptutor` wheel.
 server = [
     "deeptutor[cli]",
-    "fastapi>=0.139.0",
+    "fastapi>=0.140.0",
     "uvicorn[standard]>=0.51.0",
     "websockets>=15.0.1,<16.0",
     "python-multipart>=0.0.32",
@@ -121,7 +124,7 @@ server = [
     "psycopg[binary]>=3.3.4,<4.0.0",
     "pocketbase>=0.17.3",
     "loguru>=0.7.3,<1.0.0",
-    "json-repair>=0.61.4,<1.0.0",
+    "json-repair>=0.61.7,<1.0.0",
     "croniter>=6.2.4,<7.0.0",
 ]
 
@@ -148,7 +151,7 @@ partners = [
     # latest lark-oapi (1.7.1) still requires websockets <16.
     "websockets>=15.0.1,<16.0",
     # napcat (OneBot v11) media downloads
-    "aiohttp>=3.14.1,<4.0.0",
+    "aiohttp>=3.14.3,<4.0.0",
     # msteams Bot Framework token validation
     "PyJWT[crypto]>=2.13.0,<3.0.0",
     # weixin QR-code login
@@ -160,7 +163,7 @@ partners = [
 # not a pip dependency. Engines import lazily, so these stay opt-in and an
 # absent engine simply reports unavailable in Settings → Document Parsing.
 parse-markitdown = ["markitdown[pdf,docx,pptx,xlsx]>=0.1.6"]
-parse-docling = ["docling>=2.113.0"]
+parse-docling = ["docling>=2.115.0"]
 # PyMuPDF4LLM rides on PyMuPDF (already a core dep); the extra adds only the
 # thin Markdown layer, so it is the lightest image-capable engine. Pinned to the
 # pre-1.0 line on purpose: 1.x defaults to an onnxruntime layout-AI path that
@@ -179,15 +182,15 @@ tutorbot = ["deeptutor[partners]"]
 # Matrix (Element) channel for partners. Mirrors requirements/matrix.txt.
 # Default Matrix install is non-E2EE so it works without libolm/python-olm.
 matrix = [
-    "matrix-nio>=0.25.2,<1.0.0",
-    "mistune>=3.3.3,<4.0.0",
+    "matrix-nio>=0.26.0,<1.0.0",
+    "mistune>=3.3.4,<4.0.0",
     "nh3>=0.3.6,<1.0.0",
 ]
 
 # Optional Matrix E2EE addon. Mirrors requirements/matrix-e2e.txt and requires libolm.
 matrix-e2e = [
     "deeptutor[matrix]",
-    "matrix-nio[e2e]>=0.25.2,<1.0.0",
+    "matrix-nio[e2e]>=0.26.0,<1.0.0",
 ]
 
 # Math Animator addon (Manim). Mirrors requirements/math-animator.txt.
@@ -201,8 +204,8 @@ math-animator = ["manim>=0.20.1"]
 # release is capped at python <3.14; the `python_version` marker mirrors that
 # so on 3.14+ the extra resolves to a no-op instead of an unsatisfiable hard
 # dep — otherwise pip backtracks deeptutor to the last extra-free version
-# (1.4.5) and silently downgrades. Floor is 3.1.0.
-graphrag = ["graphrag>=3.1.0,<4.0.0; python_version < '3.14'"]
+# (1.4.5) and silently downgrades. Floor is 3.1.1.
+graphrag = ["graphrag>=3.1.1,<4.0.0; python_version < '3.14'"]
 
 # LightRAG knowledge-base engine (HKUDS/LightRAG) with multimodal parsing via
 # RAG-Anything (HKUDS/RAG-Anything). Optional, heavy (pulls MinerU transitively —
@@ -219,7 +222,7 @@ dev = [
     "deeptutor[server]",
     "pytest>=9.1.1",
     "pytest-asyncio>=1.4.0",
-    "pre-commit>=4.6.0",
+    "pre-commit>=4.6.1",
     "safety>=3.8.1,<4.0.0",
     "bandit>=1.9.4",
     # Test fixture builders for document-loader tests. Runtime pulls these via
