@@ -13,6 +13,6 @@
 -r partners.txt
 
 # --- Matrix channel ---
-matrix-nio>=0.25.2,<1.0.0
-mistune>=3.3.3,<4.0.0
+matrix-nio>=0.26.0,<1.0.0
+mistune>=3.3.4,<4.0.0
 nh3>=0.3.6,<1.0.0
