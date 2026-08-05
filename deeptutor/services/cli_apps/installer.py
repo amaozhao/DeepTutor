@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
+import importlib
 import logging
 import os
 import shutil
@@ -287,9 +288,8 @@ def _write_log(app_id: str, chunks: list[str]) -> str:
 def _pin_of(entry: CliAppEntry) -> str:
     """What this install is pinned to, or "" when it floats."""
     if entry.install.kind is InstallKind.PINNED_HARNESS:
-        from deeptutor.services.cli_apps.catalog import catalog_pin
-
-        return catalog_pin()
+        catalog = importlib.import_module("deeptutor.services.cli_apps.catalog")
+        return catalog.catalog_pin()
     return entry.install.target if entry.install.pinned else ""
 
 

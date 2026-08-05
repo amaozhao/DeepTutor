@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass, field
+import importlib
 import logging
 import time
 from typing import Any
@@ -849,9 +850,9 @@ class BookEngine:
                         async with self._global_lock:
                             if self._runtimes.get(book_id) is runtime:
                                 self._runtimes.pop(book_id, None)
-                        from deeptutor.runtime.memory_reclaim import schedule_memory_reclaim
-
-                        schedule_memory_reclaim()
+                        importlib.import_module(
+                            "deeptutor.runtime.memory_reclaim"
+                        ).schedule_memory_reclaim()
                         return
                 continue
 

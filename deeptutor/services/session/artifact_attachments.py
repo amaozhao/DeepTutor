@@ -10,11 +10,13 @@ dedupes by URL.
 Persisting them as assistant-message attachments is what lets the chat UI
 render openable cards (same Viewer path as user uploads) and list them in the
 session activity panel, instead of relying on the model pasting a raw
-``/files/outputs`` URL into its answer.
+``/api/outputs`` URL into its answer.
 """
 
 from __future__ import annotations
 
+import asyncio
+from importlib import import_module
 import logging
 from pathlib import Path
 from typing import Any
@@ -25,11 +27,11 @@ from deeptutor.services.path_service import get_path_service
 
 logger = logging.getLogger(__name__)
 
-# Artifact URLs are minted as ``"/files/outputs/" + quote(relative_path)`` by
+# Artifact URLs are minted as ``"/api/outputs/" + quote(relative_path)`` by
 # ``services.sandbox.artifacts``. The URL is therefore the record's single
 # source of truth for locating the file again — no redundant path field has to
 # be persisted (or leaked to the client).
-_OUTPUTS_URL_PREFIX = "/files/outputs/"
+_OUTPUTS_URL_PREFIX = "/api/outputs/"
 
 # Extensions whose preview drawer has no in-browser renderer and therefore
 # falls back to the extractor's plain text (mirrors the frontend's
@@ -86,16 +88,22 @@ def artifact_attachments(event: StreamEvent) -> list[dict[str, Any]]:
 async def fill_preview_text(attachments: list[dict[str, Any]]) -> None:
     """Populate ``extracted_text`` on artifacts the browser cannot render.
 
-    Mutates *attachments* in place. Each supported binary is parsed in a
-    short-lived process so optional Office libraries release their memory as
-    soon as the preview has been produced.
+    Mutates *attachments* in place. Reading and parsing files is blocking work,
+    so it runs off the event loop; ``to_thread`` copies contextvars, so the
+    per-user path scope resolves the same as on the loop.
     """
     if not any(_needs_preview_text(att) for att in attachments):
         return
-    from deeptutor.utils.document_extractor import (
-        DocumentExtractionError,
-        extract_text_from_path_isolated,
-    )
+    await asyncio.to_thread(_fill_preview_text_sync, attachments)
+
+
+def _needs_preview_text(attachment: dict[str, Any]) -> bool:
+    filename = str(attachment.get("filename") or "")
+    return Path(filename).suffix.lower() in _PREVIEW_TEXT_EXTENSIONS
+
+
+def _fill_preview_text_sync(attachments: list[dict[str, Any]]) -> None:
+    extractor = import_module("deeptutor.utils.document_extractor")
 
     for attachment in attachments:
         if not _needs_preview_text(attachment):
@@ -104,11 +112,10 @@ async def fill_preview_text(attachments: list[dict[str, Any]]) -> None:
         if path is None:
             continue
         try:
-            text = await extract_text_from_path_isolated(
-                path,
-                max_chars=_PREVIEW_TEXT_MAX_CHARS,
-            )
-        except DocumentExtractionError as exc:
+            text = extractor.extract_text_from_path(path, max_chars=_PREVIEW_TEXT_MAX_CHARS)
+        except extractor.DocumentExtractionError as exc:
+            # Unsupported legacy binary, empty deck, oversized file: the card
+            # still opens and offers a download, it just has no inline text.
             logger.debug("No preview text for artifact %s: %s", path, exc)
             continue
         except OSError as exc:
@@ -118,16 +125,11 @@ async def fill_preview_text(attachments: list[dict[str, Any]]) -> None:
             attachment["extracted_text"] = text
 
 
-def _needs_preview_text(attachment: dict[str, Any]) -> bool:
-    filename = str(attachment.get("filename") or "")
-    return Path(filename).suffix.lower() in _PREVIEW_TEXT_EXTENSIONS
-
-
 def _resolve_artifact_path(url: str) -> Path | None:
-    """Map an artifact's ``/files/outputs`` URL back to its file on disk.
+    """Map an artifact's ``/api/outputs`` URL back to its file on disk.
 
     Returns ``None`` unless the result is a real file the outputs endpoint
-    would itself serve — the same guard ``/files/outputs`` applies, so a crafted
+    would itself serve — the same guard ``/api/outputs`` applies, so a crafted
     URL cannot walk this out of the public workspace.
     """
     if not url.startswith(_OUTPUTS_URL_PREFIX):

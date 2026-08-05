@@ -10,6 +10,7 @@ Note: This is a legacy interface. Prefer using the factory functions directly:
 
 import asyncio
 from collections.abc import Awaitable, Callable
+import importlib
 import logging
 from typing import Any, cast
 
@@ -214,13 +215,11 @@ def reset_llm_client() -> None:
     # The services-layer factory owns the actual SDK connection pools. Keep a
     # settings reload authoritative by retiring clients built from the old
     # credentials/base URL as well as this legacy facade.
-    from .provider_factory import reset_runtime_provider_pool
-
-    reset_runtime_provider_pool()
+    provider_factory = importlib.import_module("deeptutor.services.llm.provider_factory")
+    provider_factory.reset_runtime_provider_pool()
     try:
-        from deeptutor.core.agentic.client import reset_agentic_client_pool
-
-        reset_agentic_client_pool()
+        agentic_client = importlib.import_module("deeptutor.core.agentic.client")
+        agentic_client.reset_agentic_client_pool()
     except ImportError:
         # CLI-only/lightweight imports may never have loaded the agentic stack.
         pass

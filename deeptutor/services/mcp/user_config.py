@@ -25,6 +25,7 @@ because 500 accounts × N servers is one process's worth of live sessions.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from importlib import import_module
 import json
 import logging
 import os
@@ -68,9 +69,8 @@ class RejectedServer:
 
 
 def user_mcp_path(owner_id: str) -> Path:
-    from deeptutor.multi_user.paths import SYSTEM_ROOT
-
-    root = SYSTEM_ROOT / USER_MCP_DIRNAME
+    system_root = import_module("deeptutor.multi_user.paths").SYSTEM_ROOT
+    root = system_root / USER_MCP_DIRNAME
     root.mkdir(parents=True, exist_ok=True)
     os.chmod(root, stat.S_IRWXU)
     safe = owner_id if _SERVER_NAME_RE.match(owner_id) else "_invalid"

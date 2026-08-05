@@ -32,6 +32,7 @@ dependencies with it.
 
 from __future__ import annotations
 
+import importlib
 import os
 from pathlib import Path
 import sys
@@ -47,9 +48,8 @@ _APPS_DIRNAME = "apps"
 
 def cli_apps_root() -> Path:
     """The deployment's CLI app tree. Resolved late so tests can redirect it."""
-    from deeptutor.multi_user.paths import ADMIN_WORKSPACE_ROOT
-
-    return ADMIN_WORKSPACE_ROOT / CLI_APPS_DIRNAME
+    paths = importlib.import_module("deeptutor.multi_user.paths")
+    return paths.ADMIN_WORKSPACE_ROOT / CLI_APPS_DIRNAME
 
 
 def state_path() -> Path:

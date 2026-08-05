@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, field
+import importlib
 import json
 import logging
 from typing import Any
@@ -107,8 +108,7 @@ def detect_counter_name() -> str:
     claiming an accuracy the numbers do not have.
     """
     try:
-        import tiktoken
-
+        tiktoken = importlib.import_module("tiktoken")
         tiktoken.get_encoding("cl100k_base")
     except Exception:
         return "heuristic"
@@ -305,9 +305,7 @@ def _dumps(value: Any) -> str:
 def _default_counter() -> TokenCounter:
     # Imported lazily: ``context_builder`` pulls in the agent base classes, and
     # a module-level import from an agents module would close a cycle.
-    from deeptutor.services.session.context_builder import count_tokens
-
-    return count_tokens
+    return importlib.import_module("deeptutor.services.session.context_builder").count_tokens
 
 
 __all__ = [

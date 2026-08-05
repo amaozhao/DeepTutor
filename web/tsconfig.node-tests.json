@@ -13,5 +13,5 @@
       "@/*": ["./*"]
     }
   },
-  "include": ["tests/**/*.ts"]
+  "include": ["next-env.d.ts", "tests/**/*.ts"]
 }

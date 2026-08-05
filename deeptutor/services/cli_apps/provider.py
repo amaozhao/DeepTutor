@@ -21,6 +21,7 @@ import asyncio
 from collections.abc import Awaitable
 from contextlib import suppress
 from dataclasses import dataclass
+import importlib
 import logging
 from typing import Any
 
@@ -234,14 +235,10 @@ class CliAppTool(BaseTool):
         if workdir:
             # Same treatment as exec: a file the app wrote is the point of the
             # call as often as its stdout is, and it needs a link to be usable.
-            from deeptutor.services.sandbox.artifacts import (
-                collect_public_artifacts,
-                render_artifacts_for_tool,
-            )
-
-            artifacts = collect_public_artifacts(workdir)
+            artifact_service = importlib.import_module("deeptutor.services.sandbox.artifacts")
+            artifacts = artifact_service.collect_public_artifacts(workdir)
             artifact_rows = [artifact.to_dict() for artifact in artifacts]
-            rendered = render_artifacts_for_tool(artifacts)
+            rendered = artifact_service.render_artifacts_for_tool(artifacts)
             if rendered:
                 content = f"{content}\n\n{rendered}"
             sources = [

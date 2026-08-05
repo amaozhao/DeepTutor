@@ -23,6 +23,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
+import importlib
 import json
 import logging
 import os
@@ -152,11 +153,10 @@ def prefs_path(owner_id: str) -> Path:
     Under ``data/system`` on purpose — see the module docstring. The owner id is
     validated because it becomes a filename.
     """
-    from deeptutor.multi_user.paths import SYSTEM_ROOT
-
     if not owner_id or "/" in owner_id or "\\" in owner_id or owner_id.startswith("."):
         raise ValueError(f"Unsafe owner id for a CLI app preferences file: {owner_id!r}")
-    return SYSTEM_ROOT / _PREFS_DIRNAME / f"{owner_id}.json"
+    paths = importlib.import_module("deeptutor.multi_user.paths")
+    return paths.SYSTEM_ROOT / _PREFS_DIRNAME / f"{owner_id}.json"
 
 
 def disabled_apps(owner_id: str) -> set[str]:

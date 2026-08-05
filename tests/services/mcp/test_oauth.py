@@ -8,6 +8,7 @@ finish a flow — not about the protocol, which is the SDK's.
 from __future__ import annotations
 
 import asyncio
+import importlib
 import json
 from pathlib import Path
 import stat
@@ -19,7 +20,7 @@ from deeptutor.services.mcp import oauth
 
 @pytest.fixture(autouse=True)
 def roots(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    from deeptutor.multi_user import paths
+    paths = importlib.import_module("deeptutor.multi_user.paths")
 
     admin_root = (tmp_path / "data").resolve()
     monkeypatch.setattr(paths, "ADMIN_WORKSPACE_ROOT", admin_root)
@@ -31,9 +32,10 @@ def roots(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 
 def _token(access: str = "tok-1", refresh: str = "ref-1") -> object:
-    from mcp.shared.auth import OAuthToken
-
-    return OAuthToken(access_token=access, token_type="Bearer", refresh_token=refresh, scope="read")
+    auth_module = importlib.import_module("mcp.shared.auth")
+    return auth_module.OAuthToken(
+        access_token=access, token_type="Bearer", refresh_token=refresh, scope="read"
+    )
 
 
 async def _store(owner: str, server: str, access: str = "tok-1") -> None:
@@ -106,13 +108,12 @@ def test_a_torn_store_reads_as_unauthorized(roots: Path) -> None:
 
 
 def test_a_token_and_a_client_registration_share_one_file(roots: Path) -> None:
-    from mcp.shared.auth import OAuthClientInformationFull
-
+    auth_module = importlib.import_module("mcp.shared.auth")
     storage = oauth.OwnerTokenStorage("u_ada", "notion")
     asyncio.run(storage.set_tokens(_token()))
     asyncio.run(
         storage.set_client_info(
-            OAuthClientInformationFull.model_validate(
+            auth_module.OAuthClientInformationFull.model_validate(
                 {
                     "client_id": "cid-1",
                     "redirect_uris": ["https://x.example/cb"],
@@ -135,13 +136,12 @@ def test_a_token_and_a_client_registration_share_one_file(roots: Path) -> None:
 def test_forget_drops_the_registration_with_the_tokens(roots: Path) -> None:
     """The registration belongs to the consent being discarded; reusing it would
     record a fresh consent against the old identity."""
-    from mcp.shared.auth import OAuthClientInformationFull
-
+    auth_module = importlib.import_module("mcp.shared.auth")
     storage = oauth.OwnerTokenStorage("u_ada", "notion")
     asyncio.run(storage.set_tokens(_token()))
     asyncio.run(
         storage.set_client_info(
-            OAuthClientInformationFull.model_validate(
+            auth_module.OAuthClientInformationFull.model_validate(
                 {"client_id": "cid-1", "redirect_uris": ["https://x.example/cb"]}
             )
         )
@@ -213,8 +213,7 @@ def test_the_non_interactive_form_refuses_to_open_a_consent() -> None:
 
 
 def test_build_auth_produces_an_httpx_auth(roots: Path) -> None:
-    import httpx
-
+    httpx = importlib.import_module("httpx")
     auth = oauth.build_auth(
         server_url="https://mcp.example/mcp",
         server_name="notion",
@@ -232,12 +231,12 @@ def test_the_refusal_names_the_server_that_needs_authorizing() -> None:
 
 def test_a_needs_auth_failure_is_not_classified_as_broken() -> None:
     """The store shows a Connect button for one and an error for the other."""
-    from deeptutor.services.mcp.manager import _needs_authorization
+    manager_module = importlib.import_module("deeptutor.services.mcp.manager")
 
     wrapped = ExceptionGroup("tg", [oauth.AuthorizationRequired("notion")])
 
-    assert _needs_authorization(wrapped) is True
-    assert _needs_authorization(ExceptionGroup("tg", [RuntimeError("500")])) is False
+    assert manager_module._needs_authorization(wrapped) is True
+    assert manager_module._needs_authorization(ExceptionGroup("tg", [RuntimeError("500")])) is False
 
 
 # ── the redirect URI ──────────────────────────────────────────────────────

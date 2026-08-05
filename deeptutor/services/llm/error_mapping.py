@@ -96,6 +96,7 @@ _GLOBAL_RULES: list[MappingRule] = [
     ),
 ]
 
+
 def map_error(exc: Exception, provider: str | None = None) -> LLMError:
     """Map provider-specific errors to unified internal exceptions."""
     # Heuristic check for status codes before rules

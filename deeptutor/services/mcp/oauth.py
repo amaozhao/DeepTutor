@@ -34,6 +34,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
+from importlib import import_module
 import json
 import logging
 import os
@@ -41,6 +42,7 @@ from pathlib import Path
 import re
 import stat
 from typing import TYPE_CHECKING, Any
+from urllib.parse import parse_qs, urlsplit
 
 if TYPE_CHECKING:  # pragma: no cover - import-time typing only
     import httpx
@@ -87,10 +89,9 @@ class OAuthState:
 
 
 def _store_path(owner_id: str, server: str) -> Path:
-    from deeptutor.multi_user.paths import owner_secrets_dir
-
     if not _SAFE_NAME_RE.match(server):
         raise ValueError(f"Unsafe MCP server name for an OAuth store: {server!r}")
+    owner_secrets_dir = import_module("deeptutor.multi_user.paths").owner_secrets_dir
     path = owner_secrets_dir(owner_id)
     for part in _OAUTH_SUBDIR:
         path = path / part
@@ -164,8 +165,7 @@ class OwnerTokenStorage:
         self._server = server
 
     async def get_tokens(self) -> "OAuthToken | None":
-        from mcp.shared.auth import OAuthToken
-
+        OAuthToken = import_module("mcp.shared.auth").OAuthToken
         raw = _read(self._owner, self._server).get("tokens")
         if not isinstance(raw, dict):
             return None
@@ -181,8 +181,7 @@ class OwnerTokenStorage:
         _write(self._owner, self._server, data)
 
     async def get_client_info(self) -> "OAuthClientInformationFull | None":
-        from mcp.shared.auth import OAuthClientInformationFull
-
+        OAuthClientInformationFull = import_module("mcp.shared.auth").OAuthClientInformationFull
         raw = _read(self._owner, self._server).get("client")
         if not isinstance(raw, dict):
             return None
@@ -234,7 +233,7 @@ def oauth_redirect_uri(origin: str = "") -> str:
 
 def client_metadata(redirect_uri: str) -> "Any":
     """How DeepTutor registers itself with an authorization server."""
-    from mcp.shared.auth import OAuthClientMetadata
+    OAuthClientMetadata = import_module("mcp.shared.auth").OAuthClientMetadata
 
     # Validated through the model rather than constructed with bare strings: the
     # SDK's fields are `AnyUrl`, and a redirect URI that is not a URL has to fail
@@ -269,8 +268,7 @@ def build_auth(
     flow. Passing handlers makes it interactive, which only the route that a
     person clicked may do.
     """
-    from mcp.client.auth import OAuthClientProvider
-
+    OAuthClientProvider = import_module("mcp.client.auth").OAuthClientProvider
     refuse_redirect, refuse_callback = refusing_handlers(server_name)
     return OAuthClientProvider(
         server_url=server_url,
@@ -343,8 +341,6 @@ async def begin_authorization(
     means the stored grant is unwanted, and keeping a client registration issued
     for it would record the new consent against the old identity.
     """
-    import asyncio
-
     forget(owner_id, server_name)
     loop = asyncio.get_running_loop()
     url_ready: asyncio.Future[str] = loop.create_future()
@@ -372,8 +368,7 @@ async def begin_authorization(
         # Touching the server is what makes the SDK notice it has no token and
         # start the flow; the request itself is expected to fail or succeed
         # afterwards and its outcome is not interesting here.
-        import httpx
-
+        httpx = import_module("httpx")
         auth = build_auth(
             server_url=server_url,
             server_name=server_name,
@@ -415,8 +410,6 @@ def complete_authorization(state: str, code: str) -> bool:
 
 
 def _state_from(authorize_url: str) -> str:
-    from urllib.parse import parse_qs, urlsplit
-
     return (parse_qs(urlsplit(authorize_url).query).get("state") or [""])[0]
 
 

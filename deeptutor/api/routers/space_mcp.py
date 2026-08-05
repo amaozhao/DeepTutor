@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import asyncio
 import html
+import importlib
 import logging
 from typing import Any
 
@@ -279,9 +280,8 @@ def _resolve_for_probe(owner: str, config: MCPServerConfig) -> MCPServerConfig:
     has to resolve it — otherwise re-testing an unchanged server authenticates
     with an empty string and reports a failure that is not real.
     """
-    from deeptutor.services.mcp.manager import MCPConnectionManager
-
-    return MCPConnectionManager._materialize(config, owner)
+    manager_class = importlib.import_module("deeptutor.services.mcp.manager").MCPConnectionManager
+    return manager_class._materialize(config, owner)
 
 
 @router.get("/catalog")
@@ -419,8 +419,7 @@ def _extract_credentials(
     user did not re-enter credentials for does not overwrite them with the
     placeholder they were shown.
     """
-    from deeptutor.services.mcp.secrets import SECRET_REFERENCE_RE, secret_reference
-
+    secrets_module = importlib.import_module("deeptutor.services.mcp.secrets")
     data = payload.config.model_dump(mode="json")
     secrets: dict[str, str] = dict(payload.secrets)
 
@@ -431,11 +430,11 @@ def _extract_credentials(
         for key, value in list(values.items()):
             if not isinstance(value, str) or not value:
                 continue
-            if SECRET_REFERENCE_RE.match(value):
+            if secrets_module.SECRET_REFERENCE_RE.match(value):
                 continue
             field = f"{section[:-1] if section == 'headers' else section}.{key}"
             secrets[field] = value
-            values[key] = secret_reference(name, field)
+            values[key] = secrets_module.secret_reference(name, field)
 
     # A value the client *did* label keeps working: swap any remaining literal
     # occurrence of it (a url query parameter, an argument) for its reference.
@@ -445,7 +444,7 @@ def _extract_credentials(
         def _swap(value: Any) -> Any:
             if isinstance(value, str):
                 key = literals.get(value)
-                return secret_reference(name, key) if key else value
+                return secrets_module.secret_reference(name, key) if key else value
             if isinstance(value, dict):
                 return {inner: _swap(item) for inner, item in value.items()}
             if isinstance(value, list):

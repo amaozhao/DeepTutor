@@ -10,7 +10,9 @@ property most of this file exists to pin.
 from __future__ import annotations
 
 import asyncio
+import importlib
 from pathlib import Path
+import socket
 
 import pytest
 
@@ -39,7 +41,7 @@ class _FakeSession:
         arguments: dict[str, object],
         progress_callback: object = None,
     ):
-        from mcp import types
+        types = importlib.import_module("mcp.types")
 
         self.progress_callback = progress_callback
         return types.CallToolResult(
@@ -50,7 +52,7 @@ class _FakeSession:
 @pytest.fixture
 def manager(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> MCPConnectionManager:
     """A manager whose connections come up instantly with one fake tool each."""
-    from deeptutor.multi_user import paths
+    paths = importlib.import_module("deeptutor.multi_user.paths")
 
     admin_root = (tmp_path / "data").resolve()
     monkeypatch.setattr(paths, "ADMIN_WORKSPACE_ROOT", admin_root)
@@ -92,16 +94,14 @@ def manager(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> MCPConnectionMan
 
 
 def _write_user_servers(owner: str, **urls: str) -> None:
-    from deeptutor.services.mcp.user_config import save_user_server
+    user_config = importlib.import_module("deeptutor.services.mcp.user_config")
 
     for name, url in urls.items():
-        save_user_server(owner, name, MCPServerConfig(url=url))
+        user_config.save_user_server(owner, name, MCPServerConfig(url=url))
 
 
 @pytest.fixture(autouse=True)
 def _offline_dns(monkeypatch: pytest.MonkeyPatch) -> None:
-    import socket
-
     monkeypatch.setattr(
         "deeptutor.services.mcp.network.socket.getaddrinfo",
         lambda host, *a, **k: [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 0))],
@@ -150,9 +150,9 @@ async def test_a_stdio_entry_in_a_users_file_is_never_connected(
     manager: MCPConnectionManager,
 ) -> None:
     """The API refuses stdio, and so must the loader for a hand-edited file."""
-    from deeptutor.services.mcp.user_config import user_mcp_path
+    user_config = importlib.import_module("deeptutor.services.mcp.user_config")
 
-    user_mcp_path("u_ada").write_text(
+    user_config.user_mcp_path("u_ada").write_text(
         '{"servers": {"local": {"command": "/bin/sh"}}}', encoding="utf-8"
     )
 
@@ -177,12 +177,12 @@ async def test_reload_scope_applies_a_change_immediately(
 
 @pytest.mark.asyncio
 async def test_removing_a_server_disconnects_it(manager: MCPConnectionManager) -> None:
-    from deeptutor.services.mcp.user_config import delete_user_server
+    user_config = importlib.import_module("deeptutor.services.mcp.user_config")
 
     _write_user_servers("u_ada", one="https://one.example/mcp")
     await manager.ensure_scope("u_ada")
 
-    delete_user_server("u_ada", "one")
+    user_config.delete_user_server("u_ada", "one")
     await manager.reload_scope("u_ada")
 
     assert manager.adapters_for("u_ada") == []
@@ -207,7 +207,7 @@ async def test_an_idle_scope_is_dropped_when_another_arrives(
     A deployment with hundreds of accounts must not accumulate them, and the
     next turn for a dropped account simply reconnects.
     """
-    from deeptutor.services.mcp import manager as manager_module
+    manager_module = importlib.import_module("deeptutor.services.mcp.manager")
 
     monkeypatch.setattr(manager_module, "_SCOPE_IDLE_TTL_S", -1.0)
     _write_user_servers("u_ada", one="https://one.example/mcp")
@@ -225,7 +225,7 @@ async def test_an_idle_scope_is_dropped_when_another_arrives(
 async def test_the_scope_count_is_bounded(
     manager: MCPConnectionManager, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from deeptutor.services.mcp import manager as manager_module
+    manager_module = importlib.import_module("deeptutor.services.mcp.manager")
 
     monkeypatch.setattr(manager_module, "_MAX_OWNER_SCOPES", 2)
     for index in range(4):

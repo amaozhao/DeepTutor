@@ -24,6 +24,7 @@ changes afterwards.
 
 from __future__ import annotations
 
+import asyncio
 import ipaddress
 import socket
 from urllib.parse import urlparse
@@ -113,8 +114,6 @@ async def validate_mcp_url_async(url: str, *, strict: bool = False) -> tuple[boo
     — it is every request in the process, so any caller already inside async
     code uses this.
     """
-    import asyncio
-
     return await asyncio.to_thread(validate_mcp_url, url, strict=strict)
 
 
