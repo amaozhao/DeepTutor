@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import base64
 from collections.abc import Iterable
+from importlib import import_module
 import io
 import logging
 from pathlib import Path, PurePosixPath
@@ -216,9 +217,7 @@ def _extract_pdf(data: bytes, filename: str) -> str:
     global fitz, PdfReader, _PypdfNotDecryptedError
     if fitz is _NOT_LOADED:
         try:
-            import fitz as fitz_module  # pymupdf
-
-            fitz = fitz_module
+            fitz = import_module("fitz")  # pymupdf
         except ImportError:  # pragma: no cover
             fitz = None
 
@@ -240,11 +239,8 @@ def _extract_pdf(data: bytes, filename: str) -> str:
 
     if PdfReader is _NOT_LOADED:
         try:
-            from pypdf import PdfReader as reader_type
-            from pypdf.errors import FileNotDecryptedError
-
-            PdfReader = reader_type
-            _PypdfNotDecryptedError = FileNotDecryptedError
+            PdfReader = import_module("pypdf").PdfReader
+            _PypdfNotDecryptedError = import_module("pypdf.errors").FileNotDecryptedError
         except ImportError:  # pragma: no cover
             PdfReader = None
             _PypdfNotDecryptedError = Exception
@@ -281,9 +277,7 @@ def _extract_docx(data: bytes, filename: str) -> str:
     global DocxDocument
     if DocxDocument is _NOT_LOADED:
         try:
-            from docx import Document as document_type
-
-            DocxDocument = document_type
+            DocxDocument = import_module("docx").Document
         except ImportError:  # pragma: no cover
             DocxDocument = None
 
@@ -320,9 +314,7 @@ def _extract_xlsx(data: bytes, filename: str) -> str:
     global load_workbook
     if load_workbook is _NOT_LOADED:
         try:
-            from openpyxl import load_workbook as workbook_loader
-
-            load_workbook = workbook_loader
+            load_workbook = import_module("openpyxl").load_workbook
         except ImportError:  # pragma: no cover
             load_workbook = None
 
@@ -358,9 +350,7 @@ def _extract_pptx(data: bytes, filename: str) -> str:
     global PptxPresentation
     if PptxPresentation is _NOT_LOADED:
         try:
-            from pptx import Presentation as presentation_type
-
-            PptxPresentation = presentation_type
+            PptxPresentation = import_module("pptx").Presentation
         except ImportError:  # pragma: no cover
             PptxPresentation = None
 

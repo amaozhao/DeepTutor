@@ -8,6 +8,7 @@ import zipfile
 import pytest
 
 from deeptutor.core.stream import StreamEvent, StreamEventType
+from deeptutor.services.session import artifact_attachments as artifact_attachments_module
 from deeptutor.services.session.artifact_attachments import (
     _resolve_artifact_path,
     artifact_attachments,
@@ -164,10 +165,12 @@ def _write_minimal_pptx(path: Path, text: str) -> None:
 class TestFillPreviewText:
     @pytest.mark.asyncio
     async def test_pptx_gets_preview_text(self, tmp_path, monkeypatch) -> None:
-        from deeptutor.services.session import artifact_attachments as module
-
         _write_minimal_pptx(tmp_path / "deck.pptx", "Chapter one")
-        monkeypatch.setattr(module, "_resolve_artifact_path", lambda url: tmp_path / "deck.pptx")
+        monkeypatch.setattr(
+            artifact_attachments_module,
+            "_resolve_artifact_path",
+            lambda url: tmp_path / "deck.pptx",
+        )
 
         attachments = [{"filename": "deck.pptx", "url": "/api/outputs/x/deck.pptx"}]
         await fill_preview_text(attachments)
@@ -178,10 +181,12 @@ class TestFillPreviewText:
     async def test_browser_renderable_formats_skipped(self, tmp_path, monkeypatch) -> None:
         # .docx/.xlsx/.pdf render client-side; extracting them would only cost
         # IO and database size.
-        from deeptutor.services.session import artifact_attachments as module
-
         calls: list[str] = []
-        monkeypatch.setattr(module, "_resolve_artifact_path", lambda url: calls.append(url) or None)
+        monkeypatch.setattr(
+            artifact_attachments_module,
+            "_resolve_artifact_path",
+            lambda url: calls.append(url) or None,
+        )
 
         attachments = [
             {"filename": "report.docx", "url": "/api/outputs/x/report.docx"},
@@ -196,10 +201,10 @@ class TestFillPreviewText:
 
     @pytest.mark.asyncio
     async def test_unreadable_artifact_leaves_record_intact(self, tmp_path, monkeypatch) -> None:
-        from deeptutor.services.session import artifact_attachments as module
-
         missing = tmp_path / "gone.pptx"
-        monkeypatch.setattr(module, "_resolve_artifact_path", lambda url: missing)
+        monkeypatch.setattr(
+            artifact_attachments_module, "_resolve_artifact_path", lambda url: missing
+        )
 
         attachments = [{"filename": "gone.pptx", "url": "/api/outputs/x/gone.pptx"}]
         await fill_preview_text(attachments)

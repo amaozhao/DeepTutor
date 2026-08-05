@@ -20,6 +20,8 @@ from pathlib import Path
 
 import pytest
 
+from deeptutor.services.config import HTTP_KEEP_ALIVE_TIMEOUT
+
 _REPO = Path(__file__).resolve().parents[2]
 
 # (path, marker anchoring the uvicorn invocation, flag spellings for this style)
@@ -61,6 +63,4 @@ def test_keep_alive_outlasts_the_proxy_socket_reaper() -> None:
     Matching it is what caused the collision, so a value anywhere near 5s puts
     the two timers back in contention.
     """
-    from deeptutor.services.config import HTTP_KEEP_ALIVE_TIMEOUT
-
     assert HTTP_KEEP_ALIVE_TIMEOUT >= 60, "too close to the proxy's 5s socket reaper"

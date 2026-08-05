@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+import importlib
 import logging
 from typing import Any
 
@@ -210,9 +211,9 @@ class ConnectImaRequest(BaseModel):
 @router.post("/probe-ima")
 async def probe_ima_route(payload: ProbeImaRequest):
     """Test-connect to a Tencent IMA knowledge base before binding it."""
-    from deeptutor.services.rag.pipelines.ima.probe import probe_knowledge_base
-
-    result = await probe_knowledge_base(
+    result = await importlib.import_module(
+        "deeptutor.services.rag.pipelines.ima.probe"
+    ).probe_knowledge_base(
         payload.client_id,
         payload.api_key,
         payload.knowledge_base_id,
@@ -223,13 +224,13 @@ async def probe_ima_route(payload: ProbeImaRequest):
 @router.post("/connect-ima")
 async def connect_ima_route(payload: ConnectImaRequest):
     """Connect a Tencent IMA knowledge base as a retrieval-only pointer."""
-    from deeptutor.services.rag.pipelines.ima.probe import probe_knowledge_base
-
     name = (payload.name or "").strip()
     if not name:
         raise HTTPException(status_code=400, detail="Knowledge base name is required.")
 
-    result = await probe_knowledge_base(
+    result = await importlib.import_module(
+        "deeptutor.services.rag.pipelines.ima.probe"
+    ).probe_knowledge_base(
         payload.client_id,
         payload.api_key,
         payload.knowledge_base_id,

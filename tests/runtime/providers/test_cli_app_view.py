@@ -16,19 +16,19 @@ from typing import Any
 import pytest
 
 from deeptutor.core.tool_protocol import BaseTool, ToolDefinition, ToolResult
+from deeptutor.multi_user import paths
 from deeptutor.runtime.providers import ToolScope
 from deeptutor.runtime.providers.view import build_tool_view
 from deeptutor.services.cli_apps.models import AppRuntime, InstallKind
 from deeptutor.services.cli_apps.paths import abi_stamp
 from deeptutor.services.cli_apps.state import InstalledApp, record_install
+from deeptutor.services.sandbox.spec import ExecResult
 
 REAL_APP = "blender"
 
 
 @pytest.fixture(autouse=True)
 def roots(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    from deeptutor.multi_user import paths
-
     admin_root = (tmp_path / "data").resolve()
     monkeypatch.setattr(paths, "ADMIN_WORKSPACE_ROOT", admin_root)
     monkeypatch.setattr(paths, "USERS_ROOT", admin_root / "users")
@@ -160,8 +160,6 @@ def test_the_app_is_loadable_and_dispatchable(as_admin: None, monkeypatch) -> No
     view = _view(ToolScope(owner_id="admin", session_id="s1"))
 
     async def _fake_run(app, args, **kwargs):
-        from deeptutor.services.sandbox.spec import ExecResult
-
         return ExecResult(stdout="ran")
 
     monkeypatch.setattr("deeptutor.services.cli_apps.provider.run_app", _fake_run)

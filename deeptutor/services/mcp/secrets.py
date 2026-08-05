@@ -22,6 +22,7 @@ opened it.
 
 from __future__ import annotations
 
+from importlib import import_module
 import json
 import logging
 import os
@@ -46,8 +47,7 @@ def secret_reference(server: str, field: str) -> str:
 
 
 def _secrets_dir(owner_id: str) -> Path:
-    from deeptutor.multi_user.paths import owner_secrets_dir
-
+    owner_secrets_dir = import_module("deeptutor.multi_user.paths").owner_secrets_dir
     path = owner_secrets_dir(owner_id)
     for part in _SECRETS_SUBDIR:
         path = path / part

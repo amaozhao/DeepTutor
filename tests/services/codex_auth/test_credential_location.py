@@ -27,7 +27,7 @@ def isolated_roots(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     Also clears the per-process caches so each test resolves the store from
     scratch instead of inheriting an instance an earlier test created.
     """
-    from deeptutor.multi_user import paths
+    paths = __import__("deeptutor.multi_user", fromlist=["paths"]).paths
 
     admin_root = (tmp_path / "data").resolve()
     monkeypatch.setattr(paths, "PROJECT_ROOT", tmp_path)
@@ -45,17 +45,19 @@ def isolated_roots(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 @pytest.fixture
 def as_learner(isolated_roots: Path):
     """Run the body inside a non-admin scope rooted at ``data/users/<uid>``."""
-    from deeptutor.multi_user.context import reset_current_user, set_current_user
-    from deeptutor.multi_user.models import CurrentUser, UserScope
+    context = __import__("deeptutor.multi_user.context", fromlist=["*"])
+    models = __import__("deeptutor.multi_user.models", fromlist=["*"])
 
-    scope = UserScope(kind="user", user_id="u_ada", root=(isolated_roots / "users" / "u_ada"))
-    token = set_current_user(
-        CurrentUser(id="u_ada", username="ada", role="user", scope=scope),
+    scope = models.UserScope(
+        kind="user", user_id="u_ada", root=(isolated_roots / "users" / "u_ada")
+    )
+    token = context.set_current_user(
+        models.CurrentUser(id="u_ada", username="ada", role="user", scope=scope),
     )
     try:
         yield scope
     finally:
-        reset_current_user(token)
+        context.reset_current_user(token)
 
 
 def _seed_store(root: Path) -> Path:
@@ -84,16 +86,20 @@ def test_each_owner_gets_a_distinct_secrets_directory(
     as_learner: object,
 ) -> None:
     """A token authorizes one person's plan, so the relocation must not pool them."""
-    from deeptutor.multi_user.context import reset_current_user, set_current_user
-    from deeptutor.multi_user.models import CurrentUser, UserScope
+    context = __import__("deeptutor.multi_user.context", fromlist=["*"])
+    models = __import__("deeptutor.multi_user.models", fromlist=["*"])
 
     learner_root = service_module._codex_secrets_root()
-    other = UserScope(kind="user", user_id="u_bob", root=(isolated_roots / "users" / "u_bob"))
-    token = set_current_user(CurrentUser(id="u_bob", username="bob", role="user", scope=other))
+    other = models.UserScope(
+        kind="user", user_id="u_bob", root=(isolated_roots / "users" / "u_bob")
+    )
+    token = context.set_current_user(
+        models.CurrentUser(id="u_bob", username="bob", role="user", scope=other)
+    )
     try:
         assert service_module._codex_secrets_root() != learner_root
     finally:
-        reset_current_user(token)
+        context.reset_current_user(token)
 
 
 @pytest.mark.skipif(
@@ -108,16 +114,20 @@ def test_secrets_directory_is_owner_only(isolated_roots: Path, as_learner: objec
 
 def test_partner_turn_uses_its_owner_secrets_directory(isolated_roots: Path) -> None:
     """A partner has a workspace but no account, so it borrows its owner's login."""
-    from deeptutor.multi_user.context import reset_current_user, set_current_user
-    from deeptutor.multi_user.paths import get_owner_secrets_dir
-    from deeptutor.services.partners.scope import partner_user
+    context = __import__("deeptutor.multi_user.context", fromlist=["*"])
+    get_owner_secrets_dir = __import__(
+        "deeptutor.multi_user.paths", fromlist=["get_owner_secrets_dir"]
+    ).get_owner_secrets_dir
+    partner_user = __import__(
+        "deeptutor.services.partners.scope", fromlist=["partner_user"]
+    ).partner_user
 
     owner_secrets = get_owner_secrets_dir()
-    token = set_current_user(partner_user("ada"))
+    token = context.set_current_user(partner_user("ada"))
     try:
         assert service_module._codex_secrets_root() == owner_secrets
     finally:
-        reset_current_user(token)
+        context.reset_current_user(token)
     assert not owner_secrets.is_relative_to(isolated_roots / "partners")
 
 
@@ -139,7 +149,9 @@ def test_legacy_login_is_moved_out_of_the_workspace_tree(
 
 
 def test_relocation_is_idempotent(isolated_roots: Path, as_learner: object) -> None:
-    from deeptutor.multi_user.paths import get_owner_secrets_dir
+    get_owner_secrets_dir = __import__(
+        "deeptutor.multi_user.paths", fromlist=["get_owner_secrets_dir"]
+    ).get_owner_secrets_dir
 
     user_root = service_module._codex_user_root()
     _seed_store(user_root)
@@ -156,7 +168,9 @@ def test_relocation_never_clobbers_a_login_already_at_the_safe_location(
     isolated_roots: Path,
     as_learner: object,
 ) -> None:
-    from deeptutor.multi_user.paths import get_owner_secrets_dir
+    get_owner_secrets_dir = __import__(
+        "deeptutor.multi_user.paths", fromlist=["get_owner_secrets_dir"]
+    ).get_owner_secrets_dir
 
     user_root = service_module._codex_user_root()
     legacy = _seed_store(user_root)
@@ -176,7 +190,9 @@ def test_relocation_ignores_a_symlinked_legacy_directory(
     as_learner: object,
 ) -> None:
     """The legacy path sits in a subtree the sandbox can write, so links are not followed."""
-    from deeptutor.multi_user.paths import get_owner_secrets_dir
+    get_owner_secrets_dir = __import__(
+        "deeptutor.multi_user.paths", fromlist=["get_owner_secrets_dir"]
+    ).get_owner_secrets_dir
 
     user_root = service_module._codex_user_root()
     outside = _seed_store(isolated_roots / "elsewhere")
@@ -205,7 +221,9 @@ def test_relocation_refuses_a_symlinked_private_parent(
     relocate the victim's store into the attacker's secrets directory, where the
     server then uses it as the attacker's login (and the victim is logged out).
     """
-    from deeptutor.multi_user.paths import get_owner_secrets_dir
+    get_owner_secrets_dir = __import__(
+        "deeptutor.multi_user.paths", fromlist=["get_owner_secrets_dir"]
+    ).get_owner_secrets_dir
 
     victim_store = _seed_store(isolated_roots / "users" / "u_victim" / "user")
     attacker_root = service_module._codex_user_root()
@@ -236,7 +254,9 @@ def test_each_account_gets_its_own_secrets_directory_even_via_a_symlinked_root(
     and relative-ising it against ``data/users`` then fails — and failing open
     onto the admin id would pool every account onto the admin's directory.
     """
-    from deeptutor.multi_user.paths import get_owner_secrets_dir
+    get_owner_secrets_dir = __import__(
+        "deeptutor.multi_user.paths", fromlist=["get_owner_secrets_dir"]
+    ).get_owner_secrets_dir
 
     users_root = isolated_roots / "users"
     users_root.mkdir(parents=True, exist_ok=True)

@@ -230,9 +230,7 @@ class KnowledgeTaskStreamManager:
     @staticmethod
     def _schedule_memory_reclaim() -> None:
         """Run after the producing coroutine unwinds and releases job locals."""
-        from deeptutor.runtime.memory_reclaim import schedule_memory_reclaim
-
-        schedule_memory_reclaim()
+        importlib.import_module("deeptutor.runtime.memory_reclaim").schedule_memory_reclaim()
 
     async def stream(self, task_id: str) -> AsyncGenerator[str, None]:
         queue, backlog, loop = self.subscribe(task_id)

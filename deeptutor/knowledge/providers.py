@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib
 from pathlib import Path
 
 from fastapi import HTTPException, UploadFile
@@ -12,10 +13,6 @@ from deeptutor.services.rag.factory import (
     PAGEINDEX_PROVIDER,
     normalize_provider_name,
 )
-from deeptutor.services.rag.pipelines.graphrag import config as graphrag_config
-from deeptutor.services.rag.pipelines.lightrag import config as lightrag_config
-from deeptutor.services.rag.pipelines.pageindex import config as pageindex_config
-from deeptutor.services.rag.pipelines.pageindex.pipeline import SUPPORTED_EXTENSIONS
 
 
 def validate_registered_provider(raw_provider: str | None) -> str:
@@ -26,6 +23,9 @@ def validate_registered_provider(raw_provider: str | None) -> str:
 def assert_provider_ready(provider: str) -> None:
     """Block creating/using a KB whose engine isn't ready."""
     if provider == PAGEINDEX_PROVIDER:
+        pageindex_config = importlib.import_module(
+            "deeptutor.services.rag.pipelines.pageindex.config"
+        )
         if not pageindex_config.is_pageindex_configured():
             raise HTTPException(
                 status_code=400,
@@ -37,6 +37,9 @@ def assert_provider_ready(provider: str) -> None:
             )
 
     if provider == GRAPHRAG_PROVIDER:
+        graphrag_config = importlib.import_module(
+            "deeptutor.services.rag.pipelines.graphrag.config"
+        )
         if not graphrag_config.is_graphrag_available():
             raise HTTPException(
                 status_code=400,
@@ -48,6 +51,9 @@ def assert_provider_ready(provider: str) -> None:
             )
 
     if provider == LIGHTRAG_PROVIDER:
+        lightrag_config = importlib.import_module(
+            "deeptutor.services.rag.pipelines.lightrag.config"
+        )
         if not lightrag_config.is_lightrag_available():
             raise HTTPException(
                 status_code=400,
@@ -64,15 +70,18 @@ def enforce_provider_formats(provider: str, files: list[UploadFile]) -> None:
     if provider != PAGEINDEX_PROVIDER:
         return
 
+    supported_extensions = importlib.import_module(
+        "deeptutor.services.rag.pipelines.pageindex.pipeline"
+    ).SUPPORTED_EXTENSIONS
     unsupported = [
         f.filename
         for f in files
         if f.filename
         and not f.filename.lower().endswith(".zip")
-        and Path(f.filename).suffix.lower() not in SUPPORTED_EXTENSIONS
+        and Path(f.filename).suffix.lower() not in supported_extensions
     ]
     if unsupported:
-        supported = ", ".join(sorted(SUPPORTED_EXTENSIONS))
+        supported = ", ".join(sorted(supported_extensions))
         raise HTTPException(
             status_code=400,
             detail=(

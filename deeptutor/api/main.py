@@ -1,4 +1,5 @@
 from contextlib import asynccontextmanager
+import importlib
 import logging
 import sys
 
@@ -246,9 +247,7 @@ async def lifespan(app: FastAPI):
     # own task, so they must be torn down here rather than left to interpreter
     # exit (stdio servers would otherwise leak child processes).
     try:
-        from deeptutor.services.mcp import get_mcp_manager
-
-        await get_mcp_manager().shutdown()
+        await importlib.import_module("deeptutor.services.mcp").get_mcp_manager().shutdown()
         logger.info("MCP connections closed")
     except Exception as e:
         logger.warning(f"Failed to close MCP connections: {e}")
@@ -256,17 +255,15 @@ async def lifespan(app: FastAPI):
     # Close pooled LLM SDK clients so their keep-alive sockets and transports
     # are released deterministically instead of waiting for interpreter GC.
     try:
-        from deeptutor.services.llm.provider_factory import close_runtime_provider_pool
-
-        await close_runtime_provider_pool()
+        await importlib.import_module(
+            "deeptutor.services.llm.provider_factory"
+        ).close_runtime_provider_pool()
         logger.info("LLM provider pool closed")
     except Exception as e:
         logger.warning(f"Failed to close LLM provider pool: {e}")
 
     try:
-        from deeptutor.core.agentic.client import close_agentic_client_pool
-
-        await close_agentic_client_pool()
+        await importlib.import_module("deeptutor.core.agentic.client").close_agentic_client_pool()
         logger.info("Agentic LLM client pool closed")
     except Exception as e:
         logger.warning(f"Failed to close agentic LLM client pool: {e}")
@@ -395,6 +392,7 @@ app.mount(
     SafeOutputStaticFiles(directory=str(user_dir), path_service=path_service),
     name="outputs",
 )
+
 
 def _install_routers(api: FastAPI) -> None:
     # Auth router is public — login/logout/register/status require no token.

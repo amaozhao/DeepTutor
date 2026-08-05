@@ -13,6 +13,7 @@ the user's IMA library.
 
 from __future__ import annotations
 
+from importlib import import_module
 import logging
 from typing import Any, Dict, List, Optional
 
@@ -46,8 +47,7 @@ class ImaPipeline:
     def _client(self, config):
         if self._client_factory is not None:
             return self._client_factory(config)
-        from .client import ImaClient
-
+        ImaClient = import_module(".client", __package__).ImaClient
         return ImaClient(config)
 
     @staticmethod

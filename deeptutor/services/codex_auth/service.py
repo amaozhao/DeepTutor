@@ -724,9 +724,8 @@ def _codex_secrets_root() -> Path:
     is mounted for nobody, so the store now lives under the owner's directory
     there instead, keyed by the same owner resolution as before.
     """
-    from deeptutor.multi_user.paths import get_owner_secrets_dir
-
-    secrets_root = get_owner_secrets_dir()
+    paths = importlib.import_module("deeptutor.multi_user.paths")
+    secrets_root = paths.get_owner_secrets_dir()
     key = str(secrets_root)
     if key not in _RELOCATED_SECRET_ROOTS:
         # Memoised only on success: a relocation that failed (a permission

@@ -6,6 +6,7 @@ Handles knowledge base CRUD operations, file uploads, and initialization.
 """
 
 from datetime import datetime
+import importlib
 import logging
 import mimetypes
 from pathlib import Path
@@ -75,20 +76,16 @@ from deeptutor.multi_user.knowledge_access import (
     list_visible_knowledge_bases as list_visible_kb_access,
 )
 from deeptutor.services.config import PROJECT_ROOT, load_config_with_main
+
+# Initialize logger with config
+from deeptutor.services.rag import embedding_signature
 from deeptutor.services.rag.factory import (
     DEFAULT_PROVIDER,
     provider_uses_embedding_versions,
 )
-from deeptutor.services.rag.index_versioning import find_matching_version
-
-try:
-    from deeptutor.services.rag.pipelines.llamaindex.storage import validate_storage_embeddings
-except ModuleNotFoundError:  # pragma: no cover - optional llamaindex extra
-    validate_storage_embeddings = None
-# Initialize logger with config
-from deeptutor.services.rag import embedding_signature
 from deeptutor.services.rag.file_routing import FileTypeRouter
 from deeptutor.services.rag.index_probe import inspect_provider_version
+from deeptutor.services.rag.index_versioning import find_matching_version
 from deeptutor.utils.document_extractor import (
     MAX_EXTRACTED_CHARS_PER_DOC,
     DocumentExtractionError,
@@ -268,8 +265,6 @@ def _matching_index_is_valid(kb_name: str, matching_version: dict | None) -> boo
     if not matching_version:
         return False
     try:
-        if validate_storage_embeddings is None:
-            return False
         probe = inspect_provider_version(matching_version, DEFAULT_PROVIDER)
         if not probe.ready:
             logger.warning(
@@ -278,7 +273,9 @@ def _matching_index_is_valid(kb_name: str, matching_version: dict | None) -> boo
                 probe.failure_summary or probe.diagnostics,
             )
             return False
-        validate_storage_embeddings(Path(str(matching_version["storage_path"])))
+        importlib.import_module(
+            "deeptutor.services.rag.pipelines.llamaindex.storage"
+        ).validate_storage_embeddings(Path(str(matching_version["storage_path"])))
         return True
     except Exception as exc:
         logger.warning(

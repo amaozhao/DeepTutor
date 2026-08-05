@@ -24,6 +24,7 @@ only switch off something it was granted, never switch on something it was not.
 
 from __future__ import annotations
 
+import importlib
 import logging
 from typing import Any
 
@@ -139,9 +140,9 @@ async def install(app_id: str) -> dict[str, Any]:
     if entry is None:
         raise HTTPException(status_code=404, detail=t("cli_apps.not_in_catalog", id=app_id))
 
-    from deeptutor.services.cli_apps.installer import install_app
-
-    outcome = await install_app(entry)
+    outcome = await importlib.import_module("deeptutor.services.cli_apps.installer").install_app(
+        entry
+    )
     if not outcome.ok:
         raise HTTPException(
             status_code=400,
@@ -162,9 +163,7 @@ async def install(app_id: str) -> dict[str, Any]:
 @router.delete("/apps/{app_id}", dependencies=[Depends(require_admin)])
 async def uninstall(app_id: str) -> dict[str, Any]:
     """Remove one app from the deployment. Administrator only."""
-    from deeptutor.services.cli_apps.installer import uninstall_app
-
-    await uninstall_app(app_id)
+    await importlib.import_module("deeptutor.services.cli_apps.installer").uninstall_app(app_id)
     return await list_apps()
 
 

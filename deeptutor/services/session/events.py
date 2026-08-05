@@ -89,9 +89,7 @@ def resolve_turn_outcome(
     for event in reversed(assistant_events):
         metadata = event.get("metadata")
         metadata = metadata if isinstance(metadata, dict) else {}
-        if event.get("type") != StreamEventType.ERROR.value or not metadata.get(
-            "turn_terminal"
-        ):
+        if event.get("type") != StreamEventType.ERROR.value or not metadata.get("turn_terminal"):
             continue
         terminal_status = str(metadata.get("status") or "failed")
         status = terminal_status if terminal_status in _FINAL_TURN_STATUSES else "failed"

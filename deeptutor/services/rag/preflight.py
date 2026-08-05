@@ -10,11 +10,8 @@ every *required* (non-optional) check passes.
 
 from __future__ import annotations
 
+import importlib
 from typing import Any
-
-from deeptutor.services.config import resolve_llm_runtime_config
-from deeptutor.services.embedding import get_embedding_config
-from deeptutor.services.llm.capabilities import supports_vision
 
 from .factory import (
     DEFAULT_PROVIDER,
@@ -23,14 +20,6 @@ from .factory import (
     PAGEINDEX_PROVIDER,
     normalize_provider_name,
 )
-from .pipelines.graphrag.config import is_graphrag_available
-from .pipelines.lightrag.config import is_lightrag_available
-from .pipelines.pageindex.config import DEFAULT_API_BASE_URL, get_pageindex_config
-
-try:
-    from .pipelines.llamaindex.retrievers import _import_bm25_retriever
-except ModuleNotFoundError:  # pragma: no cover - optional llamaindex extra
-    _import_bm25_retriever = None
 
 
 def _check(key: str, label: str, ok: bool, detail: str = "", *, optional: bool = False) -> dict:
@@ -40,7 +29,7 @@ def _check(key: str, label: str, ok: bool, detail: str = "", *, optional: bool =
 def _active_chat_model() -> tuple[str | None, str]:
     """Return ``(model, binding)`` for the active chat LLM, or ``(None, "")``."""
     try:
-        cfg = resolve_llm_runtime_config()
+        cfg = importlib.import_module("deeptutor.services.config").resolve_llm_runtime_config()
         return getattr(cfg, "model", None), str(getattr(cfg, "binding", "") or "")
     except Exception:
         return None, ""
@@ -49,7 +38,7 @@ def _active_chat_model() -> tuple[str | None, str]:
 def _active_embedding() -> tuple[str | None, int]:
     """Return ``(model, dim)`` for the active embedding model, or ``(None, 0)``."""
     try:
-        cfg = get_embedding_config()
+        cfg = importlib.import_module("deeptutor.services.embedding").get_embedding_config()
         return getattr(cfg, "model", None), int(getattr(cfg, "dim", 0) or 0)
     except Exception:
         return None, 0
@@ -66,7 +55,10 @@ def _llamaindex_preflight() -> dict:
         )
     ]
     try:
-        bm25_ok = _import_bm25_retriever is not None and _import_bm25_retriever() is not None
+        retrievers = importlib.import_module(
+            "deeptutor.services.rag.pipelines.llamaindex.retrievers"
+        )
+        bm25_ok = retrievers._import_bm25_retriever() is not None
     except Exception:
         bm25_ok = False
     checks.append(
@@ -83,9 +75,12 @@ def _llamaindex_preflight() -> dict:
 
 def _pageindex_preflight() -> dict:
     try:
-        cfg = get_pageindex_config(require_key=False)
+        pageindex_config = importlib.import_module(
+            "deeptutor.services.rag.pipelines.pageindex.config"
+        )
+        cfg = pageindex_config.get_pageindex_config(require_key=False)
         configured = bool(cfg.api_key)
-        base = cfg.api_base_url or DEFAULT_API_BASE_URL
+        base = cfg.api_base_url or pageindex_config.DEFAULT_API_BASE_URL
     except Exception:
         configured, base = False, ""
     return _finalize(
@@ -102,7 +97,9 @@ def _pageindex_preflight() -> dict:
 
 def _graphrag_preflight() -> dict:
     try:
-        installed = is_graphrag_available()
+        installed = importlib.import_module(
+            "deeptutor.services.rag.pipelines.graphrag.config"
+        ).is_graphrag_available()
     except Exception:
         installed = False
     emb_model, emb_dim = _active_embedding()
@@ -133,7 +130,9 @@ def _graphrag_preflight() -> dict:
 
 def _lightrag_preflight() -> dict:
     try:
-        installed = is_lightrag_available()
+        installed = importlib.import_module(
+            "deeptutor.services.rag.pipelines.lightrag.config"
+        ).is_lightrag_available()
     except Exception:
         installed = False
     emb_model, emb_dim = _active_embedding()
@@ -141,7 +140,9 @@ def _lightrag_preflight() -> dict:
     vision_ok = False
     if chat_model:
         try:
-            vision_ok = supports_vision(binding, chat_model)
+            vision_ok = importlib.import_module(
+                "deeptutor.services.llm.capabilities"
+            ).supports_vision(binding, chat_model)
         except Exception:
             vision_ok = False
     return _finalize(

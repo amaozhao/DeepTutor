@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib
 import json
 from pathlib import Path
 from typing import Any
@@ -539,7 +540,7 @@ def test_the_catalog_is_parsed_once(monkeypatch: pytest.MonkeyPatch) -> None:
 
 @pytest.fixture
 def system_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    from deeptutor.multi_user import paths
+    paths = importlib.import_module("deeptutor.multi_user.paths")
 
     root = (tmp_path / "data" / "system").resolve()
     monkeypatch.setattr(paths, "SYSTEM_ROOT", root)
@@ -559,15 +560,15 @@ def test_a_query_parameter_entry_resolves_end_to_end(entry_id: str, system_root:
     path that would silently transmit the literal placeholder to the vendor and
     fail with an opaque 401 at tool-call time.
     """
-    from deeptutor.services.mcp.manager import MCPConnectionManager
-    from deeptutor.services.mcp.secrets import store_secrets
+    manager_module = importlib.import_module("deeptutor.services.mcp.manager")
+    secrets_module = importlib.import_module("deeptutor.services.mcp.secrets")
 
     entry = get_entry(entry_id)
     assert entry is not None
     built = build_server_config(entry, dict.fromkeys((f.key for f in entry.fields), "tok-1"))
-    store_secrets("u_ada", entry.id, built.secret_values)
+    secrets_module.store_secrets("u_ada", entry.id, built.secret_values)
 
-    materialized = MCPConnectionManager._materialize(built.config, "u_ada")
+    materialized = manager_module.MCPConnectionManager._materialize(built.config, "u_ada")
 
     assert "${secret:" not in materialized.url, entry_id
     assert "tok-1" in materialized.url, entry_id
@@ -575,15 +576,15 @@ def test_a_query_parameter_entry_resolves_end_to_end(entry_id: str, system_root:
 
 def test_every_vendored_secret_resolves_wherever_it_was_targeted(system_root: Path) -> None:
     """Sweep the whole catalog: no entry may keep a reference after resolution."""
-    from deeptutor.services.mcp.manager import MCPConnectionManager
-    from deeptutor.services.mcp.secrets import store_secrets
+    manager_module = importlib.import_module("deeptutor.services.mcp.manager")
+    secrets_module = importlib.import_module("deeptutor.services.mcp.secrets")
 
     for entry in load_catalog():
         if not entry.fields:
             continue
         built = build_server_config(entry, dict.fromkeys((f.key for f in entry.fields), "tok-1"))
-        store_secrets("u_ada", entry.id, built.secret_values)
-        materialized = MCPConnectionManager._materialize(built.config, "u_ada")
+        secrets_module.store_secrets("u_ada", entry.id, built.secret_values)
+        materialized = manager_module.MCPConnectionManager._materialize(built.config, "u_ada")
         serialized = json.dumps(materialized.model_dump(mode="json"))
         assert "${secret:" not in serialized, entry.id
 

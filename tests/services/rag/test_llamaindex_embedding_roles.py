@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+import importlib
 from types import SimpleNamespace
 
 
 def test_custom_embedding_passes_query_and_document_roles(monkeypatch) -> None:
-    from deeptutor.services.rag.pipelines.llamaindex import (
-        embedding_adapter as embedding_module,
+    embedding_module = importlib.import_module(
+        "deeptutor.services.rag.pipelines.llamaindex.embedding_adapter"
     )
 
     class _FakeClient:

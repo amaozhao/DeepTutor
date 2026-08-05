@@ -5,7 +5,10 @@ from typing import Any
 
 import pytest
 
+from deeptutor import logging as deeptutor_logging
 from deeptutor.api import run_server
+from deeptutor.runtime import mode
+from deeptutor.services import setup
 
 
 @pytest.fixture
@@ -15,10 +18,6 @@ def uvicorn_kwargs(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> dict[str,
     monkeypatch.setattr(run_server, "get_runtime_home", lambda: tmp_path)
     monkeypatch.setattr(run_server.os, "chdir", lambda _path: None)
     monkeypatch.setattr(run_server.uvicorn, "run", lambda *args, **kwargs: captured.update(kwargs))
-
-    from deeptutor import logging as deeptutor_logging
-    from deeptutor.runtime import mode
-    from deeptutor.services import setup
 
     monkeypatch.setattr(deeptutor_logging, "configure_logging", lambda: None)
     monkeypatch.setattr(mode, "set_mode", lambda _mode: None)

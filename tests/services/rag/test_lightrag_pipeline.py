@@ -10,6 +10,7 @@ index/search orchestration without the heavy deps.
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import inspect
 import json
 from pathlib import Path
@@ -167,8 +168,6 @@ def _install_fake_lightrag(monkeypatch) -> None:
 
 def test_fake_embedding_func_matches_the_real_dataclass() -> None:
     """Guard against the stub drifting from the dependency it stands in for."""
-    import dataclasses
-
     lightrag_utils = pytest.importorskip("lightrag.utils")
 
     real_fields = {field.name for field in dataclasses.fields(lightrag_utils.EmbeddingFunc)}

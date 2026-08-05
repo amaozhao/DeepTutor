@@ -5,10 +5,18 @@ from types import SimpleNamespace
 
 from rich.console import Console
 
+from deeptutor.services.config.provider_runtime import EMBEDDING_PROVIDERS
+from deeptutor_cli import init_wizard
+from deeptutor_cli.init_cmd import _embedding_default_endpoint
+from deeptutor_cli.init_wizard import (
+    EMBEDDING_FALLBACK_MODELS,
+    EmbeddingChoice,
+    _derive_embedding_models_url,
+    render_review_panel,
+)
+
 
 def test_gemini_embedding_fallback_prefers_stable_embedding2() -> None:
-    from deeptutor_cli.init_wizard import EMBEDDING_FALLBACK_MODELS
-
     # Embedding 2 leads, but 001 stays offered: it is still a current model and
     # dropping it left the offline wizard with a single choice.
     assert EMBEDDING_FALLBACK_MODELS["gemini"] == (
@@ -18,9 +26,6 @@ def test_gemini_embedding_fallback_prefers_stable_embedding2() -> None:
 
 
 def test_embedding_setup_preserves_saved_endpoint_for_same_provider() -> None:
-    from deeptutor.services.config.provider_runtime import EMBEDDING_PROVIDERS
-    from deeptutor_cli.init_cmd import _embedding_default_endpoint
-
     saved = "https://proxy.example.com/google/v1/embeddings"
     endpoint = _embedding_default_endpoint(
         provider="gemini",
@@ -40,8 +45,6 @@ def test_embedding_setup_preserves_saved_endpoint_for_same_provider() -> None:
 
 
 def test_gemini_native_embedding_endpoint_derives_native_models_url() -> None:
-    from deeptutor_cli.init_wizard import _derive_embedding_models_url
-
     assert (
         _derive_embedding_models_url(
             (
@@ -55,8 +58,6 @@ def test_gemini_native_embedding_endpoint_derives_native_models_url() -> None:
 
 
 def test_gemini_models_url_preserves_custom_gateway_path_prefix() -> None:
-    from deeptutor_cli.init_wizard import _derive_embedding_models_url
-
     assert (
         _derive_embedding_models_url(
             (
@@ -115,8 +116,6 @@ class _FakeClient:
 
 
 def test_fetch_gemini_models_uses_auth_matching_endpoint_host(monkeypatch) -> None:
-    from deeptutor_cli import init_wizard
-
     _FakeClient.captured = []
     monkeypatch.setattr(init_wizard.httpx, "Client", _FakeClient)
     output = StringIO()
@@ -154,8 +153,6 @@ def test_fetch_gemini_models_uses_auth_matching_endpoint_host(monkeypatch) -> No
 
 
 def test_review_panel_redacts_embedding_endpoint_query_key() -> None:
-    from deeptutor_cli.init_wizard import EmbeddingChoice, render_review_panel
-
     output = StringIO()
     console = Console(file=output, force_terminal=False, width=160)
     render_review_panel(
@@ -184,8 +181,6 @@ def test_review_panel_redacts_embedding_endpoint_query_key() -> None:
 
 
 def test_probe_embedding_uses_gemini_native_request_shape(monkeypatch) -> None:
-    from deeptutor_cli import init_wizard
-
     _FakeClient.captured = []
     monkeypatch.setattr(init_wizard.httpx, "Client", _FakeClient)
 
@@ -216,8 +211,6 @@ def test_probe_embedding_uses_gemini_native_request_shape(monkeypatch) -> None:
 
 
 def test_probe_embedding_detects_native_custom_url_with_query(monkeypatch) -> None:
-    from deeptutor_cli import init_wizard
-
     _FakeClient.captured = []
     monkeypatch.setattr(init_wizard.httpx, "Client", _FakeClient)
 

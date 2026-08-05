@@ -12,6 +12,7 @@ from typing import Any
 
 import pytest
 
+from deeptutor.services.mcp.config import MCPServerConfig
 from deeptutor.services.mcp.manager import (
     MCPConnectionManager,
     MCPToolAdapter,
@@ -114,15 +115,12 @@ class _Session:
     async def call_tool(
         self, tool_name: str, arguments: dict[str, Any], progress_callback: object = None
     ):
-        from mcp import types
-
+        types = __import__("mcp.types", fromlist=["types"])
         self.progress_callback = progress_callback
         return types.CallToolResult(content=[types.TextContent(type="text", text="done")])
 
 
 def _adapter(manager: MCPConnectionManager, session: _Session) -> MCPToolAdapter:
-    from deeptutor.services.mcp.config import MCPServerConfig
-
     conn = _ServerConnection(
         name="crawler",
         config=MCPServerConfig(url="https://crawler.example/mcp"),
@@ -216,8 +214,6 @@ def test_a_wrapped_transport_failure_reports_the_real_cause() -> None:
     failure arrives wrapped. Reporting the wrapper produced *"ExceptionGroup:
     unhandled errors in a TaskGroup (1 sub-exception)"* under a server's row —
     which is what someone whose URL needs OAuth used to be told."""
-    from deeptutor.services.mcp.manager import describe_connect_failure
-
     wrapped = ExceptionGroup("unhandled errors in a TaskGroup", [RuntimeError("401 Unauthorized")])
 
     described = describe_connect_failure(wrapped)
@@ -236,16 +232,12 @@ def test_nested_groups_are_flattened() -> None:
 def test_the_same_cause_repeated_is_said_once() -> None:
     """A retrying transport contributes the same error several times, and "401"
     three times is not more informative than once."""
-    from deeptutor.services.mcp.manager import describe_connect_failure
-
     group = ExceptionGroup("g", [RuntimeError("401 Unauthorized") for _ in range(3)])
 
     assert describe_connect_failure(group).count("401 Unauthorized") == 1
 
 
 def test_several_distinct_causes_are_all_reported_but_bounded() -> None:
-    from deeptutor.services.mcp.manager import describe_connect_failure
-
     group = ExceptionGroup(
         "g",
         [RuntimeError(f"cause {index}") for index in range(6)],
@@ -257,13 +249,9 @@ def test_several_distinct_causes_are_all_reported_but_bounded() -> None:
 
 
 def test_a_plain_exception_is_passed_through() -> None:
-    from deeptutor.services.mcp.manager import describe_connect_failure
-
     assert describe_connect_failure(TimeoutError("took too long")) == "TimeoutError: took too long"
 
 
 def test_an_empty_group_still_says_something() -> None:
     """Degenerate, but a blank status cell is worse than a vague one."""
-    from deeptutor.services.mcp.manager import describe_connect_failure
-
     assert describe_connect_failure(ExceptionGroup("g", [ValueError()])).strip()

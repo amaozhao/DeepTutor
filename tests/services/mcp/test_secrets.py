@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 import stat
 import sys
+from urllib.parse import parse_qsl, urlsplit
 
 import pytest
 
@@ -20,7 +21,7 @@ from deeptutor.services.mcp.secrets import (
 
 @pytest.fixture
 def system_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    from deeptutor.multi_user import paths
+    paths = __import__("deeptutor.multi_user.paths", fromlist=["paths"])
 
     root = (tmp_path / "data" / "system").resolve()
     monkeypatch.setattr(paths, "SYSTEM_ROOT", root)
@@ -152,8 +153,6 @@ def test_a_token_needing_escaping_is_encoded_into_the_query(system_root: Path) -
 
     # Re-encoded, so a token containing separators cannot forge extra parameters.
     assert "a+b%26c%3Dd" in resolved
-    from urllib.parse import parse_qsl, urlsplit
-
     assert dict(parse_qsl(urlsplit(resolved).query)) == {"key": "a b&c=d"}
 
 

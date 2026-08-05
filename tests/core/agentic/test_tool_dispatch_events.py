@@ -322,6 +322,8 @@ async def test_intermediate_progress_from_non_retrieve_tool_reaches_stream() -> 
         if _call_id_of(e) == call_id and e.type == StreamEventType.PROGRESS
     ]
     assert ordered == ["call_status", "tool_log", "call_status"]
+
+
 @pytest.mark.asyncio
 async def test_overflow_tool_calls_receive_matching_stub_results() -> None:
     registry = _Registry()

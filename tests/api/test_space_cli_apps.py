@@ -16,6 +16,9 @@ from fastapi.testclient import TestClient
 import pytest
 
 from deeptutor.api.routers import space_cli_apps
+from deeptutor.api.routers.auth import require_admin
+from deeptutor.multi_user import paths
+from deeptutor.services.cli_apps.installer import InstallOutcome
 from deeptutor.services.cli_apps.models import AppRuntime, InstallKind
 from deeptutor.services.cli_apps.paths import abi_stamp
 from deeptutor.services.cli_apps.state import InstalledApp, record_install
@@ -25,8 +28,6 @@ REAL_APP = "blender"
 
 @pytest.fixture(autouse=True)
 def roots(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    from deeptutor.multi_user import paths
-
     admin_root = (tmp_path / "data").resolve()
     monkeypatch.setattr(paths, "ADMIN_WORKSPACE_ROOT", admin_root)
     monkeypatch.setattr(paths, "USERS_ROOT", admin_root / "users")
@@ -49,6 +50,7 @@ def caller(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
 @pytest.fixture
 def client(caller: dict[str, Any]) -> TestClient:
     app = FastAPI()
+    app.dependency_overrides[require_admin] = lambda: None
     app.include_router(space_cli_apps.router, prefix="/api/v1/space/cli-apps")
     return TestClient(app)
 
@@ -194,8 +196,6 @@ def test_one_accounts_preference_does_not_reach_another(
 def test_installing_and_removing_require_an_administrator() -> None:
     """Asserted on the routes themselves: installing runs a third-party setup.py
     in the application container, and that gate is the feature's whole premise."""
-    from deeptutor.api.routers.auth import require_admin
-
     gated = {
         (route.path, method)
         for route in space_cli_apps.router.routes
@@ -220,8 +220,6 @@ def test_installing_something_not_in_the_catalog_is_a_404(client: TestClient) ->
 def test_a_failed_install_answers_with_its_log(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from deeptutor.services.cli_apps.installer import InstallOutcome
-
     async def _fail(entry: Any) -> InstallOutcome:
         return InstallOutcome(
             ok=False,

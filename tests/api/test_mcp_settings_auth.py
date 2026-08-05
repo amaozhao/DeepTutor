@@ -8,6 +8,7 @@ gate had no test at all.
 from __future__ import annotations
 
 from pathlib import Path
+import socket
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -21,8 +22,6 @@ from deeptutor.services.mcp.config import MCPConfig, MCPServerConfig
 @pytest.fixture(autouse=True)
 def _offline_dns(monkeypatch: pytest.MonkeyPatch) -> None:
     """The URL guard resolves DNS; a unit test must not depend on a resolver."""
-    import socket
-
     monkeypatch.setattr(
         "deeptutor.services.mcp.network.socket.getaddrinfo",
         lambda host, *a, **k: [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 0))],

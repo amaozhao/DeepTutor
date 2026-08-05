@@ -7,6 +7,7 @@ because of what it refuses. Each test below pins one of those refusals.
 from __future__ import annotations
 
 from pathlib import Path
+import socket
 from typing import Any
 
 from fastapi import FastAPI
@@ -14,12 +15,18 @@ from fastapi.testclient import TestClient
 import pytest
 
 from deeptutor.api.routers import space_mcp
+from deeptutor.multi_user import paths
+from deeptutor.services.mcp.catalog import load_catalog
+from deeptutor.services.mcp.secrets import (
+    configured_fields,
+    resolve_references,
+    secret_reference,
+)
 
 
 @pytest.fixture(autouse=True)
 def _offline_dns(monkeypatch: pytest.MonkeyPatch) -> None:
     """Only the lookup is stubbed; the address policy itself still runs."""
-    import socket
 
     def _getaddrinfo(host: str, *args: object, **kwargs: object) -> list[tuple]:
         loopback = host in {"localhost", "127.0.0.1", "::1"}
@@ -32,8 +39,6 @@ def _offline_dns(monkeypatch: pytest.MonkeyPatch) -> None:
 @pytest.fixture
 def owner(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, str]:
     """Redirect the data roots and make the acting owner switchable."""
-    from deeptutor.multi_user import paths
-
     admin_root = (tmp_path / "data").resolve()
     monkeypatch.setattr(paths, "ADMIN_WORKSPACE_ROOT", admin_root)
     monkeypatch.setattr(paths, "USERS_ROOT", admin_root / "users")
@@ -151,8 +156,6 @@ def test_deleting_a_server_also_drops_its_credentials(client: TestClient, tmp_pa
     )
     client.delete("/api/v1/space/mcp/servers/svc")
 
-    from deeptutor.services.mcp.secrets import configured_fields
-
     assert configured_fields("u_ada", "svc") == set()
 
 
@@ -174,8 +177,6 @@ def test_every_category_chip_opens_to_something(client: TestClient) -> None:
 
 
 def test_installing_an_admin_only_entry_is_refused(client: TestClient) -> None:
-    from deeptutor.services.mcp.catalog import load_catalog
-
     stdio = next(entry for entry in load_catalog() if not entry.self_service)
     response = client.post(f"/api/v1/space/mcp/catalog/{stdio.id}/install", json={"secrets": {}})
     assert response.status_code == 403
@@ -188,8 +189,6 @@ def test_installing_an_unknown_entry_is_a_404(client: TestClient) -> None:
 
 
 def test_installing_without_a_required_credential_is_refused(client: TestClient) -> None:
-    from deeptutor.services.mcp.catalog import load_catalog
-
     needs_key = next(
         entry
         for entry in load_catalog()
@@ -205,8 +204,6 @@ def test_installing_without_a_required_credential_is_refused(client: TestClient)
 def test_installing_a_catalog_entry_stores_its_credential_out_of_the_config(
     client: TestClient, tmp_path: Path
 ) -> None:
-    from deeptutor.services.mcp.catalog import load_catalog
-
     entry = next(
         item
         for item in load_catalog()
@@ -227,8 +224,6 @@ def test_installing_a_catalog_entry_stores_its_credential_out_of_the_config(
 
 def _first_free_entry() -> Any:
     """A self-service catalog entry that needs no credential to install."""
-    from deeptutor.services.mcp.catalog import load_catalog
-
     return next(
         entry
         for entry in load_catalog()
@@ -354,8 +349,6 @@ def test_resaving_a_server_keeps_a_credential_it_did_not_re_enter(
         },
     )
 
-    from deeptutor.services.mcp.secrets import resolve_references, secret_reference
-
     assert resolve_references("u_ada", secret_reference("svc", "header.X-Key")) == "sk-1"
     stored = (tmp_path / "data" / "system" / "user-mcp" / "u_ada.json").read_text(encoding="utf-8")
     assert "${secret:svc/header.X-Key}" in stored
@@ -378,7 +371,6 @@ def test_testing_a_draft_writes_nothing(client: TestClient, tmp_path: Path) -> N
     Storing the draft's credentials would both surprise the caller and, for a
     name the store itself refuses, raise where a probe result was expected.
     """
-    import deeptutor.services.mcp.manager as manager_module
 
     async def _probe(cfg: Any, **kwargs: Any) -> dict[str, Any]:
         return {"ok": True, "tools": [], "error": ""}
@@ -398,4 +390,3 @@ def test_testing_a_draft_writes_nothing(client: TestClient, tmp_path: Path) -> N
 
     assert response.status_code == 200
     assert not (tmp_path / "data" / "system" / "user-mcp" / "u_ada.json").exists()
-    _ = manager_module

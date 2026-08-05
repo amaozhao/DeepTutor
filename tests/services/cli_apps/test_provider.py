@@ -229,11 +229,13 @@ def test_a_string_of_args_is_split_without_shell_semantics() -> None:
 
     async def _fake_run(app, args, **kwargs):
         captured["args"] = list(args)
-        from deeptutor.services.sandbox.spec import ExecResult
+        ExecResult = __import__(
+            "deeptutor.services.sandbox.spec", fromlist=["ExecResult"]
+        ).ExecResult
 
         return ExecResult(stdout="ok")
 
-    import deeptutor.services.cli_apps.provider as provider_module
+    provider_module = __import__("deeptutor.services.cli_apps.provider", fromlist=["*"])
 
     original = provider_module.run_app
     provider_module.run_app = _fake_run  # type: ignore[assignment]
@@ -251,7 +253,9 @@ def test_a_non_zero_exit_is_the_apps_answer_not_a_tool_failure(monkeypatch) -> N
     tool = build_app_tools((_install(),))[0]
 
     async def _fake_run(app, args, **kwargs):
-        from deeptutor.services.sandbox.spec import ExecResult
+        ExecResult = __import__(
+            "deeptutor.services.sandbox.spec", fromlist=["ExecResult"]
+        ).ExecResult
 
         return ExecResult(stdout="no scenes found", exit_code=2)
 
@@ -267,7 +271,9 @@ def test_a_broken_sandbox_is_a_failure(monkeypatch) -> None:
     tool = build_app_tools((_install(),))[0]
 
     async def _fake_run(app, args, **kwargs):
-        from deeptutor.services.sandbox.spec import ExecResult
+        ExecResult = __import__(
+            "deeptutor.services.sandbox.spec", fromlist=["ExecResult"]
+        ).ExecResult
 
         return ExecResult(error="no sandbox backend available")
 
@@ -282,7 +288,9 @@ def test_the_argv_and_app_id_are_reported_for_the_activity_view(monkeypatch) -> 
     tool = build_app_tools((_install(),))[0]
 
     async def _fake_run(app, args, **kwargs):
-        from deeptutor.services.sandbox.spec import ExecResult
+        ExecResult = __import__(
+            "deeptutor.services.sandbox.spec", fromlist=["ExecResult"]
+        ).ExecResult
 
         return ExecResult(stdout="done")
 
@@ -304,14 +312,18 @@ def test_a_file_the_app_wrote_is_surfaced_as_a_link(
     (workdir / "out.png").write_bytes(b"\x89PNG\r\n\x1a\n")
 
     async def _fake_run(app, args, **kwargs):
-        from deeptutor.services.sandbox.spec import ExecResult
+        ExecResult = __import__(
+            "deeptutor.services.sandbox.spec", fromlist=["ExecResult"]
+        ).ExecResult
 
         return ExecResult(stdout="wrote out.png")
 
     monkeypatch.setattr("deeptutor.services.cli_apps.provider.run_app", _fake_run)
     # Real artifact rows, built by the same helper exec uses — only the path
     # policy is bypassed, because that is tested where it lives.
-    from deeptutor.services.sandbox.artifacts import SandboxArtifact
+    SandboxArtifact = __import__(
+        "deeptutor.services.sandbox.artifacts", fromlist=["SandboxArtifact"]
+    ).SandboxArtifact
 
     monkeypatch.setattr(
         "deeptutor.services.sandbox.artifacts.collect_public_artifacts",
@@ -341,7 +353,9 @@ def test_the_tool_takes_its_workdir_from_the_pipeline_not_from_itself(monkeypatc
 
     async def _fake_run(app, args, **kwargs):
         captured.update(kwargs)
-        from deeptutor.services.sandbox.spec import ExecResult
+        ExecResult = __import__(
+            "deeptutor.services.sandbox.spec", fromlist=["ExecResult"]
+        ).ExecResult
 
         return ExecResult(stdout="")
 
@@ -371,8 +385,8 @@ def _run_with_heartbeat(
     monkeypatch: pytest.MonkeyPatch, *, seconds: float, sink: object | None
 ) -> tuple[object, _Sink | None]:
     """Execute the tool against a run that takes *seconds*, with a fast schedule."""
-    import deeptutor.services.cli_apps.provider as provider_module
-    from deeptutor.services.sandbox.spec import ExecResult
+    provider_module = __import__("deeptutor.services.cli_apps.provider", fromlist=["*"])
+    ExecResult = __import__("deeptutor.services.sandbox.spec", fromlist=["ExecResult"]).ExecResult
 
     monkeypatch.setattr(provider_module, "_HEARTBEAT_SCHEDULE_S", (0.02, 0.02))
 
@@ -432,7 +446,7 @@ def test_a_failing_sink_cannot_fail_the_run(monkeypatch: pytest.MonkeyPatch) -> 
 def test_the_heartbeat_does_not_swallow_a_failure(monkeypatch: pytest.MonkeyPatch) -> None:
     """A raise from the run has to keep propagating, or a broken sandbox would
     read as a successful call with no output."""
-    import deeptutor.services.cli_apps.provider as provider_module
+    provider_module = __import__("deeptutor.services.cli_apps.provider", fromlist=["*"])
 
     monkeypatch.setattr(provider_module, "_HEARTBEAT_SCHEDULE_S", (0.02, 0.02))
 
@@ -471,7 +485,7 @@ def test_the_apps_own_bin_comes_first_and_the_host_path_is_not_discarded(
     ``env: node: No such file or directory``, which a real install reproduced
     while all of these tests passed.
     """
-    from deeptutor.services.cli_apps.runner import _env_for
+    _env_for = __import__("deeptutor.services.cli_apps.runner", fromlist=["_env_for"])._env_for
 
     monkeypatch.setenv("PATH", "/opt/homebrew/bin:/usr/bin")
     app = _install()
@@ -490,7 +504,7 @@ def test_the_apps_own_bin_comes_first_and_the_host_path_is_not_discarded(
 def test_the_app_environment_carries_no_application_secrets(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from deeptutor.services.cli_apps.runner import _env_for
+    _env_for = __import__("deeptutor.services.cli_apps.runner", fromlist=["_env_for"])._env_for
 
     monkeypatch.setenv("OPENAI_API_KEY", "sk-live-secret")
     env = _env_for(_install())
@@ -502,7 +516,7 @@ def test_the_app_environment_carries_no_application_secrets(
 def test_an_abi_mismatch_refuses_with_an_actionable_message(monkeypatch) -> None:
     """A venv's console scripts hard-code the interpreter that built them, so a
     base-image bump would otherwise surface as a bare ENOENT mid-turn."""
-    from deeptutor.services.cli_apps.runner import run_app
+    run_app = __import__("deeptutor.services.cli_apps.runner", fromlist=["run_app"]).run_app
 
     app = _install(abi="cpython-3.9-linux")
     executable = bin_dir(app.id, app.runtime)
@@ -518,8 +532,8 @@ def test_an_abi_mismatch_refuses_with_an_actionable_message(monkeypatch) -> None
 
 
 def test_an_app_whose_files_are_gone_reports_that_rather_than_a_spawn_error() -> None:
-    from deeptutor.core.i18n import t
-    from deeptutor.services.cli_apps.runner import run_app
+    t = __import__("deeptutor.core.i18n", fromlist=["t"]).t
+    run_app = __import__("deeptutor.services.cli_apps.runner", fromlist=["run_app"]).run_app
 
     app = _install()
     result = asyncio.run(run_app(app, ["--help"], user_id="u_ada"))

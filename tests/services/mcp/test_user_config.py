@@ -9,6 +9,7 @@ ask for a ``stdio`` server (a command run on the host as the app user).
 from __future__ import annotations
 
 from pathlib import Path
+import socket
 
 import pytest
 
@@ -26,7 +27,7 @@ from deeptutor.services.mcp.user_config import (
 
 @pytest.fixture
 def system_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    from deeptutor.multi_user import paths
+    paths = __import__("deeptutor.multi_user.paths", fromlist=["paths"])
 
     root = (tmp_path / "data" / "system").resolve()
     monkeypatch.setattr(paths, "SYSTEM_ROOT", root)
@@ -42,7 +43,6 @@ def _offline_dns(monkeypatch: pytest.MonkeyPatch) -> None:
     Only the lookup is stubbed — the address policy itself still runs, so a URL
     that must be blocked still is (``127.0.0.1`` resolves to loopback here).
     """
-    import socket
 
     def _getaddrinfo(host: str, *args: object, **kwargs: object) -> list[tuple]:
         loopback = host in {"localhost", "127.0.0.1", "::1"}

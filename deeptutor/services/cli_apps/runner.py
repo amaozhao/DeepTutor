@@ -15,6 +15,7 @@ must find those rather than whatever the sandbox image happens to ship.
 from __future__ import annotations
 
 from collections.abc import Sequence
+import importlib
 import logging
 import os
 
@@ -83,9 +84,8 @@ async def run_app(
         env=_env_for(app),
         limits=limits,
     )
-    from deeptutor.services.sandbox import get_sandbox_service
-
-    return await get_sandbox_service().run(request, user_id=user_id)
+    sandbox = importlib.import_module("deeptutor.services.sandbox")
+    return await sandbox.get_sandbox_service().run(request, user_id=user_id)
 
 
 def _bounded_timeout(requested: int | None) -> int:

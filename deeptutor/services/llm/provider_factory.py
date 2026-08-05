@@ -6,6 +6,7 @@ import asyncio
 from collections import OrderedDict
 import contextlib
 import hashlib
+import importlib
 import json
 import threading
 from typing import Any
@@ -49,30 +50,30 @@ def _build_runtime_provider(llm_config: LLMConfig) -> LLMProvider:
     backend = spec.backend if spec else "openai_compat"
 
     if backend == "openai_codex":
-        from deeptutor.services.llm.provider_core.openai_codex_provider import (
-            OpenAICodexProvider,
+        provider_module = importlib.import_module(
+            "deeptutor.services.llm.provider_core.openai_codex_provider"
         )
-
-        provider: LLMProvider = OpenAICodexProvider(default_model=llm_config.model)
+        provider: LLMProvider = provider_module.OpenAICodexProvider(default_model=llm_config.model)
     elif backend == "github_copilot":
-        from deeptutor.services.llm.provider_core.github_copilot_provider import (
-            GitHubCopilotProvider,
+        provider_module = importlib.import_module(
+            "deeptutor.services.llm.provider_core.github_copilot_provider"
         )
-
-        provider = GitHubCopilotProvider(default_model=llm_config.model)
+        provider = provider_module.GitHubCopilotProvider(default_model=llm_config.model)
     elif backend == "azure_openai":
-        from deeptutor.services.llm.provider_core.azure_openai_provider import AzureOpenAIProvider
-
-        provider = AzureOpenAIProvider(
+        provider_module = importlib.import_module(
+            "deeptutor.services.llm.provider_core.azure_openai_provider"
+        )
+        provider = provider_module.AzureOpenAIProvider(
             api_key=llm_config.api_key or "",
             api_base=llm_config.effective_url or llm_config.base_url or "",
             default_model=llm_config.model,
             extra_headers=llm_config.extra_headers or None,
         )
     elif backend == "anthropic":
-        from deeptutor.services.llm.provider_core.anthropic_provider import AnthropicProvider
-
-        provider = AnthropicProvider(
+        provider_module = importlib.import_module(
+            "deeptutor.services.llm.provider_core.anthropic_provider"
+        )
+        provider = provider_module.AnthropicProvider(
             api_key=llm_config.api_key or None,
             api_base=llm_config.effective_url or llm_config.base_url or None,
             default_model=llm_config.model,
@@ -80,9 +81,10 @@ def _build_runtime_provider(llm_config: LLMConfig) -> LLMProvider:
             supports_prompt_caching=bool(spec and spec.supports_prompt_caching),
         )
     else:
-        from deeptutor.services.llm.provider_core.openai_compat_provider import OpenAICompatProvider
-
-        provider = OpenAICompatProvider(
+        provider_module = importlib.import_module(
+            "deeptutor.services.llm.provider_core.openai_compat_provider"
+        )
+        provider = provider_module.OpenAICompatProvider(
             api_key=llm_config.api_key or None,
             api_base=llm_config.effective_url or llm_config.base_url or None,
             default_model=llm_config.model,

@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
+import importlib
 import logging
 from typing import Any
 
@@ -95,9 +96,8 @@ async def _build(
     language: str,
     refusal_message: str,
 ) -> ProviderToolView:
-    from deeptutor.services.mcp import get_mcp_manager, load_loaded_tools
-
-    manager = get_mcp_manager()
+    mcp = importlib.import_module("deeptutor.services.mcp")
+    manager = mcp.get_mcp_manager()
     await manager.ensure_started()
 
     shared_pool = list(base_registry.deferred_tools())
@@ -154,7 +154,7 @@ async def _build(
         # Resource-authorised tools are preloaded: holding the resource is the
         # permission, so the model should not have to spend a `load_tools`
         # round-trip before its first retrieval.
-        loaded=load_loaded_tools(scope.session_id) | implicit_names,
+        loaded=mcp.load_loaded_tools(scope.session_id) | implicit_names,
         allowed=allowed.as_set(),
     )
     manifest = (
@@ -209,16 +209,15 @@ def _cli_app_tools(scope: ToolScope) -> list[BaseTool]:
     if scope.exclusive_capability:
         return []
     try:
-        from deeptutor.multi_user.tool_access import allowed_cli_apps, exec_override
-        from deeptutor.services.cli_apps.provider import authorized_apps, build_app_tools
-
-        access = authorized_apps(
+        tool_access = importlib.import_module("deeptutor.multi_user.tool_access")
+        cli_apps = importlib.import_module("deeptutor.services.cli_apps.provider")
+        access = cli_apps.authorized_apps(
             owner_id=scope.owner_id,
             is_partner=scope.is_partner,
-            granted=allowed_cli_apps(),
-            exec_allowed=exec_override(),
+            granted=tool_access.allowed_cli_apps(),
+            exec_allowed=tool_access.exec_override(),
         )
-        return build_app_tools(access.apps)
+        return cli_apps.build_app_tools(access.apps)
     except Exception:
         logger.warning("CLI app tools unavailable this turn; continuing", exc_info=True)
         return []
@@ -233,9 +232,9 @@ def _user_grant(scope: ToolScope) -> Allowlist:
     """
     if scope.is_partner:
         return Allowlist.unrestricted()
-    from deeptutor.multi_user.tool_access import allowed_mcp_tools
-
-    return Allowlist.of(allowed_mcp_tools())
+    return Allowlist.of(
+        importlib.import_module("deeptutor.multi_user.tool_access").allowed_mcp_tools()
+    )
 
 
 __all__ = ["ProviderToolView", "build_tool_view"]

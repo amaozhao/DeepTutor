@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 import pytest
@@ -74,8 +75,6 @@ async def test_runtime_provider_pool_is_bounded_and_closes_evictions(monkeypatch
         provider_factory.get_runtime_provider(_config(model=f"model-{index}"))
 
     # Eviction closes asynchronously on the owning server loop.
-    import asyncio
-
     await asyncio.sleep(0)
     assert provider_factory.runtime_provider_pool_size() == provider_factory._PROVIDER_POOL_MAXSIZE
     assert built[0].closed == 1
@@ -94,8 +93,6 @@ async def test_reset_closes_all_cached_providers(monkeypatch) -> None:
     provider_factory.get_runtime_provider(_config())
 
     provider_factory.reset_runtime_provider_pool()
-    import asyncio
-
     await asyncio.sleep(0)
     assert provider_factory.runtime_provider_pool_size() == 0
     assert built[0].closed == 1

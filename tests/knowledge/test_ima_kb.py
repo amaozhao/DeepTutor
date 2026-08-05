@@ -12,6 +12,7 @@ import pytest
 
 from deeptutor.knowledge.kb_types import CONNECTED_KB_TYPES, IMA_KB_TYPE
 from deeptutor.knowledge.manager import KnowledgeBaseManager
+from deeptutor.knowledge.manifest import UNAVAILABLE_REMOTE, build_manifest, document_root
 
 
 def _register(manager: KnowledgeBaseManager, name: str = "IMA") -> dict:
@@ -101,8 +102,6 @@ def test_delete_only_drops_the_pointer(tmp_path) -> None:
 
 def test_has_no_local_document_root(tmp_path) -> None:
     # Nothing of an IMA KB lives on this machine, so there is no folder to walk.
-    from deeptutor.knowledge.manifest import document_root
-
     manager = KnowledgeBaseManager(base_dir=str(tmp_path / "kbs"))
     entry = _register(manager)
 
@@ -111,8 +110,6 @@ def test_has_no_local_document_root(tmp_path) -> None:
 
 def test_documents_are_reported_as_non_enumerable(tmp_path) -> None:
     # IMA holds the documents behind its API; reporting "0 documents" would lie.
-    from deeptutor.knowledge.manifest import UNAVAILABLE_REMOTE, build_manifest
-
     manager = KnowledgeBaseManager(base_dir=str(tmp_path / "kbs"))
     entry = _register(manager)
 

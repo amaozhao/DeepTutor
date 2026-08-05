@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import ctypes
 import gc
 import logging
 import sys
@@ -28,8 +29,6 @@ def release_unused_memory() -> tuple[int, bool]:
         return collected, trimmed
 
     try:
-        import ctypes
-
         libc = ctypes.CDLL(None)
         malloc_trim = getattr(libc, "malloc_trim", None)
         if malloc_trim is not None:

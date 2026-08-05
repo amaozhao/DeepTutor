@@ -100,6 +100,10 @@ def _get_current_user():
     return importlib.import_module("deeptutor.multi_user.context").get_current_user()
 
 
+def _get_current_owner_id() -> str:
+    return importlib.import_module("deeptutor.multi_user.paths").current_owner_id()
+
+
 def _get_notebook_manager():
     return importlib.import_module("deeptutor.services.notebook").get_notebook_manager()
 
@@ -565,8 +569,6 @@ class AgenticChatPipeline:
 
     def _tool_scope(self, context: UnifiedContext) -> ToolScope:
         """Per-turn policy inputs for the provider layer."""
-        from deeptutor.services.mcp.pageindex_server import PAGEINDEX_SERVER_NAME
-
         raw_filter = context.metadata.get("mcp_tools_filter")
         return ToolScope(
             owner_id=self._current_owner_id(),
@@ -581,7 +583,7 @@ class AgenticChatPipeline:
             # access to the KB *is* the permission, and its tools are preloaded
             # so retrieval works without a load_tools round-trip.
             implicit_provider_ids=(
-                frozenset({PAGEINDEX_SERVER_NAME}) if self._pageindex_docs else frozenset()
+                frozenset({_get_pageindex_server_name()}) if self._pageindex_docs else frozenset()
             ),
             exclusive_capability=self._exclusive_capability_active(context),
         )
@@ -1000,8 +1002,7 @@ class AgenticChatPipeline:
             # every app, so the model can render with one and post-process with
             # another, and the files land where /api/outputs will serve them
             # (``PathService.is_public_output_path`` has the matching branch).
-            from deeptutor.services.sandbox import Mount
-
+            Mount = _get_sandbox_module().Mount
             kwargs["_sandbox_user_id"] = self._current_user_id()
             cli_dir = task_dir / "cli" if task_dir is not None else None
             if cli_dir is not None:
@@ -1390,9 +1391,7 @@ class AgenticChatPipeline:
         written under one name and read under another.
         """
         try:
-            from deeptutor.multi_user.paths import current_owner_id
-
-            return current_owner_id()
+            return _get_current_owner_id()
         except Exception:
             logger.debug("owner id resolution failed", exc_info=True)
             return ""

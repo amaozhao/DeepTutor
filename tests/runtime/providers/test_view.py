@@ -8,6 +8,7 @@ from typing import Any
 import pytest
 
 from deeptutor.core.tool_protocol import BaseTool, ToolDefinition, ToolResult
+from deeptutor.runtime.providers import view as view_module
 from deeptutor.runtime.providers.scope import ToolScope
 from deeptutor.runtime.providers.view import build_tool_view
 from deeptutor.runtime.registry.scoped_registry import ScopedToolRegistry
@@ -273,8 +274,6 @@ async def test_a_slow_personal_server_costs_only_its_own_tools(
     A third-party host that hangs must not present to the user as DeepTutor
     hanging, so the scope connect is bounded and the turn proceeds without it.
     """
-    from deeptutor.runtime.providers import view as view_module
-
     monkeypatch.setattr(view_module, "_OWNER_SCOPE_TIMEOUT_S", 0.01)
     _grant(monkeypatch, None)
     _stub_providers.scope_delay = 1.0

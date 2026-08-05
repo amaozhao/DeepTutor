@@ -16,6 +16,7 @@ session activity panel, instead of relying on the model pasting a raw
 from __future__ import annotations
 
 import asyncio
+from importlib import import_module
 import logging
 from pathlib import Path
 from typing import Any
@@ -102,10 +103,7 @@ def _needs_preview_text(attachment: dict[str, Any]) -> bool:
 
 
 def _fill_preview_text_sync(attachments: list[dict[str, Any]]) -> None:
-    from deeptutor.utils.document_extractor import (
-        DocumentExtractionError,
-        extract_text_from_path,
-    )
+    extractor = import_module("deeptutor.utils.document_extractor")
 
     for attachment in attachments:
         if not _needs_preview_text(attachment):
@@ -114,8 +112,8 @@ def _fill_preview_text_sync(attachments: list[dict[str, Any]]) -> None:
         if path is None:
             continue
         try:
-            text = extract_text_from_path(path, max_chars=_PREVIEW_TEXT_MAX_CHARS)
-        except DocumentExtractionError as exc:
+            text = extractor.extract_text_from_path(path, max_chars=_PREVIEW_TEXT_MAX_CHARS)
+        except extractor.DocumentExtractionError as exc:
             # Unsupported legacy binary, empty deck, oversized file: the card
             # still opens and offers a download, it just has no inline text.
             logger.debug("No preview text for artifact %s: %s", path, exc)

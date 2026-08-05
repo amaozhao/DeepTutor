@@ -18,6 +18,7 @@ import shlex
 
 import pytest
 
+from deeptutor.services.sandbox import backends as backends_module
 from deeptutor.services.sandbox.backends import (
     BwrapBackend,
     RestrictedSubprocessBackend,
@@ -111,8 +112,6 @@ def test_the_sidecar_sends_both_spellings() -> None:
             return _Response()
 
     backend = RunnerSidecarBackend("http://runner:8900")
-    import deeptutor.services.sandbox.backends as backends_module
-
     original = backends_module.httpx.AsyncClient
     backends_module.httpx.AsyncClient = lambda **_kwargs: _Client()  # type: ignore[assignment]
     try:
