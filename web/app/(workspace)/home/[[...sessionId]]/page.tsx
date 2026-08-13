@@ -3,6 +3,7 @@
 import dynamic from "next/dynamic";
 import {
   useCallback,
+  useEffect,
   useMemo,
   useState,
 } from "react";
@@ -130,6 +131,7 @@ export default function ChatPage() {
     setCapability,
     setKBs,
     setLLMSelection,
+    setMasteryPathId,
     setPersonaSelection,
     sendMessage,
     cancelStreamingTurn,
@@ -385,12 +387,28 @@ export default function ChatPage() {
       console.error("Failed to copy assistant message:", error);
     }
   }, []);
+  const loadSessionAndSettle = useCallback(
+    async (
+      sessionId: string,
+      options?: { signal?: AbortSignal; revalidate?: boolean },
+    ) => {
+      await loadSession(sessionId, options);
+      if (options?.revalidate) return;
+      shouldAutoScrollRef.current = true;
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          if (!options?.signal?.aborted) scrollToBottom("instant");
+        });
+      });
+    },
+    [loadSession, scrollToBottom, shouldAutoScrollRef],
+  );
   const { sessionLoading, cancelSessionLoad } = useChatSessionRoute({
     sessionId: state.sessionId,
     sessionIdParam,
     router,
     newSession,
-    loadSession,
+    loadSession: loadSessionAndSettle,
     showCachedSession,
     setActiveSessionId,
   });
@@ -432,6 +450,13 @@ export default function ChatPage() {
     onSelectCapability: handleSelectCapability,
     setTools,
   });
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const masteryPathId = new URLSearchParams(window.location.search)
+      .get("mastery_path_id")
+      ?.trim();
+    if (masteryPathId) setMasteryPathId(masteryPathId);
+  }, [setMasteryPathId]);
 
   // Fold all messages once per state.messages change to power the
   // SessionActivityPanel on the right (tools, KBs, space refs, attachments).

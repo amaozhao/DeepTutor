@@ -6,7 +6,6 @@ import sys
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from fastapi.staticfiles import StaticFiles
 
 from deeptutor.api.security import (
     client_ip,
@@ -44,6 +43,7 @@ from deeptutor.api.routers import (  # noqa: E402
     mcp_settings,
     memory,
     notebook,
+    outputs,
     partners,
     personas,
     plugins_api,
@@ -97,19 +97,6 @@ CONFIG_DRIFT_ERROR_TEMPLATE = (
     "registered in the runtime tool registry. Register the missing tools or "
     "remove the stale tool names from the capability manifests."
 )
-
-
-class SafeOutputStaticFiles(StaticFiles):
-    """Static file mount that only exposes explicitly whitelisted artifacts."""
-
-    def __init__(self, *args, path_service, **kwargs):
-        super().__init__(*args, **kwargs)
-        self._path_service = path_service
-
-    async def get_response(self, path: str, scope):
-        if not self._path_service.is_public_output_path(path):
-            raise HTTPException(status_code=404, detail="Output not found")
-        return await super().get_response(path, scope)
 
 
 def validate_tool_consistency():
@@ -374,29 +361,20 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Mount a filtered view over user outputs.
-# Only whitelisted artifact paths are readable through the static handler.
-path_service = get_path_service()
-user_dir = path_service.get_public_outputs_root()
-
 # Initialize user directories on startup
 try:
     init_user_directories()
 except Exception:
     # Fallback: just create the main directory if it doesn't exist
+    user_dir = get_path_service().get_public_outputs_root()
     if not user_dir.exists():
         user_dir.mkdir(parents=True)
-
-app.mount(
-    "/api/outputs",
-    SafeOutputStaticFiles(directory=str(user_dir), path_service=path_service),
-    name="outputs",
-)
 
 
 def _install_routers(api: FastAPI) -> None:
     # Auth router is public — login/logout/register/status require no token.
     api.include_router(auth.router, prefix="/api/v1/auth", tags=["auth"])
+    api.include_router(outputs.router, prefix="/api/outputs", tags=["outputs"])
 
     # All other routers require a valid session when AUTH_ENABLED=true.
     # require_auth is a no-op when AUTH_ENABLED=false, so this is safe locally.
@@ -456,6 +434,7 @@ def _install_routers(api: FastAPI) -> None:
         tags=["question-notebook"],
         dependencies=auth_deps,
     )
+    api.include_router(settings.public_router, prefix="/api/v1/settings", tags=["settings"])
     api.include_router(
         settings.router, prefix="/api/v1/settings", tags=["settings"], dependencies=auth_deps
     )

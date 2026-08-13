@@ -5,9 +5,15 @@ import { ChevronDown, Eye, EyeOff } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import ProviderIcon from '@/components/common/ProviderIcon'
+import { CodeBuddyAuthCard } from './CodeBuddyAuthCard'
 import { CodexOAuthCard } from './CodexOAuthCard'
 import { isCodexOAuthProfile, isManagedCodexProfile } from './codex-profile'
-import { type CatalogProfile, type ServiceName, useSettings } from './SettingsContext'
+import {
+  type CatalogProfile,
+  type ProviderOption,
+  type ServiceName,
+  useSettings,
+} from './SettingsContext'
 import { nextProfileName } from './profile-naming'
 import { searchProviderFields } from './search-providers'
 import { inputClass, selectClass, selectOptionClass, stringifyExtraHeaders } from './shared'
@@ -20,7 +26,9 @@ export function ProfileFields({
   showSearchProviderWarning,
   isSupportedSearchProvider,
   isDeprecatedSearchProvider,
-  isPerplexityMissingKey,
+  searchProviderMissingKey,
+  supportedSearchProviderNames,
+  onProviderChanged,
 }: {
   service: ServiceName
   profile: CatalogProfile
@@ -29,7 +37,9 @@ export function ProfileFields({
   showSearchProviderWarning: boolean
   isSupportedSearchProvider: boolean
   isDeprecatedSearchProvider: boolean
-  isPerplexityMissingKey: boolean
+  searchProviderMissingKey: boolean
+  supportedSearchProviderNames: string
+  onProviderChanged: (provider: ProviderOption, previousProvider: string) => void
 }) {
   const { t } = useTranslation()
   const { providers, updateProfileField, updateModelField } = useSettings()
@@ -39,13 +49,15 @@ export function ProfileFields({
   const providerOption = (providers[service] || []).find(option => option.value === providerValue)
   const isManagedCodex = isManagedCodexProfile(profile)
   const isCodexOAuth = isCodexOAuthProfile(service, providerValue, providerOption, profile)
+  const isCodeBuddyAuth = service === 'llm' && providerValue === 'codebuddy'
 
-  const fields = isCodexOAuth
-    ? { apiKey: false, baseUrl: false, baseUrlRequired: false }
-    : service === 'search'
-      ? searchProviderFields(profile.provider)
-      : { apiKey: true, baseUrl: true, baseUrlRequired: false }
-  const searxngMissingBaseUrl = fields.baseUrlRequired && !String(profile.base_url || '').trim()
+  const fields =
+    isCodexOAuth || isCodeBuddyAuth
+      ? { apiKey: false, baseUrl: false, baseUrlRequired: false }
+      : service === 'search'
+        ? searchProviderFields(profile.provider, providerOption)
+        : { apiKey: true, baseUrl: true, baseUrlRequired: false }
+  const missingRequiredBaseUrl = fields.baseUrlRequired && !String(profile.base_url || '').trim()
 
   return (
     <div className="grid gap-4 sm:grid-cols-2">
@@ -74,9 +86,13 @@ export function ProfileFields({
               if (renamed !== profile.name) {
                 updateProfileField(service, 'name', renamed)
               }
-              if (match?.base_url) {
+              if (val === 'codebuddy') {
+                updateProfileField(service, 'base_url', '')
+                updateProfileField(service, 'api_key', '')
+              } else if (match?.base_url) {
                 updateProfileField(service, 'base_url', match.base_url)
               }
+              if (match) onProviderChanged(match, providerValue)
               if (service === 'embedding' && match?.default_dim) {
                 updateModelField(service, 'dimension', match.default_dim)
               }
@@ -97,11 +113,13 @@ export function ProfileFields({
             <option className={selectOptionClass} value="">
               {t('Select provider...')}
             </option>
-            {(providers[service] || []).map(p => (
-              <option className={selectOptionClass} key={p.value} value={p.value}>
-                {p.label}
-              </option>
-            ))}
+            {(providers[service] || [])
+              .filter(p => p.status !== 'deprecated')
+              .map(p => (
+                <option className={selectOptionClass} key={p.value} value={p.value}>
+                  {p.label}
+                </option>
+              ))}
           </select>
           <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[var(--muted-foreground)]" />
         </div>
@@ -116,20 +134,29 @@ export function ProfileFields({
             }`}
           >
             {isSupportedSearchProvider
-              ? isPerplexityMissingKey
-                ? t('Perplexity requires API key. It will fail hard without credentials.')
+              ? searchProviderMissingKey
+                ? t('{{provider}} requires an API key. It will fail hard without credentials.', {
+                    provider: providerOption?.label ?? providerValue,
+                  })
                 : t('Supported provider.')
               : isDeprecatedSearchProvider
-                ? t(
-                    'Deprecated provider. Switch to brave/tavily/jina/searxng/duckduckgo/perplexity.'
-                  )
-                : t('Unsupported provider. Use brave/tavily/jina/searxng/duckduckgo/perplexity.')}
+                ? t('Deprecated provider. Switch to one of: {{providers}}.', {
+                    providers: supportedSearchProviderNames,
+                  })
+                : t('Unsupported provider. Use one of: {{providers}}.', {
+                    providers: supportedSearchProviderNames,
+                  })}
           </p>
         )}
       </div>
       {isCodexOAuth && (
         <div className="sm:col-span-2">
           <CodexOAuthCard />
+        </div>
+      )}
+      {isCodeBuddyAuth && (
+        <div className="sm:col-span-2">
+          <CodeBuddyAuthCard />
         </div>
       )}
       {fields.baseUrl && (
@@ -156,7 +183,7 @@ export function ProfileFields({
               )}
             </p>
           )}
-          {searxngMissingBaseUrl && (
+          {missingRequiredBaseUrl && (
             <p className="mt-1.5 text-[11px] text-amber-600 dark:text-amber-400">
               {t('Required — without it, search falls back to DuckDuckGo.')}
             </p>
@@ -188,7 +215,7 @@ export function ProfileFields({
           </div>
         </div>
       )}
-      {!isCodexOAuth && (
+      {!isCodexOAuth && !isCodeBuddyAuth && (
         <div className="sm:col-span-2 rounded-xl border border-[var(--border)]/60 bg-[var(--muted)]/20">
           <button
             type="button"

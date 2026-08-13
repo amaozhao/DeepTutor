@@ -12,6 +12,7 @@ export type CatalogModel = {
   context_window_source?: string
   context_window_detected_at?: string
   reasoning_effort?: string
+  codex_supported_reasoning_levels?: string[]
   voice?: string
   response_format?: string
   language?: string
@@ -36,6 +37,7 @@ export type CatalogProfile = {
   id: string
   name: string
   managed_by?: string
+  codex_account_binding?: string
   read_only?: boolean
   binding?: string
   provider?: string
@@ -62,6 +64,7 @@ export type Catalog = {
 export type UiSettings = {
   theme: 'light' | 'dark' | 'glass' | 'snow'
   language: 'en' | 'zh'
+  response_language: 'en' | 'zh'
   code_block_theme: string
   code_block_show_line_numbers: boolean
   code_block_wrap_long_lines: boolean
@@ -75,6 +78,10 @@ export type ProviderOption = {
   default_model?: string
   default_voice?: string
   auth_mode?: 'api_key' | 'oauth'
+  requires_api_key?: boolean
+  requires_base_url?: boolean
+  soft_fallback?: boolean
+  status?: 'supported' | 'deprecated'
 }
 
 export type SystemStatus = {

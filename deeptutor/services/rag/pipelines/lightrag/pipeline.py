@@ -16,6 +16,8 @@ message when it is not installed instead of an opaque ``ImportError``.
 
 from __future__ import annotations
 
+import asyncio
+from collections.abc import Callable
 import logging
 from pathlib import Path
 import shutil
@@ -33,6 +35,7 @@ import deeptutor.services.rag.pipelines.modes as pipeline_modes
 
 from . import config as lr_config
 from . import engine, storage
+from .worker import OwnerLoopBridge, run_in_worker_loop
 
 logger = logging.getLogger(__name__)
 
@@ -72,7 +75,14 @@ class LightRagPipeline:
         except Exception as exc:  # pragma: no cover - best-effort
             self.logger.warning("Could not clean up failed version dir %s: %s", root_dir, exc)
 
-    async def _ingest(self, rag: Any, file_paths: List[str]) -> int:
+    async def _ingest(
+        self,
+        rag: Any,
+        file_paths: List[str],
+        *,
+        io_bridge: OwnerLoopBridge,
+        progress_callback: Callable[[int, int], Any] | None = None,
+    ) -> int:
         """Parse each file via the shared parse layer and insert it into LightRAG.
 
         Returns the number of documents successfully inserted. Per-file failures
@@ -80,7 +90,9 @@ class LightRagPipeline:
         """
         parse_service = parsing_service.get_parse_service()
         inserted = 0
+        total = len(file_paths)
         for file_path in file_paths:
+            io_bridge.raise_if_cancelled()
             path = Path(file_path)
             try:
                 doc = parse_service.parse(path)
@@ -101,25 +113,57 @@ class LightRagPipeline:
                 file_name=path.name,
                 doc_id=doc.source_hash or path.stem,
             )
+            io_bridge.raise_if_cancelled()
             doc_error = storage.document_error(Path(rag.working_dir), doc.source_hash or path.stem)
             if doc_error:
                 raise RuntimeError(f"{path.name}: {doc_error}")
             inserted += 1
             self.logger.info("LightRAG: inserted %s", path.name)
+            if progress_callback is not None:
+                await io_bridge.call(progress_callback, inserted, total)
         return inserted
+
+    async def _run_indexing(
+        self,
+        working_dir: Path,
+        file_paths: List[str],
+        progress_callback: Callable[[int, int], Any] | None,
+    ) -> int:
+        """Run the complete local LightRAG indexing phase off the service loop.
+
+        The RAG instance is constructed and consumed in one worker thread, so
+        its mutable stores and asyncio primitives never cross event loops.
+        DeepTutor-owned network calls and progress callbacks cross back through
+        ``OwnerLoopBridge`` and remain responsive while local JSON storage is
+        busy in the worker.
+        """
+
+        async def job(io_bridge: OwnerLoopBridge) -> int:
+            io_bridge.raise_if_cancelled()
+            rag = engine.build_rag(working_dir, io_bridge=io_bridge)
+            return await self._ingest(
+                rag,
+                file_paths,
+                io_bridge=io_bridge,
+                progress_callback=progress_callback,
+            )
+
+        return await run_in_worker_loop(job)
 
     # ----- indexing -------------------------------------------------------
 
     async def initialize(self, kb_name: str, file_paths: List[str], **kwargs) -> bool:
         self._ensure_available()
+        progress_callback = kwargs.get("progress_callback")
         kb_dir = resolve_kb_dir(self.kb_base_dir, kb_name)
         root_dir = resolve_storage_dir_for_rebuild(kb_dir, None)
         self.logger.info(
             "Initializing KB '%s' with %d file(s) using LightRAG", kb_name, len(file_paths)
         )
         try:
-            rag = engine.build_rag(storage.working_dir(root_dir))
-            count = await self._ingest(rag, file_paths)
+            count = await self._run_indexing(
+                storage.working_dir(root_dir), file_paths, progress_callback
+            )
             if count == 0:
                 self.logger.error("LightRAG: no extractable documents for '%s'", kb_name)
                 self._cleanup_failed_version_dir(root_dir)
@@ -135,6 +179,9 @@ class LightRagPipeline:
             storage.write_meta(root_dir)
             self.logger.info("KB '%s' initialized with LightRAG (%d docs)", kb_name, count)
             return True
+        except asyncio.CancelledError:
+            self._cleanup_failed_version_dir(root_dir)
+            raise
         except Exception as exc:
             self.logger.error("Failed to initialize LightRAG KB: %s", exc)
             self.logger.error(traceback.format_exc())
@@ -143,10 +190,15 @@ class LightRagPipeline:
 
     async def add_documents(self, kb_name: str, file_paths: List[str], **kwargs) -> bool:
         self._ensure_available()
+        progress_callback = kwargs.get("progress_callback")
         kb_dir = resolve_kb_dir(self.kb_base_dir, kb_name)
         existing = resolve_storage_dir_for_read(kb_dir, None)
-        is_update = existing is not None and storage.has_output(existing)
-        root_dir = existing if is_update else resolve_storage_dir_for_rebuild(kb_dir, None)
+        if existing is not None and storage.has_output(existing):
+            is_update = True
+            root_dir = existing
+        else:
+            is_update = False
+            root_dir = resolve_storage_dir_for_rebuild(kb_dir, None)
 
         self.logger.info(
             "Adding %d document(s) to LightRAG KB '%s' (update=%s)",
@@ -155,8 +207,9 @@ class LightRagPipeline:
             is_update,
         )
         try:
-            rag = engine.build_rag(storage.working_dir(root_dir))
-            count = await self._ingest(rag, file_paths)
+            count = await self._run_indexing(
+                storage.working_dir(root_dir), file_paths, progress_callback
+            )
             if count == 0:
                 self.logger.warning("LightRAG: no extractable documents to add for '%s'", kb_name)
                 return False
@@ -172,6 +225,10 @@ class LightRagPipeline:
             storage.write_meta(root_dir)
             self.logger.info("Added %d doc(s) to LightRAG KB '%s'", count, kb_name)
             return True
+        except asyncio.CancelledError:
+            if not is_update:
+                self._cleanup_failed_version_dir(root_dir)
+            raise
         except Exception as exc:
             self.logger.error("Failed to add documents to LightRAG KB: %s", exc)
             self.logger.error(traceback.format_exc())

@@ -1,4 +1,4 @@
-import { readStoredLanguage } from '@/context/app-shell-storage'
+import { readStoredResponseLanguage } from '@/context/app-shell-storage'
 import type { BookReferencePayload } from '@/lib/book-references'
 import { isNarrationMarker, recomputeAnswerContent, shouldAppendEventContent } from '@/lib/stream'
 import { nextOptimisticId } from '@/lib/optimistic-id'
@@ -45,6 +45,8 @@ export interface ChatState {
   activeCapability: string | null
   knowledgeBases: string[]
   llmSelection: LLMSelection | null
+  /** Persistent mastery state associated with this conversation. */
+  masteryPathId: string | null
   /** Session-level persona preference; "" = Default (no persona). Applies
    *  to every following message until changed (persisted on the session). */
   personaSelection: string
@@ -95,6 +97,7 @@ export interface MessageRequestSnapshot {
   historyReferences?: HistoryReferencePayload
   questionNotebookReferences?: QuestionNotebookReferencePayload
   bookReferences?: BookReferencePayload[]
+  masteryPathId?: string
   persona?: string
   memoryReferences?: MemoryReferencePayload
   llmSelection?: LLMSelection | null
@@ -140,6 +143,7 @@ interface SessionSnapshot {
   capability?: string | null
   knowledgeBases?: string[]
   llmSelection?: LLMSelection | null
+  masteryPathId?: string | null
   personaSelection?: string
   language?: string
   selectedBranches?: Record<string, number>
@@ -150,6 +154,7 @@ export type Action =
   | { type: 'SET_CAPABILITY'; cap: string | null }
   | { type: 'SET_KB'; kbs: string[] }
   | { type: 'SET_LLM_SELECTION'; selection: LLMSelection | null }
+  | { type: 'SET_MASTERY_PATH_ID'; masteryPathId: string | null }
   | { type: 'SET_PERSONA_SELECTION'; persona: string }
   | { type: 'SET_LANGUAGE'; lang: string }
   | {
@@ -212,11 +217,12 @@ export function createSessionEntry(key: string, sessionId: string | null = null)
     activeCapability: null,
     knowledgeBases: [],
     llmSelection: null,
+    masteryPathId: null,
     personaSelection: '',
     messages: [],
     isStreaming: false,
     currentStage: '',
-    language: typeof window === 'undefined' ? 'en' : readStoredLanguage(),
+    language: typeof window === 'undefined' ? 'en' : readStoredResponseLanguage(),
     status: 'idle',
     activeTurnId: null,
     lastSeq: 0,
@@ -279,6 +285,11 @@ export function chatReducer(state: ProviderState, action: Action): ProviderState
       return updateSelectedSession(state, session => ({
         ...session,
         llmSelection: action.selection,
+      }))
+    case 'SET_MASTERY_PATH_ID':
+      return updateSelectedSession(state, session => ({
+        ...session,
+        masteryPathId: action.masteryPathId,
       }))
     case 'SET_PERSONA_SELECTION':
       return updateSelectedSession(state, session => ({
@@ -524,6 +535,8 @@ export function chatReducer(state: ProviderState, action: Action): ProviderState
             knowledgeBases: action.knowledgeBases ?? existing.knowledgeBases,
             llmSelection:
               action.llmSelection !== undefined ? action.llmSelection : existing.llmSelection,
+            masteryPathId:
+              action.masteryPathId !== undefined ? action.masteryPathId : existing.masteryPathId,
             personaSelection:
               action.personaSelection !== undefined
                 ? action.personaSelection

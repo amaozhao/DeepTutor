@@ -50,6 +50,7 @@ export interface HydratedRequestSnapshot {
   historyReferences?: HistoryReferencePayload;
   questionNotebookReferences?: QuestionNotebookReferencePayload;
   bookReferences?: BookReferencePayload[];
+  masteryPathId?: string;
   persona?: string;
   memoryReferences?: MemoryReferencePayload;
   llmSelection?: LLMSelection | null;
@@ -187,6 +188,10 @@ export function hydrateRequestSnapshot(
   const memoryReferences = asMemoryReferences(stored.memoryReferences);
   const bookReferences = normalizeBookReferences(stored.bookReferences);
   const llmSelection = asLLMSelection(stored.llmSelection);
+  const masteryPathId =
+    typeof (stored.masteryPathId ?? stored.mastery_path_id) === "string"
+      ? String(stored.masteryPathId ?? stored.mastery_path_id).trim()
+      : "";
 
   if (config && Object.keys(config).length) snapshot.config = config;
   if (notebookReferences.length)
@@ -196,6 +201,7 @@ export function hydrateRequestSnapshot(
     snapshot.questionNotebookReferences = questionNotebookReferences;
   }
   if (bookReferences.length) snapshot.bookReferences = bookReferences;
+  if (masteryPathId) snapshot.masteryPathId = masteryPathId;
   if (persona) snapshot.persona = persona;
   if (memoryReferences.length) snapshot.memoryReferences = memoryReferences;
   if (llmSelection) snapshot.llmSelection = llmSelection;

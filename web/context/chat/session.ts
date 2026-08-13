@@ -18,6 +18,7 @@ export type SessionDetailInput = {
     tools?: string[];
     knowledge_bases?: string[];
     llm_selection?: unknown;
+    mastery_path_id?: string;
     persona?: string;
     selected_branches?: unknown;
   };
@@ -58,6 +59,10 @@ export function loadSessionActionFromDetail(
       ? preferences.knowledge_bases
       : [],
     llmSelection: asLLMSelection(preferences?.llm_selection),
+    masteryPathId:
+      typeof preferences?.mastery_path_id === "string"
+        ? preferences.mastery_path_id
+        : null,
     personaSelection:
       typeof preferences?.persona === "string" ? preferences.persona : "",
     language,

@@ -185,6 +185,7 @@ async def test_turn_runtime_replays_events_and_materializes_messages(
             "persona": "socratic",
             "memory_references": ["summary"],
             "book_references": [{"book_id": "book-1", "page_ids": ["page-1"]}],
+            "mastery_path_id": "path-1",
             "config": {},
         }
     )
@@ -218,6 +219,7 @@ async def test_turn_runtime_replays_events_and_materializes_messages(
     assert detail["messages"][0]["metadata"]["request_snapshot"]["bookReferences"] == [
         {"book_id": "book-1", "page_ids": ["page-1"]}
     ]
+    assert detail["messages"][0]["metadata"]["request_snapshot"]["masteryPathId"] == "path-1"
     # Chat capability now routes attached sources through the manifest +
     # ``read_source`` tool instead of inlining ``[Book Context]`` into the
     # user message. The raw user message stays raw; the book payload
@@ -235,6 +237,7 @@ async def test_turn_runtime_replays_events_and_materializes_messages(
     assert captured["metadata"] and captured["metadata"]["book_references"] == [
         {"book_id": "book-1", "page_ids": ["page-1"]}
     ]
+    assert captured["metadata"]["mastery_path_id"] == "path-1"
     assert detail["messages"][1]["content"] == "Hello Frank"
     assert detail["preferences"] == {
         "capability": "chat",
@@ -244,6 +247,7 @@ async def test_turn_runtime_replays_events_and_materializes_messages(
         # Explicit persona in the payload is persisted as a session-level
         # preference (survives reloads; later turns fall back to it).
         "persona": "socratic",
+        "mastery_path_id": "path-1",
     }
 
     persisted_turn = await store.get_turn(turn["id"])

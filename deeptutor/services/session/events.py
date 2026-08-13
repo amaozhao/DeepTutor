@@ -9,6 +9,7 @@ import logging
 from typing import Any
 
 from deeptutor.core.stream import StreamEvent, StreamEventType
+from deeptutor.services.llm.utils import clean_thinking_tags
 from deeptutor.services.path_service import get_path_service
 from deeptutor.services.session.artifact_attachments import (
     artifact_attachments as artifact_attachments,
@@ -41,10 +42,25 @@ def narration_marker_call_id(event: StreamEvent) -> str | None:
         metadata.get("trace_kind") == "call_status"
         and metadata.get("call_state") == "complete"
         and metadata.get("call_role") == "narration"
+        and metadata.get("answer_visible") is not True
     ):
         call_id = metadata.get("call_id")
         return str(call_id) if call_id else None
     return None
+
+
+def assemble_persisted_answer(
+    content_segments: Sequence[tuple[str | None, str]],
+    narration_call_ids: set[str],
+) -> str:
+    """Replay visible content bytes, excluding trace-only narration rounds."""
+    return clean_thinking_tags(
+        "".join(
+            text
+            for call_id, text in content_segments
+            if not (call_id and call_id in narration_call_ids)
+        )
+    )
 
 
 def event_usage_summary(event: StreamEvent) -> dict[str, Any] | None:

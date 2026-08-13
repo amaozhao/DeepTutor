@@ -1,8 +1,8 @@
 import { useEffect, type Dispatch, type MutableRefObject } from "react";
 
 import {
-  LANGUAGE_EVENT,
-  LANGUAGE_STORAGE_KEY,
+  RESPONSE_LANGUAGE_EVENT,
+  RESPONSE_LANGUAGE_STORAGE_KEY,
   normalizeLanguage,
   readStoredChatResponseTimeout,
   writeStoredActiveSessionId,
@@ -27,18 +27,19 @@ export function useStoredLanguageSync(dispatch: Dispatch<Action>): void {
     const syncLanguage = (language: string | null | undefined) => {
       dispatch({ type: "SET_LANGUAGE", lang: normalizeLanguage(language) });
     };
-    const onLanguage = (event: Event) => {
+    const onResponseLanguage = (event: Event) => {
       const detail = (event as CustomEvent<{ language?: string }>).detail;
       syncLanguage(detail?.language);
     };
     const onStorage = (event: StorageEvent) => {
-      if (event.key === LANGUAGE_STORAGE_KEY) syncLanguage(event.newValue);
+      if (event.key === RESPONSE_LANGUAGE_STORAGE_KEY)
+        syncLanguage(event.newValue);
     };
 
-    window.addEventListener(LANGUAGE_EVENT, onLanguage);
+    window.addEventListener(RESPONSE_LANGUAGE_EVENT, onResponseLanguage);
     window.addEventListener("storage", onStorage);
     return () => {
-      window.removeEventListener(LANGUAGE_EVENT, onLanguage);
+      window.removeEventListener(RESPONSE_LANGUAGE_EVENT, onResponseLanguage);
       window.removeEventListener("storage", onStorage);
     };
   }, [dispatch]);

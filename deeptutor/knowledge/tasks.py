@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Callable
 from datetime import datetime
 import json
@@ -170,7 +171,11 @@ async def run_upload_processing_task(
                 rag_provider=rag_provider,
             )
 
-            staged_files = adder.add_documents(uploaded_file_paths, allow_duplicates=False)
+            staged_files = await asyncio.to_thread(
+                adder.add_documents,
+                uploaded_file_paths,
+                allow_duplicates=False,
+            )
             _task_log(task_id, f"Staged {len(staged_files)} new file(s)")
 
             if not staged_files:

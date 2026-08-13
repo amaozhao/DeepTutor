@@ -106,6 +106,7 @@ export function buildEffectiveChatRequest({
     replaySnapshot && "llmSelection" in replaySnapshot
       ? (replaySnapshot.llmSelection ?? null)
       : session.llmSelection;
+  const masteryPathId = replaySnapshot?.masteryPathId ?? session.masteryPathId;
   const effectiveLanguage = replaySnapshot?.language ?? language;
   const effectivePersona =
     replaySnapshot?.persona ?? persona ?? session.personaSelection ?? "";
@@ -144,6 +145,7 @@ export function buildEffectiveChatRequest({
     ...(effectiveBookReferences?.length
       ? { bookReferences: effectiveBookReferences }
       : {}),
+    ...(masteryPathId ? { masteryPathId } : {}),
     ...(effectivePersona ? { persona: effectivePersona } : {}),
     ...(effectiveMemoryReferences?.length
       ? { memoryReferences: [...effectiveMemoryReferences] }
@@ -175,6 +177,7 @@ export function buildEffectiveChatRequest({
     ...(effectiveBookReferences?.length
       ? { book_references: effectiveBookReferences as BookReferencePayload[] }
       : {}),
+    ...(masteryPathId ? { mastery_path_id: masteryPathId } : {}),
     persona: effectivePersona,
     ...(effectiveMemoryReferences?.length
       ? { memory_references: effectiveMemoryReferences }

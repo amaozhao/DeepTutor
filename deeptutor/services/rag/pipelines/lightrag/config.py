@@ -25,6 +25,10 @@ from __future__ import annotations
 import importlib
 import importlib.util
 import logging
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .worker import OwnerLoopBridge
 
 import numpy as np
 
@@ -87,7 +91,7 @@ def query_kwargs_from_settings() -> dict:
         return {}
 
 
-def build_llm_model_func():
+def build_llm_model_func(*, io_bridge: OwnerLoopBridge | None = None):
     """Wrap DeepTutor's unified LLM callable for LightRAG.
 
     Drops LightRAG's internal kwargs while preserving explicit ``messages``.
@@ -101,17 +105,20 @@ def build_llm_model_func():
         messages=None,
         **_ignored,
     ):
-        return await base(
-            prompt or "",
-            system_prompt=system_prompt,
-            history_messages=history_messages or [],
-            messages=messages,
-        )
+        async def request():
+            return await base(
+                prompt or "",
+                system_prompt=system_prompt,
+                history_messages=history_messages or [],
+                messages=messages,
+            )
+
+        return await io_bridge.run(request) if io_bridge is not None else await request()
 
     return llm_model_func
 
 
-def build_vision_model_func():
+def build_vision_model_func(*, io_bridge: OwnerLoopBridge | None = None):
     """Wrap DeepTutor's vision-capable callable for RAG-Anything's image step."""
     base = llm_service.get_llm_client().get_vision_model_func()
 
@@ -123,18 +130,21 @@ def build_vision_model_func():
         messages=None,
         **_ignored,
     ):
-        return await base(
-            prompt or "",
-            system_prompt=system_prompt,
-            history_messages=history_messages or [],
-            image_data=image_data,
-            messages=messages,
-        )
+        async def request():
+            return await base(
+                prompt or "",
+                system_prompt=system_prompt,
+                history_messages=history_messages or [],
+                image_data=image_data,
+                messages=messages,
+            )
+
+        return await io_bridge.run(request) if io_bridge is not None else await request()
 
     return vision_model_func
 
 
-def build_embedding_func():
+def build_embedding_func(*, io_bridge: OwnerLoopBridge | None = None):
     """Wrap DeepTutor's embedding client in LightRAG's ``EmbeddingFunc``."""
     try:
         embedding_func_type = importlib.import_module("lightrag.utils").EmbeddingFunc
@@ -158,7 +168,11 @@ def build_embedding_func():
             "query": "search_query",
             "document": "search_document",
         }.get(str(context or "").strip().lower())
-        vectors = await client.embed(texts, input_type=input_type)
+
+        async def request():
+            return await client.embed(texts, input_type=input_type)
+
+        vectors = await io_bridge.run(request) if io_bridge is not None else await request()
         return np.asarray(vectors, dtype=np.float32)
 
     return embedding_func_type(

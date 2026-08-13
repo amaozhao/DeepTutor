@@ -22,6 +22,7 @@ from .capabilities import supports_response_format, supports_vision
 from .config import LLMConfig, get_llm_config
 from .error_mapping import map_error
 from .multimodal import prepare_multimodal_messages
+from .provider_core.codebuddy_models import fetch_codebuddy_models
 from .provider_factory import get_runtime_provider
 from .utils import is_local_llm_server
 
@@ -589,9 +590,12 @@ async def stream(
 
 async def fetch_models(
     binding: str,
-    base_url: str,
+    base_url: str = "",
     api_key: str | None = None,
 ) -> list[str]:
+    if canonical_provider_name(binding) == "codebuddy":
+        return await fetch_codebuddy_models(api_key)
+
     if is_local_llm_server(base_url):
         return await local_provider.fetch_models(base_url, api_key)
 

@@ -29,6 +29,7 @@ export function selectedChatState(state: ProviderState): ChatState {
     activeCapability: current.activeCapability,
     knowledgeBases: current.knowledgeBases,
     llmSelection: current.llmSelection,
+    masteryPathId: current.masteryPathId,
     personaSelection: current.personaSelection,
     messages: current.messages,
     isStreaming: current.isStreaming,

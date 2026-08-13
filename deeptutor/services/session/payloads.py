@@ -82,6 +82,11 @@ def string_list(value: Any) -> list[str]:
     return [item for item in value if isinstance(item, str) and item]
 
 
+def mastery_path_id(value: Any) -> str:
+    """Normalize the optional session-to-mastery-path association."""
+    return str(value or "").strip()
+
+
 def llm_selection_dict(value: Any) -> dict[str, str] | None:
     selection = LLMSelection.from_payload(value)
     return selection.to_dict() if selection else None
@@ -122,6 +127,9 @@ def request_snapshot_metadata(
         snapshot["questionNotebookReferences"] = question_notebook_references
     if book_references:
         snapshot["bookReferences"] = book_references
+    path_id = mastery_path_id(payload.get("mastery_path_id"))
+    if path_id:
+        snapshot["masteryPathId"] = path_id
     if persona:
         snapshot["persona"] = persona
     if memory_references:

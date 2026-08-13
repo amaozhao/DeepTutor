@@ -10,7 +10,7 @@ import React, {
   useReducer,
   useRef,
 } from 'react'
-import { readStoredLanguage } from '@/context/app-shell-storage'
+import { readStoredResponseLanguage } from '@/context/app-shell-storage'
 import type { StreamEvent, ChatMessage, LLMSelection } from '@/lib/unified-ws'
 import { UnifiedWSClient } from '@/lib/unified-ws'
 import {
@@ -20,6 +20,7 @@ import {
   updateSessionTitle,
 } from '@/lib/session-api'
 import { notify } from '@/lib/notifications'
+import { resolvePersistedMessage } from '@/lib/optimistic-id'
 import i18n from 'i18next'
 
 import {
@@ -70,7 +71,6 @@ import {
   editParentId,
   nextMessageParentIds,
   persistedMessageIdAt,
-  userMessageIndexById,
 } from '@/context/chat/branches'
 import { buildEffectiveChatRequest, chatStartTurnActions } from '@/context/chat/request'
 import {
@@ -110,6 +110,7 @@ interface ChatContextValue {
   setCapability: (cap: string | null) => void
   setKBs: (kbs: string[]) => void
   setLLMSelection: (selection: LLMSelection | null) => void
+  setMasteryPathId: (masteryPathId: string | null) => void
   setPersonaSelection: (persona: string) => void
   setLanguage: (lang: string) => void
   sendMessage: (
@@ -149,7 +150,7 @@ interface ChatContextValue {
   loadSession: (
     sessionId: string,
     options?: { signal?: AbortSignal; revalidate?: boolean }
-  ) => Promise<void>
+  ) => Promise<MessageItem[] | undefined>
   showCachedSession: (sessionId: string) => boolean
   selectedSessionId: string | null
   sessionStatuses: Record<string, SessionStatusSnapshot>
@@ -171,7 +172,9 @@ export function UnifiedChatProvider({ children }: { children: React.ReactNode })
   // Forward-declared so ``handleRunnerEvent`` (created above
   // ``loadSession`` in source order) can trigger a server refresh after
   // a turn finishes without taking a stale closure of ``loadSession``.
-  const loadSessionRef = useRef<((sessionId: string) => Promise<void>) | null>(null)
+  const loadSessionRef = useRef<((sessionId: string) => Promise<MessageItem[] | undefined>) | null>(
+    null
+  )
 
   useLayoutEffect(() => {
     stateRef.current = state
@@ -332,12 +335,9 @@ export function UnifiedChatProvider({ children }: { children: React.ReactNode })
   }, [])
 
   const loadSession = useCallback(
-    async (
-      sessionId: string,
-      options?: { signal?: AbortSignal; revalidate?: boolean }
-    ) => {
+    async (sessionId: string, options?: { signal?: AbortSignal; revalidate?: boolean }) => {
       const session = await getSession(sessionId, options?.signal)
-      const action = loadSessionActionFromDetail(session, readStoredLanguage())
+      const action = loadSessionActionFromDetail(session, readStoredResponseLanguage())
       if (options?.revalidate) {
         const local = stateRef.current.sessions[action.key]
         if (!local || local.isStreaming || local.status === 'running') return
@@ -347,6 +347,7 @@ export function UnifiedChatProvider({ children }: { children: React.ReactNode })
       }
       const subscription = subscribeTurnMessageFromDetail(session)
       if (subscription) sendThroughRunner(subscription.key, subscription.message)
+      return action.messages
     },
     [sendThroughRunner]
   )
@@ -400,7 +401,7 @@ export function UnifiedChatProvider({ children }: { children: React.ReactNode })
         persona,
         memoryReferences,
         session,
-        language: readStoredLanguage(),
+        language: readStoredResponseLanguage(),
         wireParentId,
       })
       for (const action of chatStartTurnActions({
@@ -450,7 +451,7 @@ export function UnifiedChatProvider({ children }: { children: React.ReactNode })
       pendingRegenerateRef.current.delete(key)
     }
     for (const action of regenerateStartActions(key)) dispatch(action)
-    sendThroughRunner(key, buildRegenerateMessage(session.sessionId, readStoredLanguage()))
+    sendThroughRunner(key, buildRegenerateMessage(session.sessionId, readStoredResponseLanguage()))
   }, [sendThroughRunner])
 
   const derivedState = useMemo<ChatState>(() => selectedChatState(state), [state])
@@ -473,6 +474,10 @@ export function UnifiedChatProvider({ children }: { children: React.ReactNode })
 
   const setLLMSelection = useCallback((selection: LLMSelection | null) => {
     dispatch({ type: 'SET_LLM_SELECTION', selection })
+  }, [])
+
+  const setMasteryPathId = useCallback((masteryPathId: string | null) => {
+    dispatch({ type: 'SET_MASTERY_PATH_ID', masteryPathId: masteryPathId?.trim() || null })
   }, [])
 
   const setPersonaSelection = useCallback((persona: string) => {
@@ -511,31 +516,20 @@ export function UnifiedChatProvider({ children }: { children: React.ReactNode })
       if (!trimmed) return
       const selected = selectedSessionRecord(stateRef.current)
       if (!selected) return
-      const { key, session } = selected
+      const { session } = selected
       // Edits create a new branch via a fresh turn — block while one is
       // already running so we don't queue against an in-flight stream
       // (matches the delete-turn guard).
       if (session.isStreaming) return
-      const idx = userMessageIndexById(session.messages, messageId)
-      if (idx === -1) return
-      let original = session.messages[idx]
-      // Optimistic in-flight rows have a negative client-side id — we
-      // need a real server id to hang the new sibling under. Refresh
-      // from the server, then re-resolve the row by its position in the
-      // (now-persisted) thread before continuing.
-      if (typeof original.id === 'number' && original.id < 0) {
-        if (!session.sessionId) return
-        try {
-          await loadSession(session.sessionId)
-        } catch {
-          return
-        }
-        const refreshed = stateRef.current.sessions[key]
-        const realId = persistedMessageIdAt(refreshed?.messages, idx, 'user')
-        if (realId == null) return
-        original = { ...refreshed.messages[idx], id: realId }
+      let original: MessageItem | undefined
+      try {
+        original = await resolvePersistedMessage(session.messages, messageId, 'user', async () =>
+          session.sessionId ? await loadSession(session.sessionId) : undefined
+        )
+      } catch {
+        return
       }
-      if (typeof original.id !== 'number' || original.id < 0) return
+      if (!original) return
       const parentId = editParentId(original)
       sendMessage(
         trimmed,
@@ -617,6 +611,7 @@ export function UnifiedChatProvider({ children }: { children: React.ReactNode })
       setCapability,
       setKBs,
       setLLMSelection,
+      setMasteryPathId,
       setPersonaSelection,
       setLanguage,
       sendMessage,
@@ -640,6 +635,7 @@ export function UnifiedChatProvider({ children }: { children: React.ReactNode })
       setCapability,
       setKBs,
       setLLMSelection,
+      setMasteryPathId,
       setPersonaSelection,
       setLanguage,
       sendMessage,

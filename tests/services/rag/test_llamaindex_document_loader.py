@@ -187,12 +187,13 @@ def test_loader_skips_images_when_embedding_provider_is_text_only(
     assert documents == []
 
 
-def test_loader_embeds_images_when_embedding_provider_is_multimodal(
+def test_loader_embeds_images_with_qwen38_max_vision_capability(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     pytest.importorskip("llama_index.core")
     ImageNode = __import__("llama_index.core.schema", fromlist=["ImageNode"]).ImageNode
-
+    LLMClient = __import__("deeptutor.services.llm.client", fromlist=["LLMClient"]).LLMClient
+    LLMConfig = __import__("deeptutor.services.llm.config", fromlist=["LLMConfig"]).LLMConfig
     loader_module = __import__(
         "deeptutor.services.rag.pipelines.llamaindex", fromlist=["document_loader"]
     ).document_loader
@@ -211,19 +212,24 @@ def test_loader_embeds_images_when_embedding_provider_is_multimodal(
             captured["contents"] = contents
             return [[0.1, 0.2, 0.3]]
 
-    class _VisionClient:
-        config = type("Config", (), {"binding": "openai", "model": "gpt-4o"})()
+    vision_client = LLMClient(
+        LLMConfig(
+            binding="dashscope",
+            model="qwen3.8-max",
+            api_key="test-key",
+            base_url="https://example.invalid/v1",
+        )
+    )
 
-        def supports_multimodal_images(self) -> bool:
-            return True
+    async def _complete(prompt: str, **kwargs: object) -> str:
+        captured["llm_prompt"] = prompt
+        captured["llm_kwargs"] = kwargs
+        return "A logo image with visible HKU text."
 
-        async def complete(self, prompt, **kwargs):
-            captured["llm_prompt"] = prompt
-            captured["llm_kwargs"] = kwargs
-            return "A logo image with visible HKU text."
+    monkeypatch.setattr(vision_client, "complete", _complete)
 
     monkeypatch.setattr(loader_module, "get_embedding_client", lambda: _MultimodalClient())
-    monkeypatch.setattr(loader_module, "get_llm_client", lambda: _VisionClient())
+    monkeypatch.setattr(loader_module, "get_llm_client", lambda: vision_client)
 
     documents = asyncio.run(loader_module.LlamaIndexDocumentLoader().load([str(image_path)]))
 

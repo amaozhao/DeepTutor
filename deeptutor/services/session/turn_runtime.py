@@ -25,6 +25,7 @@ from deeptutor.multi_user.model_access import (
     redacted_model_access,
 )
 from deeptutor.multi_user.paths import get_admin_path_service
+from deeptutor.multi_user.personal_models import merge_personal_llm_profiles
 from deeptutor.multi_user.skill_access import assigned_skill_ids
 from deeptutor.multi_user.tool_access import allowed_optional_tools
 from deeptutor.multi_user.usage import enforce_current_user_quota, record_current_user_usage
@@ -36,7 +37,6 @@ from deeptutor.services import memory as memory_services
 from deeptutor.services import persona as persona_services
 from deeptutor.services import skill as skill_services
 from deeptutor.services.llm import stream as llm_stream
-from deeptutor.services.llm.utils import clean_thinking_tags
 from deeptutor.services.model_selection import LLMSelection, apply_llm_selection_to_catalog
 from deeptutor.services.model_selection import runtime as model_selection_runtime
 from deeptutor.services.notebook import get_notebook_manager
@@ -46,6 +46,9 @@ from deeptutor.services.session.artifact_attachments import fill_preview_text
 from deeptutor.services.session.attachments import prepare_attachments
 from deeptutor.services.session.events import (
     artifact_attachments as _artifact_attachments,
+)
+from deeptutor.services.session.events import (
+    assemble_persisted_answer as _assemble_persisted_answer,
 )
 from deeptutor.services.session.events import (
     event_usage_summary as _event_usage_summary,
@@ -90,6 +93,7 @@ from deeptutor.services.session.payloads import (
 from deeptutor.services.session.payloads import (
     llm_selection_dict as _llm_selection_dict,
 )
+from deeptutor.services.session.payloads import mastery_path_id as _mastery_path_id
 from deeptutor.services.session.payloads import (
     request_snapshot_metadata as _request_snapshot_metadata,
 )
@@ -104,6 +108,7 @@ from deeptutor.services.session.source_inventory import (
     serialize_referenced_transcript,
 )
 from deeptutor.services.session.store import get_session_store
+from deeptutor.services.settings import interface_settings
 from deeptutor.services.skill.service import SkillService, render_skills_manifest
 
 if TYPE_CHECKING:
@@ -261,6 +266,11 @@ class TurnRuntimeManager:
 
     async def start_turn(self, payload: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
         capability = str(payload.get("capability") or "chat")
+        if not payload.get("language"):
+            payload = {
+                **payload,
+                "language": interface_settings.get_response_language(default="en"),
+            }
         raw_config = dict(payload.get("config", {}) or {})
         runtime_only_keys = (
             "_persist_user_message",
@@ -288,6 +298,13 @@ class TurnRuntimeManager:
         }
         session = await self.store.ensure_session(payload.get("session_id"))
         preferences = session.get("preferences") or {}
+        mastery_path_explicit = "mastery_path_id" in payload
+        mastery_path_id = _mastery_path_id(
+            payload.get("mastery_path_id")
+            if mastery_path_explicit
+            else preferences.get("mastery_path_id")
+        )
+        payload = {**payload, "mastery_path_id": mastery_path_id}
         # Persona is a session-level preference (mirrors llm_selection): an
         # explicit ``persona`` key in the payload — including an empty string,
         # which means "Default" / no persona — wins and is persisted below; an
@@ -337,7 +354,7 @@ class TurnRuntimeManager:
         if llm_selection:
             try:
                 apply_llm_selection_to_catalog(
-                    config_services.get_model_catalog_service().load(),
+                    merge_personal_llm_profiles(config_services.get_model_catalog_service().load()),
                     LLMSelection.from_payload(llm_selection),
                 )
             except ValueError as exc:
@@ -377,6 +394,8 @@ class TurnRuntimeManager:
         if persona_explicit:
             # Persist explicit set AND explicit clear ("" = back to Default).
             preference_update["persona"] = persona_pref
+        if mastery_path_explicit:
+            preference_update["mastery_path_id"] = mastery_path_id
         await self.store.update_session_preferences(session["id"], preference_update)
         turn = await self.store.create_turn(session["id"], capability=capability)
         execution = _TurnExecution(
@@ -490,6 +509,11 @@ class TurnRuntimeManager:
             if overrides.get("llm_selection") is not None
             else snapshot.get("llmSelection") or preferences.get("llm_selection")
         )
+        mastery_path_id = _mastery_path_id(
+            overrides.get("mastery_path_id")
+            if "mastery_path_id" in overrides
+            else snapshot.get("masteryPathId") or preferences.get("mastery_path_id")
+        )
 
         payload: dict[str, Any] = {
             "session_id": session_id,
@@ -514,6 +538,7 @@ class TurnRuntimeManager:
                 if overrides.get("book_references") is not None
                 else snapshot.get("bookReferences") or []
             ),
+            "mastery_path_id": mastery_path_id,
             "config": config,
         }
         if llm_selection:
@@ -696,13 +721,7 @@ class TurnRuntimeManager:
             # inline <think> in the content channel are split at streaming
             # time by the agent loop, but anything that slips through must
             # never be persisted as the user-facing answer.
-            return clean_thinking_tags(
-                "".join(
-                    text
-                    for call_id, text in content_segments
-                    if not (call_id and call_id in narration_call_ids)
-                )
-            )
+            return _assemble_persisted_answer(content_segments, narration_call_ids)
 
         # Files the model generated this turn (exec/code_execution artifacts),
         # persisted as assistant-message attachments so the UI shows openable
@@ -1073,6 +1092,7 @@ class TurnRuntimeManager:
                     "history_references": history_references,
                     "question_notebook_references": question_notebook_references,
                     "book_references": book_references,
+                    "mastery_path_id": _mastery_path_id(payload.get("mastery_path_id")),
                     "book_context": book_context,
                     "book_context_warnings": book_context_result.warnings,
                     "memory_references": memory_references,

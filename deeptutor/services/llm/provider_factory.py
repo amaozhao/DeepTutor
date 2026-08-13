@@ -59,6 +59,14 @@ def _build_runtime_provider(llm_config: LLMConfig) -> LLMProvider:
             "deeptutor.services.llm.provider_core.github_copilot_provider"
         )
         provider = provider_module.GitHubCopilotProvider(default_model=llm_config.model)
+    elif backend == "codebuddy":
+        provider_module = importlib.import_module(
+            "deeptutor.services.llm.provider_core.codebuddy_http_provider"
+        )
+        provider = provider_module.build_codebuddy_provider(
+            api_key=llm_config.api_key or None,
+            default_model=llm_config.model,
+        )
     elif backend == "azure_openai":
         provider_module = importlib.import_module(
             "deeptutor.services.llm.provider_core.azure_openai_provider"

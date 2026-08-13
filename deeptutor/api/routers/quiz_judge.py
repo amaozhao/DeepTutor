@@ -22,7 +22,7 @@ from deeptutor.services.config import PROJECT_ROOT, load_config_with_main
 from deeptutor.services.llm import config as _llm_config_mod
 from deeptutor.services.llm import stream as llm_stream
 from deeptutor.services.llm.capabilities import supports_vision
-from deeptutor.services.settings.interface_settings import get_ui_language
+from deeptutor.services.settings.interface_settings import get_response_language
 from deeptutor.services.storage import get_attachment_store
 from deeptutor.utils.error_utils import format_exception_message
 
@@ -292,7 +292,7 @@ async def websocket_quiz_judge(websocket: WebSocket):
 
     requested_language = (data.get("language") or "").strip().lower()
     if requested_language not in ("zh", "en"):
-        requested_language = get_ui_language(
+        requested_language = get_response_language(
             default=_config.get("system", {}).get("language", "en")
         )
         if requested_language not in ("zh", "en"):

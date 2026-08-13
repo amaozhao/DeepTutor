@@ -5,6 +5,7 @@ Knowledge Base API Router
 Handles knowledge base CRUD operations, file uploads, and initialization.
 """
 
+import asyncio
 from datetime import datetime
 import importlib
 import logging
@@ -33,7 +34,7 @@ from deeptutor.api.utils.task_id_manager import TaskIDManager
 from deeptutor.api.utils.task_log_stream import get_task_stream_manager
 from deeptutor.knowledge.add_documents import remove_raw_document
 from deeptutor.knowledge.initializer import KnowledgeBaseInitializer
-from deeptutor.knowledge.kb_types import is_connected_kb
+from deeptutor.knowledge.kb_types import is_connected_kb, supports_local_raw_files
 from deeptutor.knowledge.manager import KnowledgeBaseManager
 from deeptutor.knowledge.naming import validate_knowledge_base_name
 from deeptutor.knowledge.progress_tracker import ProgressStage, ProgressTracker
@@ -208,6 +209,23 @@ def _build_unique_task_id(task_type: str, task_key_prefix: str) -> str:
     return task_manager.generate_task_id(task_type, task_key)
 
 
+async def _save_uploaded_files_off_loop(
+    files: list[UploadFile],
+    target_dir: Path,
+    allowed_extensions: set[str] | None = None,
+    kb_name: str | None = None,
+    rel_paths: list[str] | None = None,
+) -> tuple[list[str], list[str]]:
+    return await asyncio.to_thread(
+        _save_uploaded_files,
+        files,
+        target_dir,
+        allowed_extensions=allowed_extensions,
+        kb_name=kb_name,
+        rel_paths=rel_paths,
+    )
+
+
 def _resolve_registered_kb_name(manager: KnowledgeBaseManager, kb_name: str | None) -> str:
     """Resolve route-level default aliases to the configured default KB."""
     requested = str(kb_name or "").strip()
@@ -242,8 +260,8 @@ def _assert_not_connected_kb(kb_name: str, kb_entry: dict) -> None:
         raise HTTPException(
             status_code=409,
             detail=(
-                f"Knowledge base '{kb_name}' is connected to an external folder and is "
-                "read-only. Uploads and re-indexing are not available for it."
+                f"Knowledge base '{kb_name}' is connected to an external resource and is "
+                "read-only. Local file operations and re-indexing are not available for it."
             ),
         )
 
@@ -358,6 +376,7 @@ async def list_knowledge_bases():
     try:
         manager = get_kb_manager()
         kb_names = manager.list_knowledge_bases()
+        default_name = manager.get_default(available_names=kb_names)
         access_items = list_visible_kb_access()
         access_by_id = {str(item.get("id") or ""): item for item in access_items}
         own_prefix = "admin:kb:" if get_current_user().is_admin else "user:kb:"
@@ -369,7 +388,7 @@ async def list_knowledge_bases():
 
         for name in kb_names:
             try:
-                info = manager.get_info(name)
+                info = manager.get_info(name, refresh_config=False, default_name=default_name)
                 logger.debug(f"Successfully got info for KB '{name}': {info.get('statistics', {})}")
                 result.append(
                     KnowledgeBaseInfo(
@@ -406,7 +425,7 @@ async def list_knowledge_bases():
                             KnowledgeBaseInfo(
                                 id=f"{own_prefix}{name}",
                                 name=name,
-                                is_default=name == manager.get_default(),
+                                is_default=name == default_name,
                                 statistics={
                                     "raw_documents": 0,
                                     "images": 0,
@@ -435,6 +454,7 @@ async def list_knowledge_bases():
 
         logger.debug(f"Returning {len(result)} knowledge bases")
         if not get_current_user().is_admin:
+            assigned_snapshots: dict[str, str | None] = {}
             own_ids = {item.id for item in result}
             for access in access_items:
                 if access.get("source") != "admin" or access.get("id") in own_ids:
@@ -461,7 +481,17 @@ async def list_knowledge_bases():
                 resource = resolve_kb(str(access.get("id") or access.get("name") or ""))
                 assigned_manager = manager_for_resource(resource)
                 try:
-                    info = assigned_manager.get_info(resource.name)
+                    manager_key = str(assigned_manager.base_dir.resolve())
+                    if manager_key not in assigned_snapshots:
+                        assigned_names = assigned_manager.list_knowledge_bases()
+                        assigned_snapshots[manager_key] = assigned_manager.get_default(
+                            available_names=assigned_names
+                        )
+                    info = assigned_manager.get_info(
+                        resource.name,
+                        refresh_config=False,
+                        default_name=assigned_snapshots[manager_key],
+                    )
                     result.append(
                         KnowledgeBaseInfo(
                             id=resource.id,
@@ -536,21 +566,36 @@ async def get_knowledge_base_details(kb_name: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-def _resolve_kb_raw_dir(kb_name: str) -> Path:
-    """Resolve the raw/ directory for a KB, validating that it exists."""
+def _resolve_kb_raw_dir(kb_name: str, *, allow_unsupported: bool = False) -> Path | None:
+    """Resolve a KB's managed raw directory without inventing one."""
     manager = _overridden_kb_manager()
     if manager is not None:
         resolved_name = _resolve_registered_kb_name(manager, kb_name)
-        return manager.get_knowledge_base_path(resolved_name) / "raw"
-    resource = resolve_kb(kb_name)
-    manager = manager_for_resource(resource)
-    kb_path = manager.get_knowledge_base_path(resource.name)
+    else:
+        resource = resolve_kb(kb_name)
+        manager = manager_for_resource(resource)
+        resolved_name = resource.name
+
+    kb_entry = _load_kb_entry_or_404(manager, resolved_name)
+    if not supports_local_raw_files(kb_entry):
+        if allow_unsupported:
+            return None
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"Knowledge base '{resolved_name}' is connected to an external resource "
+                "and has no local files."
+            ),
+        )
+
+    kb_path = manager.get_knowledge_base_path(resolved_name)
     return kb_path / "raw"
 
 
 def _resolve_kb_raw_file_or_404(kb_name: str, filename: str) -> Path:
     """Resolve a raw KB file while preventing traversal outside raw/."""
     raw_dir = _resolve_kb_raw_dir(kb_name)
+    assert raw_dir is not None
     if not raw_dir.exists():
         raise HTTPException(status_code=404, detail="File not found")
 
@@ -572,7 +617,8 @@ async def list_kb_raw_files(kb_name: str):
     before it holds any files. Folders are purely organizational and have no
     effect on indexing or retrieval.
     """
-    return {"files": list_raw_files(_resolve_kb_raw_dir(kb_name))}
+    raw_dir = _resolve_kb_raw_dir(kb_name, allow_unsupported=True)
+    return {"files": [] if raw_dir is None else list_raw_files(raw_dir)}
 
 
 class CreateFolderPayload(BaseModel):
@@ -683,16 +729,15 @@ async def upload_files(
     """Upload files to a knowledge base and process them in background."""
     try:
         manager, kb_name, kb_base_dir = _writable_kb(kb_name)
-        kb_path = manager.get_knowledge_base_path(kb_name)
-        raw_dir = kb_path / "raw"
-        raw_dir.mkdir(parents=True, exist_ok=True)
-
         requested_provider = None
         if rag_provider is not None and str(rag_provider).strip():
             requested_provider = _validate_registered_provider(rag_provider)
 
         kb_entry = _load_kb_entry_or_404(manager, kb_name)
         _assert_kb_writable_or_409(kb_name, kb_entry)
+        kb_path = manager.get_knowledge_base_path(kb_name)
+        raw_dir = kb_path / "raw"
+        raw_dir.mkdir(parents=True, exist_ok=True)
         kb_provider = _validate_registered_provider(
             kb_entry.get("rag_provider") or DEFAULT_PROVIDER
         )
@@ -712,7 +757,7 @@ async def upload_files(
         # archive itself is never indexed (``safe_extract_zip`` skips ``.zip``).
         upload_extensions = allowed_extensions | {".zip"}
         _validate_upload_batch(files, allowed_extensions=upload_extensions, rel_paths=rel_paths)
-        uploaded_files, uploaded_file_paths = _save_uploaded_files(
+        uploaded_files, uploaded_file_paths = await _save_uploaded_files_off_loop(
             files, raw_dir, allowed_extensions=upload_extensions, rel_paths=rel_paths
         )
         task_id = _build_unique_task_id("kb_upload", kb_name)
@@ -824,7 +869,7 @@ async def create_knowledge_base(
             logger.warning(f"KB {name} not found in config, registering manually")
             initializer._register_to_config()
 
-        uploaded_files, _ = _save_uploaded_files(
+        uploaded_files, _ = await _save_uploaded_files_off_loop(
             files, initializer.raw_dir, allowed_extensions=allowed_extensions, rel_paths=rel_paths
         )
 

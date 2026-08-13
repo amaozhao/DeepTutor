@@ -8,6 +8,7 @@ from deeptutor.core.stream import StreamEvent, StreamEventType
 from deeptutor.services.session import events as events_module
 from deeptutor.services.session.events import (
     artifact_attachments,
+    assemble_persisted_answer,
     event_usage_summary,
     flush_buffered_events,
     mirror_event_to_workspace,
@@ -81,6 +82,19 @@ class TestNarrationMarkerCallId:
         )
         assert narration_marker_call_id(event) is None
 
+    def test_dsml_clean_content_is_kept_in_persisted_answer(self) -> None:
+        event = StreamEvent(
+            type=StreamEventType.PROGRESS,
+            metadata={
+                "call_id": "round-dsml",
+                "trace_kind": "call_status",
+                "call_state": "complete",
+                "call_role": "narration",
+                "answer_visible": True,
+            },
+        )
+        assert narration_marker_call_id(event) is None
+
     def test_running_status_is_not_narration(self) -> None:
         event = StreamEvent(
             type=StreamEventType.PROGRESS,
@@ -92,6 +106,18 @@ class TestNarrationMarkerCallId:
             },
         )
         assert narration_marker_call_id(event) is None
+
+
+class TestAssemblePersistedAnswer:
+    def test_continuation_preserves_exact_visible_boundary(self) -> None:
+        segments = [("round-part-1", "Part one. "), ("round-part-2", "Part two.")]
+
+        assert assemble_persisted_answer(segments, set()) == "Part one. Part two."
+
+    def test_trace_only_narration_is_still_excluded(self) -> None:
+        segments = [("search-round", "Searching."), ("finish-round", "Answer.")]
+
+        assert assemble_persisted_answer(segments, {"search-round"}) == "Answer."
 
 
 class TestArtifactAttachments:

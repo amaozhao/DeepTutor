@@ -8,10 +8,12 @@ optional dependency.
 
 from __future__ import annotations
 
+import importlib
 from typing import Any, Callable, Dict, List
 
 from deeptutor.services.config.runtime_settings import (
     DOCUMENT_PARSING_ENGINE_DOCLING,
+    DOCUMENT_PARSING_ENGINE_LITEPARSE,
     DOCUMENT_PARSING_ENGINE_MARKITDOWN,
     DOCUMENT_PARSING_ENGINE_MINERU,
     DOCUMENT_PARSING_ENGINE_PYMUPDF4LLM,
@@ -71,6 +73,10 @@ def _markitdown_class():
     return MarkItDownParser
 
 
+def _liteparse_class():
+    return importlib.import_module(f"{__package__}.liteparse.engine").LiteParseParser
+
+
 def _pymupdf4llm_class():
     if PyMuPDF4LLMParser is None:
         raise ModuleNotFoundError("PyMuPDF4LLM parser engine is unavailable")
@@ -84,6 +90,7 @@ _ENGINE_LOADERS: Dict[str, Callable[[], Any]] = {
     DOCUMENT_PARSING_ENGINE_DOCLING: _docling_class,
     DOCUMENT_PARSING_ENGINE_MARKITDOWN: _markitdown_class,
     DOCUMENT_PARSING_ENGINE_PYMUPDF4LLM: _pymupdf4llm_class,
+    DOCUMENT_PARSING_ENGINE_LITEPARSE: _liteparse_class,
 }
 
 KNOWN_ENGINES = frozenset(_ENGINE_LOADERS)
@@ -128,6 +135,15 @@ _ENGINE_META: Dict[str, Dict[str, Any]] = {
             "Lightweight, no model downloads or CUDA — runs on low-end / GPU-less "
             "machines. PDF/e-book → Markdown and can extract images. PDF and "
             "e-book formats only."
+        ),
+        "needs_local_models": False,
+    },
+    DOCUMENT_PARSING_ENGINE_LITEPARSE: {
+        "name": "LiteParse",
+        "description": (
+            "Fast, lightweight PDF parser with spatial text extraction. "
+            "Markdown output, optional image extraction. No model downloads. "
+            "Developed by LlamaIndex."
         ),
         "needs_local_models": False,
     },

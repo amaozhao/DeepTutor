@@ -20,6 +20,7 @@ import {
   writeStoredCodeBlockTheme,
   writeStoredCodeBlockWrapLongLines,
   writeStoredLanguage,
+  writeStoredResponseLanguage,
 } from '@/context/app-shell-storage'
 import { useAppShell } from '@/context/AppShellContext'
 import { apiFetch, apiUrl } from '@/lib/api'
@@ -215,6 +216,7 @@ type SettingsContextValue = {
   hasUnsavedChanges: boolean
   theme: UiSettings['theme']
   language: UiSettings['language']
+  responseLanguage: UiSettings['response_language']
   codeBlockTheme: UiSettings['code_block_theme']
   codeBlockShowLineNumbers: UiSettings['code_block_show_line_numbers']
   codeBlockWrapLongLines: UiSettings['code_block_wrap_long_lines']
@@ -224,6 +226,7 @@ type SettingsContextValue = {
   // UI prefs
   updateTheme: (next: UiSettings['theme']) => Promise<void>
   updateLanguage: (next: UiSettings['language']) => Promise<void>
+  updateResponseLanguage: (next: UiSettings['response_language']) => Promise<void>
   updateCodeBlockTheme: (next: CodeBlockThemeId) => Promise<void>
   updateCodeBlockShowLineNumbers: (next: boolean) => Promise<void>
   updateCodeBlockWrapLongLines: (next: boolean) => Promise<void>
@@ -299,6 +302,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<SystemStatus | null>(null)
   const [theme, setTheme] = useState<UiSettings['theme']>('snow')
   const [language, setLanguage] = useState<UiSettings['language']>('en')
+  const [responseLanguage, setResponseLanguage] = useState<UiSettings['response_language']>('en')
   const [catalog, setCatalog] = useState<Catalog>(defaultCatalog())
   const [draft, setDraft] = useState<Catalog>(defaultCatalog())
   const [catalogEditable, setCatalogEditable] = useState<boolean | null>(null)
@@ -377,6 +381,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
       }
       setTheme(payload.ui.theme)
       setLanguage(payload.ui.language)
+      setResponseLanguage(payload.ui.response_language ?? payload.ui.language)
       syncLoadedCodeBlockSettingsToAppShell(payload.ui)
       if (payload.providers) setProviders(payload.providers)
       settingsLoaded = true
@@ -445,6 +450,12 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     setLanguage(next)
     writeStoredLanguage(next)
     await persistUiSettingsPatch({ language: next })
+  }, [])
+
+  const updateResponseLanguage = useCallback(async (next: UiSettings['response_language']) => {
+    setResponseLanguage(next)
+    writeStoredResponseLanguage(next)
+    await persistUiSettingsPatch({ response_language: next })
   }, [])
 
   const updateCodeBlockTheme = useCallback(
@@ -959,6 +970,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
       hasUnsavedChanges,
       theme,
       language,
+      responseLanguage,
       codeBlockTheme,
       codeBlockShowLineNumbers,
       codeBlockWrapLongLines,
@@ -966,6 +978,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
       setToast,
       updateTheme,
       updateLanguage,
+      updateResponseLanguage,
       updateCodeBlockTheme,
       updateCodeBlockShowLineNumbers,
       updateCodeBlockWrapLongLines,
@@ -1015,6 +1028,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
       embeddingDefaultDim,
       hasUnsavedChanges,
       language,
+      responseLanguage,
       llmContextDetection,
       logs,
       mutateCatalog,
@@ -1043,6 +1057,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
       updateContextWindowField,
       updateReasoningEffort,
       updateLanguage,
+      updateResponseLanguage,
       updateModelBoolField,
       updateModelField,
       updateProfileField,
