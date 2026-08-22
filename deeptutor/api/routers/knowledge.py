@@ -59,6 +59,7 @@ from deeptutor.knowledge.tasks import (
 from deeptutor.knowledge.uploads import (
     safe_join_raw as _safe_join_raw,
 )
+from deeptutor.knowledge.uploads import sanitize_rel_subdir as _sanitize_rel_subdir
 from deeptutor.knowledge.uploads import (
     save_uploaded_files as _save_uploaded_files,
 )
@@ -82,6 +83,9 @@ from deeptutor.services.config import PROJECT_ROOT, load_config_with_main
 from deeptutor.services.rag import embedding_signature
 from deeptutor.services.rag.factory import (
     DEFAULT_PROVIDER,
+    PAGEINDEX_OSS_PROVIDER,
+    PAGEINDEX_PROVIDER,
+    get_pipeline,
     provider_uses_embedding_versions,
 )
 from deeptutor.services.rag.file_routing import FileTypeRouter
@@ -226,6 +230,18 @@ async def _save_uploaded_files_off_loop(
     )
 
 
+def _with_upload_destination(
+    files: list[UploadFile], rel_paths: list[str] | None, dest_subdir: str | None
+) -> list[str] | None:
+    destination = _sanitize_rel_subdir(dest_subdir)
+    if not destination:
+        return rel_paths
+    return [
+        f"{destination}/{(rel_paths[index] if rel_paths and index < len(rel_paths) else file.filename or 'upload')}"
+        for index, file in enumerate(files)
+    ]
+
+
 def _resolve_registered_kb_name(manager: KnowledgeBaseManager, kb_name: str | None) -> str:
     """Resolve route-level default aliases to the configured default KB."""
     requested = str(kb_name or "").strip()
@@ -368,6 +384,35 @@ async def set_default_kb(kb_name: str):
     except Exception as e:
         logger.error(f"Error setting default KB: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+class ConnectMarginNote4Request(BaseModel):
+    name: str
+    db_path: str = ""
+    description: str = ""
+
+
+@router.post("/connect-marginnote4")
+async def connect_marginnote4(payload: ConnectMarginNote4Request):
+    """Register a connected MarginNote 4 library."""
+    name = (payload.name or "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="name is required.")
+    try:
+        entry = get_kb_manager().register_marginnote4_kb(
+            name,
+            db_path=(payload.db_path or "").strip(),
+            description=(payload.description or "").strip(),
+        )
+        result = {"status": "connected", "name": name}
+        if entry.get("db_path"):
+            result["db_path"] = entry["db_path"]
+        return result
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.error("Error connecting MarginNote 4 library: %s", exc)
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
 @router.get("/list", response_model=list[KnowledgeBaseInfo])
@@ -691,10 +736,17 @@ async def serve_kb_raw_file(kb_name: str, filename: str):
 async def delete_kb_file(kb_name: str, filename: str):
     """Remove a single raw document from a knowledge base."""
     manager, kb_name, _ = _writable_kb(kb_name)
-    _assert_kb_writable_or_409(kb_name, _load_kb_entry_or_404(manager, kb_name))
+    kb_entry = _load_kb_entry_or_404(manager, kb_name)
+    _assert_kb_writable_or_409(kb_name, kb_entry)
     target = _resolve_kb_raw_file_or_404(kb_name, filename)
 
-    removal = remove_raw_document(Path(manager.get_knowledge_base_path(kb_name)), target)
+    kb_dir = manager.get_knowledge_base_path(kb_name)
+    provider = _validate_registered_provider(kb_entry.get("rag_provider") or DEFAULT_PROVIDER)
+    if provider in {PAGEINDEX_PROVIDER, PAGEINDEX_OSS_PROVIDER}:
+        await get_pipeline(provider, kb_base_dir=str(manager.base_dir)).remove_document(
+            kb_name, target.name
+        )
+    removal = remove_raw_document(Path(kb_dir), target)
     return {
         "status": "ok",
         "path": removal.rel_path,
@@ -725,6 +777,7 @@ async def upload_files(
     files: list[UploadFile] = File(...),
     rag_provider: str = Form(None),
     rel_paths: list[str] = Form(None),
+    dest_subdir: str = Form(None),
 ):
     """Upload files to a knowledge base and process them in background."""
     try:
@@ -756,6 +809,7 @@ async def upload_files(
         # validated against ``allowed_extensions`` during extraction and the
         # archive itself is never indexed (``safe_extract_zip`` skips ``.zip``).
         upload_extensions = allowed_extensions | {".zip"}
+        rel_paths = _with_upload_destination(files, rel_paths, dest_subdir)
         _validate_upload_batch(files, allowed_extensions=upload_extensions, rel_paths=rel_paths)
         uploaded_files, uploaded_file_paths = await _save_uploaded_files_off_loop(
             files, raw_dir, allowed_extensions=upload_extensions, rel_paths=rel_paths
@@ -807,6 +861,7 @@ async def create_knowledge_base(
     name: str = Form(...),
     files: list[UploadFile] = File(...),
     rag_provider: str = Form(DEFAULT_PROVIDER),
+    pageindex_mode: str = Form(""),
     rel_paths: list[str] = Form(None),
 ):
     """Create a new knowledge base and initialize it with files."""
@@ -822,6 +877,16 @@ async def create_knowledge_base(
             raise HTTPException(status_code=400, detail=f"Knowledge base '{name}' already exists")
 
         rag_provider = _validate_registered_provider(rag_provider)
+        pageindex_mode = str(pageindex_mode or "").strip().lower()
+        if rag_provider == PAGEINDEX_OSS_PROVIDER and pageindex_mode not in {
+            "",
+            "flash",
+            "standard",
+        }:
+            raise HTTPException(
+                status_code=400,
+                detail="PageIndex OSS mode must be 'flash', 'standard', or omitted.",
+            )
         _assert_provider_ready(rag_provider)
         _enforce_provider_formats(rag_provider, files)
         allowed_extensions = FileTypeRouter.get_supported_extensions()
@@ -850,6 +915,8 @@ async def create_knowledge_base(
         if name in manager.config.get("knowledge_bases", {}):
             manager.config["knowledge_bases"][name]["rag_provider"] = rag_provider
             manager.config["knowledge_bases"][name]["needs_reindex"] = False
+            if rag_provider == PAGEINDEX_OSS_PROVIDER and pageindex_mode:
+                manager.config["knowledge_bases"][name]["pageindex_mode"] = pageindex_mode
             manager._save_config()
 
         progress_tracker = ProgressTracker(name, kb_base_dir)

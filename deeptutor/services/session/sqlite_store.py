@@ -55,6 +55,7 @@ def _json_loads(value: str | None, default: Any) -> Any:
 # this id prefix as their discriminator (see ``SQLiteSessionStore._WHERE_*``).
 _IMPORTED_ID_PREFIX = "imported_"
 _ID_SAFE = re.compile(r"[^A-Za-z0-9_-]")
+QuestionBankQuery = notebook_sql.QuestionBankQuery
 
 
 def make_imported_session_id(source: str, external_id: str) -> str:
@@ -263,6 +264,22 @@ class SQLiteSessionStore:
 
     async def append_turn_event(self, turn_id: str, event: dict[str, Any]) -> dict[str, Any]:
         return await self._run(self._append_turn_event_sync, turn_id, event)
+
+    def _append_turn_events_sync(
+        self, turn_id: str, events: list[dict[str, Any]]
+    ) -> list[dict[str, Any]]:
+        with self._connect() as conn:
+            return turn_sql.append_turn_events(
+                conn,
+                turn_id,
+                events,
+                json_dumps=_json_dumps,
+            )
+
+    async def append_turn_events(
+        self, turn_id: str, events: list[dict[str, Any]]
+    ) -> list[dict[str, Any]]:
+        return await self._run(self._append_turn_events_sync, turn_id, events)
 
     def _get_turn_events_sync(self, turn_id: str, after_seq: int = 0) -> list[dict[str, Any]]:
         with self._connect() as conn:
@@ -636,22 +653,12 @@ class SQLiteSessionStore:
 
     def _list_notebook_entries_sync(
         self,
-        category_id: int | None,
-        bookmarked: bool | None,
-        is_correct: bool | None,
-        limit: int,
-        offset: int,
-        session_id: str | None = None,
+        query: QuestionBankQuery,
     ) -> dict[str, Any]:
         with self._connect() as conn:
             return notebook_sql.list_entries(
                 conn,
-                category_id,
-                bookmarked,
-                is_correct,
-                limit,
-                offset,
-                session_id,
+                query,
                 json_loads=_json_loads,
             )
 
@@ -664,16 +671,69 @@ class SQLiteSessionStore:
         offset: int = 0,
         *,
         session_id: str | None = None,
+        search: str = "",
+        uncategorized: bool = False,
+        sort: str = "recent",
     ) -> dict[str, Any]:
+        """List question-bank entries. Every row carries its categories."""
         return await self._run(
             self._list_notebook_entries_sync,
-            category_id,
-            bookmarked,
-            is_correct,
-            limit,
-            offset,
-            session_id,
+            QuestionBankQuery(
+                category_id=category_id,
+                uncategorized=uncategorized,
+                bookmarked=bookmarked,
+                is_correct=is_correct,
+                search=search,
+                session_id=session_id,
+                sort=sort,
+                limit=limit,
+                offset=offset,
+            ),
         )
+
+    def _question_bank_stats_sync(self) -> dict[str, int]:
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT
+                    COUNT(*) AS total,
+                    COALESCE(SUM(CASE WHEN is_correct = 0 THEN 1 ELSE 0 END), 0) AS wrong,
+                    COALESCE(SUM(CASE WHEN bookmarked = 1 THEN 1 ELSE 0 END), 0) AS bookmarked,
+                    COALESCE(SUM(
+                        CASE WHEN NOT EXISTS (
+                            SELECT 1 FROM notebook_entry_categories ec
+                            WHERE ec.entry_id = notebook_entries.id
+                        ) THEN 1 ELSE 0 END
+                    ), 0) AS uncategorized
+                FROM notebook_entries
+                """
+            ).fetchone()
+        if row is None:
+            return {"total": 0, "wrong": 0, "bookmarked": 0, "uncategorized": 0}
+        return {
+            "total": int(row["total"]),
+            "wrong": int(row["wrong"]),
+            "bookmarked": int(row["bookmarked"]),
+            "uncategorized": int(row["uncategorized"]),
+        }
+
+    def has_question_bank_entries(self) -> bool:
+        """Whether the bank holds anything at all — the tool's mount gate.
+
+        Deliberately synchronous: tool composition runs inside a sync
+        policy function, and a bool probe is one indexed row read. Fails
+        closed so a missing/locked db never mounts a tool with no data.
+        """
+        try:
+            with self._connect() as conn:
+                row = conn.execute("SELECT 1 FROM notebook_entries LIMIT 1").fetchone()
+            return row is not None
+        except Exception:
+            return False
+
+    async def question_bank_stats(self) -> dict[str, int]:
+        """Counts behind the bank's filter chips (and the agent's overview)."""
+        return await self._run(self._question_bank_stats_sync)
 
     def _get_notebook_entry_sync(self, entry_id: int) -> dict[str, Any] | None:
         with self._connect() as conn:
@@ -770,6 +830,70 @@ class SQLiteSessionStore:
     async def get_entry_categories(self, entry_id: int) -> list[dict[str, Any]]:
         return await self._run(self._get_entry_categories_sync, entry_id)
 
+    def _link_entries_to_category_sync(
+        self, entry_ids: list[int], category_id: int, link: bool
+    ) -> int:
+        """Add/remove many entries to one category in a single transaction.
+
+        Returns the number of links actually changed, so a caller that asked
+        to file 20 questions can tell the learner "18 filed, 2 already there"
+        instead of claiming a no-op succeeded.
+        """
+        if not entry_ids:
+            return 0
+        with self._connect() as conn:
+            exists = conn.execute(
+                "SELECT 1 FROM notebook_categories WHERE id = ?", (category_id,)
+            ).fetchone()
+            if exists is None:
+                return 0
+            placeholders = ",".join("?" * len(entry_ids))
+            # Filter to entries that really exist: a stale id from the agent
+            # or a concurrently-deleted row must not abort the whole batch.
+            known = [
+                int(r["id"])
+                for r in conn.execute(
+                    f"SELECT id FROM notebook_entries WHERE id IN ({placeholders})",  # nosec B608 - only `?` placeholders are interpolated; every value binds
+                    tuple(entry_ids),
+                ).fetchall()
+            ]
+            if not known:
+                return 0
+            if link:
+                cur = conn.executemany(
+                    "INSERT OR IGNORE INTO notebook_entry_categories "
+                    "(entry_id, category_id) VALUES (?, ?)",
+                    [(eid, category_id) for eid in known],
+                )
+            else:
+                cur = conn.executemany(
+                    "DELETE FROM notebook_entry_categories WHERE entry_id = ? AND category_id = ?",
+                    [(eid, category_id) for eid in known],
+                )
+            return int(cur.rowcount or 0)
+
+    async def link_entries_to_category(
+        self, entry_ids: list[int], category_id: int, *, link: bool = True
+    ) -> int:
+        return await self._run(
+            self._link_entries_to_category_sync, list(entry_ids), category_id, link
+        )
+
+    def _find_category_by_name_sync(self, name: str) -> dict[str, Any] | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT id, name, created_at FROM notebook_categories "
+                "WHERE name = ? COLLATE NOCASE ORDER BY id LIMIT 1",
+                (name.strip(),),
+            ).fetchone()
+        if row is None:
+            return None
+        return {"id": int(row["id"]), "name": row["name"], "created_at": float(row["created_at"])}
+
+    async def find_category_by_name(self, name: str) -> dict[str, Any] | None:
+        """Look a category up by display name — the only handle an agent has."""
+        return await self._run(self._find_category_by_name_sync, name)
+
 
 _instances: dict[str, SQLiteSessionStore] = {}
 
@@ -782,4 +906,9 @@ def get_sqlite_session_store() -> SQLiteSessionStore:
     return _instances[key]
 
 
-__all__ = ["SQLiteSessionStore", "get_sqlite_session_store", "make_imported_session_id"]
+__all__ = [
+    "QuestionBankQuery",
+    "SQLiteSessionStore",
+    "get_sqlite_session_store",
+    "make_imported_session_id",
+]

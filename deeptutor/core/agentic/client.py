@@ -27,6 +27,7 @@ from deeptutor.services.llm import get_token_limit_kwargs, supports_tools
 from deeptutor.services.llm.openai_http_client import (
     disable_ssl_verify_enabled,
     openai_client_kwargs,
+    sanitize_invalid_ssl_env,
 )
 import deeptutor.services.llm.provider_core as provider_core
 from deeptutor.services.llm.reasoning_params import (
@@ -86,6 +87,10 @@ def _client_cache_key(
 
 
 def _build_openai_client(config: LLMClientConfig, *, disable_ssl_verify: bool) -> Any:
+    # A stale SSL_CERT_FILE (common with cloned conda envs) makes httpx's
+    # create_ssl_context raise FileNotFoundError mid-__init__, aborting client
+    # construction. Drop broken CA paths first so TLS uses its default CA config.
+    sanitize_invalid_ssl_env()
     default_headers = config.extra_headers or None
     spec = find_by_name(config.binding)
     if spec:
@@ -221,6 +226,18 @@ def _build_codebuddy_adapter(config: LLMClientConfig, spec: Any) -> Any:
     return _ProviderOpenAIAdapter(codebuddy_provider)
 
 
+def _build_direct_openai_adapter(config: LLMClientConfig, spec: Any) -> Any:
+    provider = provider_core.OpenAICompatProvider(
+        api_key=config.api_key,
+        api_base=config.base_url or spec.default_api_base or None,
+        default_model=config.model or "gpt-5",
+        extra_headers=config.extra_headers,
+        spec=spec,
+        provider_name=config.binding,
+    )
+    return _ProviderOpenAIAdapter(provider)
+
+
 _NATIVE_ADAPTER_BUILDERS: dict[str, Callable[[LLMClientConfig, Any], Any]] = {
     "anthropic": _build_anthropic_adapter,
     "openai_codex": _build_codex_adapter,
@@ -230,6 +247,17 @@ _NATIVE_ADAPTER_BUILDERS: dict[str, Callable[[LLMClientConfig, Any], Any]] = {
 
 
 def _build_native_provider_adapter(config: LLMClientConfig, spec: Any) -> Any | None:
+    endpoint = (config.base_url or spec.default_api_base or "").lower()
+    model = (config.model or "").lower()
+    if (
+        spec.name == "openai"
+        and not config.api_version
+        and "api.openai.com" in endpoint
+        and any(token in model for token in ("gpt-5", "o1", "o3", "o4"))
+    ):
+        # Reuse the services provider: it already converts messages, tools,
+        # streaming events and token limits for the Responses API.
+        return _build_direct_openai_adapter(config, spec)
     builder = _NATIVE_ADAPTER_BUILDERS.get(spec.backend)
     return builder(config, spec) if builder else None
 
@@ -292,7 +320,9 @@ class _ProviderOpenAIAdapter:
                             for index, tool_call in enumerate(response.tool_calls or [])
                         ],
                     ),
-                    finish_reason=response.finish_reason or "stop",
+                    finish_reason=(
+                        "tool_calls" if response.tool_calls else response.finish_reason or "stop"
+                    ),
                 )
             ],
             usage=response.usage or None,
@@ -373,7 +403,9 @@ class _ProviderOpenAIStream:
                 await self._queue.put(_openai_stream_chunk(tool_call=tool_call, index=index))
             await self._queue.put(
                 _openai_stream_chunk(
-                    finish_reason=response.finish_reason or "stop",
+                    finish_reason=(
+                        "tool_calls" if response.tool_calls else response.finish_reason or "stop"
+                    ),
                     usage=response.usage or None,
                 )
             )

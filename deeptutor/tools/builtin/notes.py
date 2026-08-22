@@ -7,6 +7,9 @@ from typing import Any
 from deeptutor.core.tool_protocol import BaseTool, ToolDefinition, ToolParameter, ToolResult
 from deeptutor.tools.builtin.common import _PromptHintsMixin
 from deeptutor.tools.list_notebook import list_notebooks_or_records
+from deeptutor.tools.question_bank import ACTIONS as QB_ACTIONS
+from deeptutor.tools.question_bank import FILTERS as QB_FILTERS
+from deeptutor.tools.question_bank import run_question_bank
 from deeptutor.tools.write_note import write_note
 
 
@@ -55,6 +58,84 @@ class ListNotebookTool(_PromptHintsMixin, BaseTool):
         return ToolResult(
             content=outcome.text,
             metadata=outcome.summary or {},
+        )
+
+
+class QuestionBankTool(_PromptHintsMixin, BaseTool):
+    """Read and organise the learner's graded-question bank."""
+
+    def get_definition(self) -> ToolDefinition:
+        return ToolDefinition(
+            name="question_bank",
+            description=(
+                "Read and organise the learner's question bank — the graded quiz questions "
+                "saved under Learning Space → Question Bank. Use action='overview' for counts "
+                "and categories; 'list' to see entries; 'organize' or 'unfile' to change "
+                "categories; and 'bookmark' to star or unstar entries."
+            ),
+            parameters=[
+                ToolParameter(
+                    name="action",
+                    type="string",
+                    description="'overview', 'list', 'organize', 'unfile', or 'bookmark'.",
+                    enum=list(QB_ACTIONS),
+                ),
+                ToolParameter(
+                    name="filter",
+                    type="string",
+                    description="For list: 'wrong', 'uncategorized', 'bookmarked', or 'all'.",
+                    enum=list(QB_FILTERS),
+                    required=False,
+                ),
+                ToolParameter(
+                    name="category",
+                    type="string",
+                    description="Category name for list, organize, or unfile.",
+                    required=False,
+                ),
+                ToolParameter(
+                    name="search",
+                    type="string",
+                    description="Free-text match over questions and answers.",
+                    required=False,
+                ),
+                ToolParameter(
+                    name="entry_ids",
+                    type="array",
+                    description="Entry ids from a list call.",
+                    items={"type": "integer"},
+                    required=False,
+                ),
+                ToolParameter(
+                    name="bookmarked",
+                    type="boolean",
+                    description="For bookmark: true to star, false to unstar.",
+                    required=False,
+                ),
+                ToolParameter(
+                    name="limit",
+                    type="integer",
+                    description="Maximum list entries (default 20, max 100).",
+                    required=False,
+                ),
+            ],
+        )
+
+    async def execute(self, **kwargs: Any) -> ToolResult:
+        outcome = await run_question_bank(
+            action=str(kwargs.get("action") or "overview"),
+            filter_mode=str(kwargs.get("filter") or "all"),
+            category=str(kwargs.get("category") or ""),
+            search=str(kwargs.get("search") or ""),
+            entry_ids=kwargs.get("entry_ids"),
+            bookmarked=bool(kwargs.get("bookmarked", True)),
+            limit=int(kwargs.get("limit") or 20),
+        )
+        if not outcome.ok:
+            return ToolResult(content=outcome.error, success=False)
+        return ToolResult(
+            content=outcome.text,
+            metadata={"question_bank": outcome.summary or {}},
         )
 
 

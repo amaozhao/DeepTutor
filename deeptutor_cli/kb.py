@@ -8,6 +8,7 @@ Manage llamaindex knowledge bases from the command line.
 from __future__ import annotations
 
 import asyncio
+import importlib
 import json
 from pathlib import Path
 from typing import Optional
@@ -21,8 +22,13 @@ from deeptutor.knowledge.initializer import initialize_knowledge_base
 from deeptutor.knowledge.manager import KnowledgeBaseManager
 from deeptutor.knowledge.naming import validate_knowledge_base_name
 from deeptutor.services.path_service import get_path_service
-from deeptutor.services.rag.factory import DEFAULT_PROVIDER
+from deeptutor.services.rag.factory import (
+    DEFAULT_PROVIDER,
+    PAGEINDEX_OSS_PROVIDER,
+    PAGEINDEX_PROVIDER,
+)
 from deeptutor.services.rag.file_routing import FileTypeRouter
+from deeptutor.services.rag.provider_binding import resolve_bound_provider
 from deeptutor.tools.rag_tool import rag_search
 
 console = Console()
@@ -264,14 +270,38 @@ def register(app: typer.Typer) -> None:
             raise typer.Exit(code=1)
 
         try:
-            result = asyncio.run(
-                rag_search(
-                    query=query,
-                    kb_name=name,
-                    mode=mode,
-                    kb_base_dir=str(mgr.base_dir),
+            provider = resolve_bound_provider(str(mgr.base_dir), name)
+            if provider in {PAGEINDEX_PROVIDER, PAGEINDEX_OSS_PROVIDER}:
+                reading = asyncio.run(
+                    importlib.import_module(
+                        "deeptutor.services.rag.pipelines.pageindex.reasoning"
+                    ).read_pageindex_with_agent(
+                        kb_name=name,
+                        system_prompt=(
+                            "Answer the CLI user's question from the selected PageIndex "
+                            "knowledge base. Include page references from tool results."
+                        ),
+                        user_prompt=query,
+                        source="cli_kb_search",
+                        stage="search",
+                    )
                 )
-            )
+                result = {
+                    "query": query,
+                    "answer": reading.text,
+                    "content": reading.text,
+                    "sources": reading.sources,
+                    "provider": reading.tool_context.provider,
+                }
+            else:
+                result = asyncio.run(
+                    rag_search(
+                        query=query,
+                        kb_name=name,
+                        mode=mode,
+                        kb_base_dir=str(mgr.base_dir),
+                    )
+                )
         except Exception as exc:
             console.print(f"[red]Search failed: {exc}[/]")
             raise typer.Exit(code=1) from exc
@@ -281,6 +311,6 @@ def register(app: typer.Typer) -> None:
             return
 
         answer = result.get("answer") or result.get("content", "")
-        provider = result.get("provider", DEFAULT_PROVIDER)
+        provider = str(result.get("provider", DEFAULT_PROVIDER))
         console.print(f"[bold]Provider:[/] {provider}")
         console.print(f"[bold]Answer:[/]\n{answer}")

@@ -8,6 +8,7 @@ the Docling document API, which is best pinned when we wire LightRAG.
 
 from __future__ import annotations
 
+import importlib
 import importlib.util
 import os
 from pathlib import Path
@@ -102,13 +103,25 @@ class DoclingParser:
         return _SUPPORTED
 
     def signature(self, config: DoclingConfig) -> ParserSignature:
+        version = package_version("docling")
+        if config.is_remote:
+            version = f"remote:{config.api_base_url}"
         return ParserSignature.build(
             "docling",
-            package_version("docling"),
+            version,
             {"do_ocr": config.do_ocr, "do_table_structure": config.do_table_structure},
         )
 
     def is_ready(self, config: DoclingConfig) -> ReadinessReport:
+        # Remote mode needs no local package or models.
+        if config.is_remote:
+            if not (config.api_base_url or "").strip():
+                return ReadinessReport(
+                    ready=False,
+                    reason="not_configured",
+                    message="Docling remote mode has no server URL configured.",
+                )
+            return ReadinessReport(ready=True)
         if not self.is_available():
             return ReadinessReport(
                 ready=False,
@@ -127,6 +140,14 @@ class DoclingParser:
             ),
         )
 
+    def verify(self, config: DoclingConfig) -> tuple[bool, str]:
+        """Live connectivity check for the Settings “Test” button (remote only).
+        No-op for local mode."""
+        if config.is_remote:
+            remote = importlib.import_module(f"{__package__}.remote")
+            return remote.verify_remote(config)
+        return self.is_ready(config).ready, ""
+
     def parse(
         self,
         source_path: Path,
@@ -135,6 +156,10 @@ class DoclingParser:
         config: DoclingConfig,
         on_output: Optional[Callable[[str], None]] = None,
     ) -> None:
+        if config.is_remote:
+            remote = importlib.import_module(f"{__package__}.remote")
+            remote.parse_remote(source_path, workdir, config=config, on_output=on_output)
+            return
         if on_output:
             on_output(f"Converting {Path(source_path).name} via Docling…")
         try:

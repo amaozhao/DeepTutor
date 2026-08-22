@@ -21,6 +21,7 @@ from typing import Any, Awaitable, Callable
 import yaml
 
 from deeptutor.events.event_bus import Event, EventType, get_event_bus
+from deeptutor.multi_user.context import get_current_user_or_none
 from deeptutor.partners.bus.events import InboundMessage
 from deeptutor.partners.bus.events import OutboundMessage as _OMsg
 from deeptutor.partners.bus.queue import MessageBus
@@ -649,7 +650,7 @@ class PartnerManager:
             return None
 
         channels_config = ChannelsConfig(**config.channels)
-        manager = ChannelManager(channels_config, bus)
+        manager = ChannelManager(channels_config, bus, partner_id=partner_id)
         if not manager.channels:
             logger.info("No channels matched config for partner '%s'", partner_id)
             return None
@@ -853,6 +854,7 @@ class PartnerManager:
             content=content,
             media=media or [],
             session_key_override=resolved_key,
+            actor=get_current_user_or_none(),
         )
         return await instance.runner.process_message(msg, on_event=on_event)
 

@@ -14,6 +14,7 @@ spelling of ``provider_id`` and stays populated for existing clients.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 import logging
 from typing import Any
 
@@ -29,7 +30,9 @@ logger = logging.getLogger(__name__)
 
 
 async def build_tool_options(
-    *, exclude_builtin: set[str] | None = None
+    *,
+    exclude_builtin: set[str] | None = None,
+    optional_tools: Iterable[str] | None = None,
 ) -> dict[str, list[dict[str, Any]]]:
     """Build the configurable-tool surface.
 
@@ -37,6 +40,11 @@ async def build_tool_options(
     the partners API passes ``{"read_memory", "write_memory"}`` because partners
     use the mandatory ``partner_*`` memory tools instead and cannot configure
     chat's memory tools.
+
+    ``optional_tools`` is an optional allow-list for the user-toggleable
+    surface.  The generic builder intentionally owns no admin or partner
+    policy: callers that need a restricted view pass it explicitly, while the
+    multi-user grant editor keeps seeing the complete assignable catalog.
     """
     exclude = exclude_builtin or set()
 
@@ -62,7 +70,12 @@ async def build_tool_options(
             "description_i18n": descriptions,
         }
 
-    tools: list[dict[str, Any]] = [_describe(name) for name in default_optional_tools()]
+    allowed_optional = None if optional_tools is None else frozenset(optional_tools)
+    tools: list[dict[str, Any]] = [
+        _describe(name)
+        for name in default_optional_tools()
+        if allowed_optional is None or name in allowed_optional
+    ]
     builtin_tools: list[dict[str, Any]] = [
         _describe(name) for name in CONFIGURABLE_BUILTIN_TOOL_NAMES if name not in exclude
     ]

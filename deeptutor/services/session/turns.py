@@ -205,6 +205,64 @@ def append_turn_event(
     return payload
 
 
+def append_turn_events(
+    conn: sqlite3.Connection,
+    turn_id: str,
+    events: list[dict[str, Any]],
+    *,
+    json_dumps: JsonDumps,
+) -> list[dict[str, Any]]:
+    """Append one buffered batch in a single transaction."""
+    now = time.time()
+    turn = conn.execute("SELECT id, session_id FROM turns WHERE id = ?", (turn_id,)).fetchone()
+    if turn is None:
+        raise ValueError(f"Turn not found: {turn_id}")
+    row = conn.execute(
+        "SELECT COALESCE(MAX(seq), 0) AS last_seq FROM turn_events WHERE turn_id = ?",
+        (turn_id,),
+    ).fetchone()
+    next_seq = (int(row["last_seq"]) if row else 0) + 1
+    payloads: list[dict[str, Any]] = []
+    rows: list[tuple[Any, ...]] = []
+    for event in events:
+        payload = dict(event)
+        provided_seq = int(payload.get("seq") or 0)
+        if provided_seq > 0:
+            seq = provided_seq
+            next_seq = max(next_seq, provided_seq + 1)
+        else:
+            seq = next_seq
+            next_seq += 1
+        payload["seq"] = seq
+        payload["turn_id"] = payload.get("turn_id") or turn_id
+        payload["session_id"] = payload.get("session_id") or turn["session_id"]
+        payloads.append(payload)
+        rows.append(
+            (
+                turn_id,
+                seq,
+                payload.get("type", ""),
+                payload.get("source", ""),
+                payload.get("stage", ""),
+                payload.get("content", "") or "",
+                json_dumps(payload.get("metadata", {})),
+                float(payload.get("timestamp") or now),
+                now,
+            )
+        )
+    conn.executemany(
+        """
+        INSERT OR REPLACE INTO turn_events (
+            turn_id, seq, type, source, stage, content, metadata_json, timestamp, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        rows,
+    )
+    conn.execute("UPDATE turns SET updated_at = ? WHERE id = ?", (now, turn_id))
+    conn.commit()
+    return payloads
+
+
 def get_turn_events(
     conn: sqlite3.Connection,
     turn_id: str,

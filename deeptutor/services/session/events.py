@@ -203,7 +203,16 @@ async def flush_buffered_events(
     turn_id: str,
     capability: str,
     events: list[dict[str, Any]],
-) -> None:
+    persisted_events: list[dict[str, Any]] | None = None,
+) -> bool:
+    persisted = persisted_events if persisted_events is not None else []
+    if len(persisted) == len(events):
+        await mirror_events_to_workspace(
+            capability=capability,
+            turn_id=turn_id,
+            payloads=persisted,
+        )
+        return True
     append_batch = getattr(store, "append_turn_events", None)
     if callable(append_batch):
         try:
@@ -216,34 +225,36 @@ async def flush_buffered_events(
                 len(events),
                 turn_id,
             )
-            return
+            return True
+        persisted.extend(persisted_batch)
         await mirror_events_to_workspace(
             capability=capability,
             turn_id=turn_id,
-            payloads=persisted_batch,
+            payloads=persisted,
         )
-        return
+        return True
 
-    persisted_events: list[dict[str, Any]] = []
-    try:
-        for index, payload in enumerate(events):
-            try:
-                persisted = await store.append_turn_event(turn_id, payload)
-            except ValueError as exc:
-                if "Turn not found:" not in str(exc):
-                    raise
-                logger.warning(
-                    "Skip persisting %d buffered event(s) for missing turn %s (first: %s)",
-                    len(events) - index,
-                    turn_id,
-                    payload.get("type", ""),
-                )
-                break
-            persisted_events.append(persisted)
-    finally:
-        if persisted_events:
-            await mirror_events_to_workspace(
-                capability=capability,
-                turn_id=turn_id,
-                payloads=persisted_events,
+    missing_turn = False
+    for index, payload in enumerate(events[len(persisted) :], len(persisted)):
+        try:
+            persisted_event = await store.append_turn_event(turn_id, payload)
+        except ValueError as exc:
+            if "Turn not found:" not in str(exc):
+                raise
+            logger.warning(
+                "Skip persisting %d buffered event(s) for missing turn %s (first: %s)",
+                len(events) - index,
+                turn_id,
+                payload.get("type", ""),
             )
+            missing_turn = True
+            break
+        persisted.append(persisted_event)
+    if missing_turn and not persisted:
+        return True
+    await mirror_events_to_workspace(
+        capability=capability,
+        turn_id=turn_id,
+        payloads=persisted,
+    )
+    return True

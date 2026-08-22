@@ -24,7 +24,7 @@ from deeptutor.services.llm.config import LLMConfig
 from .context_window_detection import detect_context_window
 from .embedding_endpoint import redact_embedding_endpoint_for_display
 from .loader import get_agent_params
-from .model_catalog import get_model_catalog_service
+from .model_catalog import get_model_catalog_service, redact_catalog_secrets
 from .provider_runtime import (
     resolve_embedding_runtime_config,
     resolve_imagegen_runtime_config,
@@ -177,7 +177,7 @@ class ConfigTestRunner:
         model["dimension"] = str(actual_dimension)
         saved = service.save(catalog)
         embedding_client.reset_embedding_client()
-        return saved
+        return redact_catalog_secrets(saved)
 
     @staticmethod
     def _capabilities_from_adapter(adapter: Any, model_name: str) -> dict[str, Any]:

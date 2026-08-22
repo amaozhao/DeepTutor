@@ -42,6 +42,9 @@ __all__ = [
     "get_kb_config_service",
     "ModelCatalogService",
     "get_model_catalog_service",
+    "CATALOG_SECRET_MASK",
+    "redact_catalog_secrets",
+    "restore_catalog_secrets",
     "ConfigTestRunner",
     "TestRun",
     "get_config_test_runner",
@@ -103,8 +106,11 @@ _KNOWLEDGE_BASE_EXPORTS = {
 }
 
 _MODEL_CATALOG_EXPORTS = {
+    "CATALOG_SECRET_MASK",
     "ModelCatalogService",
     "get_model_catalog_service",
+    "redact_catalog_secrets",
+    "restore_catalog_secrets",
 }
 
 _RUNTIME_SETTINGS_EXPORTS = {

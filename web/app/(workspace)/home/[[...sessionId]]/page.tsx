@@ -22,7 +22,10 @@ import {
   SubagentTabWatcher,
 } from "@/components/chat/home/PanelBridges";
 import SessionLoadingView from "@/components/chat/home/SessionLoadingView";
+import StarterSuggestions from "@/components/chat/home/StarterSuggestions";
+import MasteryPathStrip from "@/components/chat/home/MasteryPathStrip";
 import { TurnNavigator } from "@/components/chat/home/TurnNavigator";
+import { READER_ASK_EVENT, ReaderPane } from "@/components/reading/ReaderPane";
 // Imported eagerly so the drawer shell is always mounted off-screen —
 // clicking a chip becomes a single CSS class flip, no chunk fetch + double
 // render. The heavy renderers inside still load lazily.
@@ -61,6 +64,7 @@ import { useChatViewerPanel } from "@/hooks/chat/viewer";
 import { useChatComposerMenus } from "@/hooks/chat/menus";
 import { useChatComposerPrefillBridge } from "@/hooks/chat/prefill";
 import { useChatWelcomeGreeting } from "@/hooks/chat/greeting";
+import { useSetupSync } from "@/hooks/useSetupSync";
 import { type OutlineItem } from "@/lib/research-types";
 import { downloadChatMarkdown } from "@/lib/chat-export";
 import { buildChatOutline } from "@/lib/chat-outline";
@@ -91,6 +95,7 @@ import {
 } from "@/lib/chat/capability";
 import { toggleKnowledgeBaseSelection } from "@/lib/chat/agents";
 import { useChatAgents } from "@/hooks/chat/agents";
+import { consumePendingPrompt } from "@/lib/pending-prompt";
 
 const SaveToNotebookModal = dynamic(
   () => import("@/components/notebook/SaveToNotebookModal"),
@@ -148,13 +153,19 @@ export default function ChatPage() {
 
   const {
     knowledgeBases,
+    knowledgeBasesLoaded,
     llmOptions,
     activeLLMDefault,
     llmOptionsLoading,
     llmOptionsError,
     capabilityConfigs,
     userEnabledTools,
+    refreshLLMOptions,
   } = useChatResources();
+  const availableKbNames = useMemo(
+    () => new Set(knowledgeBases.map((kb) => kb.name)),
+    [knowledgeBases],
+  );
   const {
     kbOptions,
     agentOptions,
@@ -258,6 +269,40 @@ export default function ChatPage() {
   } = chatReferences;
   const prefillInputRef = useChatComposerPrefillBridge();
 
+  useEffect(() => {
+    const pending = consumePendingPrompt();
+    if (!pending) return;
+    let attempts = 0;
+    let timer: ReturnType<typeof setTimeout>;
+    const attempt = () => {
+      if (prefillInputRef.current) {
+        prefillInputRef.current(pending);
+        return;
+      }
+      if (attempts++ >= 20) return;
+      timer = setTimeout(attempt, 100);
+    };
+    timer = setTimeout(attempt, 0);
+    return () => clearTimeout(timer);
+  }, [prefillInputRef]);
+
+  useEffect(() => {
+    const onReaderAsk = (event: Event) => {
+      const detail = (
+        event as CustomEvent<{ quote?: string; locator?: number; unit?: string }>
+      ).detail;
+      const quote = (detail?.quote || "").trim();
+      if (!quote) return;
+      const unit = detail?.unit || "page";
+      const where = detail?.locator ? ` (${unit} ${detail.locator})` : "";
+      prefillInputRef.current?.(
+        `> ${quote}\n\n${t("Explain this passage")}${where}: `,
+      );
+    };
+    window.addEventListener(READER_ASK_EVENT, onReaderAsk);
+    return () => window.removeEventListener(READER_ASK_EVENT, onReaderAsk);
+  }, [prefillInputRef, t]);
+
   const activeCap = useMemo(
     () => getCapability(state.activeCapability),
     [state.activeCapability],
@@ -298,6 +343,8 @@ export default function ChatPage() {
     setTools,
   });
   const hasMessages = state.messages.length > 0;
+  const isReadingMode = activeCap.value === "immersive_reading";
+  useSetupSync(state.messages);
   const welcomeGreeting = useChatWelcomeGreeting();
   const firstUserTitle = useMemo(
     () => firstUserMessageTitle(state.messages),
@@ -403,7 +450,12 @@ export default function ChatPage() {
     },
     [loadSession, scrollToBottom, shouldAutoScrollRef],
   );
-  const { sessionLoading, cancelSessionLoad } = useChatSessionRoute({
+  const {
+    sessionLoading,
+    sessionLoadFailed,
+    cancelSessionLoad,
+    retrySessionLoad,
+  } = useChatSessionRoute({
     sessionId: state.sessionId,
     sessionIdParam,
     router,
@@ -458,11 +510,22 @@ export default function ChatPage() {
     if (masteryPathId) setMasteryPathId(masteryPathId);
   }, [setMasteryPathId]);
 
+  useEffect(() => {
+    if (!knowledgeBasesLoaded) return;
+    const pruned = state.knowledgeBases.filter((name) =>
+      availableKbNames.has(name),
+    );
+    if (pruned.length !== state.knowledgeBases.length) setKBs(pruned);
+  }, [availableKbNames, knowledgeBasesLoaded, setKBs, state.knowledgeBases]);
+
   // Fold all messages once per state.messages change to power the
   // SessionActivityPanel on the right (tools, KBs, space refs, attachments).
   const sessionActivity = useMemo(
-    () => buildSessionActivity(state.messages),
-    [state.messages],
+    () =>
+      buildSessionActivity(state.messages, {
+        availableKbNames: knowledgeBasesLoaded ? availableKbNames : undefined,
+      }),
+    [availableKbNames, knowledgeBasesLoaded, state.messages],
   );
   const contextBudget = useMemo(() => {
     for (let i = state.messages.length - 1; i >= 0; i -= 1) {
@@ -602,9 +665,11 @@ export default function ChatPage() {
 
   const handleToggleKB = useCallback(
     (name: string) => {
-      setKBs(toggleKnowledgeBaseSelection(state.knowledgeBases, name));
+      setKBs(
+        toggleKnowledgeBaseSelection(state.knowledgeBases, name, knowledgeBases),
+      );
     },
-    [setKBs, state.knowledgeBases],
+    [knowledgeBases, setKBs, state.knowledgeBases],
   );
 
   const handleSelectPersonaPicker = useCallback(() => {
@@ -630,6 +695,15 @@ export default function ChatPage() {
           messages={state.messages}
           viewerPanelRef={viewerPanelRef}
         />
+        <div className="relative h-full overflow-hidden">
+          <div
+            data-reader-open={isReadingMode ? "true" : "false"}
+            className="dt-reader-shell"
+          >
+            {isReadingMode ? (
+              <ReaderPane onClose={() => setCapability("")} />
+            ) : null}
+          </div>
         <div
           // When the preview drawer is open AND the viewport is wide enough,
           // push the chat content to the left by the drawer's width so the two
@@ -640,6 +714,7 @@ export default function ChatPage() {
           // hand-tune it without fighting Tailwind's arbitrary-value parser.
           data-preview-open={previewSource ? "true" : "false"}
           data-viewer-open={viewerPanelOpen ? "true" : "false"}
+          data-reader-open={isReadingMode ? "true" : "false"}
           className="chat-preview-shell flex h-full flex-col overflow-hidden bg-[var(--background)]"
         >
           <ChatHeader
@@ -673,8 +748,12 @@ export default function ChatPage() {
             onToggleViewerPanel={toggleViewerPanel}
           />
           <div className="flex w-full flex-1 min-h-0 flex-col overflow-hidden">
-            {sessionLoading ? (
-              <SessionLoadingView onCancel={cancelSessionLoad} />
+            {sessionLoading || sessionLoadFailed ? (
+              <SessionLoadingView
+                onCancel={cancelSessionLoad}
+                failed={sessionLoadFailed}
+                onRetry={retrySessionLoad}
+              />
             ) : !hasMessages ? (
               <ChatWelcomeView greeting={t(welcomeGreeting)} />
             ) : (
@@ -705,6 +784,9 @@ export default function ChatPage() {
                       onEditMessage={editMessage}
                       onSwitchBranch={switchBranch}
                       onSubmitUserReply={submitUserReply}
+                      availableKbNames={
+                        knowledgeBasesLoaded ? availableKbNames : undefined
+                      }
                     />
                     <div ref={messagesEndRef} className="h-px w-full shrink-0" />
                   </div>
@@ -718,6 +800,10 @@ export default function ChatPage() {
               </div>
             )}
 
+            {state.activeCapability === "mastery_path" &&
+            state.masteryPathId ? (
+              <MasteryPathStrip pathId={state.masteryPathId} />
+            ) : null}
             <ChatComposer
               composerRef={composerRef}
               capMenuRef={capMenuRef}
@@ -743,6 +829,9 @@ export default function ChatPage() {
               llmSelection={state.llmSelection}
               llmOptionsLoading={llmOptionsLoading}
               llmOptionsError={llmOptionsError}
+              onRefreshLLMOptions={() =>
+                void refreshLLMOptions({ force: true })
+              }
               contextBudget={contextBudget}
               selectedBookReferences={selectedBookReferences}
               selectedNotebookRecords={selectedNotebookRecords}
@@ -794,6 +883,12 @@ export default function ChatPage() {
               onCancelStreaming={cancelStreamingTurn}
               prefillInputRef={prefillInputRef}
             />
+            {!hasMessages ? (
+              <StarterSuggestions
+                onPick={(prompt) => void handleSend(prompt)}
+                disabled={state.isStreaming}
+              />
+            ) : null}
             <div
               aria-hidden="true"
               className="shrink-0"
@@ -845,6 +940,7 @@ export default function ChatPage() {
             onClose={() => setViewerOpen(false)}
             onAutoOpen={() => setViewerOpen(true)}
           />
+        </div>
         </div>
       </GeogebraTabProvider>
     </QuizFollowupProvider>

@@ -21,9 +21,11 @@ import sqlite3
 
 import yaml
 
+from deeptutor.multi_user import context as multi_user_context
+from deeptutor.multi_user import partner_access
 from deeptutor.multi_user import paths as multi_user_paths
 from deeptutor.services.memory.paths import Surface
-from deeptutor.services.memory.snapshot.entity import Entity
+from deeptutor.services.memory.snapshot.entity import Entity, EntityStamp
 from deeptutor.services.path_service import get_path_service
 
 logger = logging.getLogger(__name__)
@@ -304,25 +306,32 @@ def read_partner_entities() -> list[Entity]:
     bridges that store into the memory pipeline so partner conversations
     consolidate into L2/L3 like every other surface.
 
-    Partners are anchored to the admin workspace, so we only surface them
-    when the active scope IS the admin's own memory; a regular user's memory
-    view must not see the admin's partner conversations.
+    Admins see legacy process-wide sessions. Regular users see only sessions
+    for Partners assigned to them, under their own relationship-state tree.
     """
+    user = multi_user_context.get_current_user()
     admin_root = multi_user_paths.get_admin_path_service().workspace_root.resolve()
-    if get_path_service().workspace_root.resolve() != admin_root:
+    if user.is_admin and get_path_service().workspace_root.resolve() != admin_root:
         return []
     partners_root = admin_root / "partners"
     if not partners_root.exists():
         return []
 
+    allowed = None if user.is_admin else partner_access.assigned_partner_ids(user.id)
     out: list[Entity] = []
     for partner_dir in sorted(partners_root.iterdir()):
         if not partner_dir.is_dir():
             continue
-        sessions_dir = partner_dir / "sessions"
+        partner_id = partner_dir.name
+        if allowed is not None and partner_id not in allowed:
+            continue
+        sessions_dir = (
+            partner_dir / "sessions"
+            if user.is_admin
+            else partner_dir / "users" / user.id / "sessions"
+        )
         if not sessions_dir.is_dir():
             continue
-        partner_id = partner_dir.name
         partner_name = _partner_display_name(partner_dir, partner_id)
         for sess_file in sorted(sessions_dir.glob("*.jsonl")):
             entity = _partner_session_entity(sess_file, partner_id, partner_name)
@@ -498,6 +507,43 @@ def read_quiz_entities() -> list[Entity]:
     return out
 
 
+def probe_chat_entities() -> list[EntityStamp]:
+    """Read chat identity and fingerprints without loading message content."""
+    db_path = get_path_service().get_chat_history_db()
+    if not db_path.exists():
+        return []
+    out: list[EntityStamp] = []
+    try:
+        with sqlite3.connect(f"file:{db_path}?mode=ro", uri=True) as conn:
+            conn.row_factory = sqlite3.Row
+            last_msg_id = {
+                row["session_id"]: row["id"]
+                for row in conn.execute(
+                    "SELECT session_id, id FROM ("
+                    " SELECT session_id, id, ROW_NUMBER() OVER ("
+                    "  PARTITION BY session_id ORDER BY created_at DESC, id DESC"
+                    " ) AS rn FROM messages"
+                    ") WHERE rn = 1"
+                )
+            }
+            for session in conn.execute(
+                "SELECT id, title, updated_at FROM sessions ORDER BY updated_at DESC"
+            ):
+                session_id = session["id"]
+                out.append(
+                    EntityStamp(
+                        id=session_id,
+                        label=session["title"] or session_id,
+                        fingerprint=_sha1(last_msg_id.get(session_id, 0), session["updated_at"]),
+                        ts=_iso(session["updated_at"]),
+                    )
+                )
+    except sqlite3.Error as exc:
+        logger.warning("chat snapshot probe failed: %s", exc)
+        return []
+    return out
+
+
 # ── Dispatch ─────────────────────────────────────────────────────────
 
 
@@ -511,6 +557,8 @@ _READERS = {
     "quiz": read_quiz_entities,
 }
 
+_PROBES = {"chat": probe_chat_entities}
+
 
 def read_entities(surface: Surface) -> list[Entity]:
     reader = _READERS.get(surface)
@@ -521,6 +569,20 @@ def read_entities(surface: Surface) -> list[Entity]:
     except Exception as exc:
         logger.warning("snapshot adapter failed surface=%s: %s", surface, exc)
         return []
+
+
+def read_stamps(surface: Surface) -> list[EntityStamp]:
+    """Read entity stamps, falling back to projecting the full snapshot."""
+    probe = _PROBES.get(surface)
+    if probe is not None:
+        try:
+            return probe()
+        except Exception as exc:
+            logger.warning("snapshot probe failed surface=%s; full read: %s", surface, exc)
+    return [
+        EntityStamp(id=e.id, label=e.label, fingerprint=e.fingerprint, ts=e.ts)
+        for e in read_entities(surface)
+    ]
 
 
 SUPPORTED_SURFACES: tuple[Surface, ...] = tuple(_READERS.keys())  # type: ignore[arg-type,assignment]

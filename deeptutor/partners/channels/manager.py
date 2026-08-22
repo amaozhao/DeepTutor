@@ -16,8 +16,8 @@ except ImportError:  # pragma: no cover - optional logging backend
 
 from deeptutor.partners.bus.events import OutboundMessage
 from deeptutor.partners.bus.queue import MessageBus
+from deeptutor.partners.channels import registry as channel_registry
 from deeptutor.partners.channels.base import BaseChannel
-from deeptutor.partners.channels.registry import discover_all
 from deeptutor.partners.config.schema import ChannelsConfig
 
 
@@ -50,10 +50,12 @@ class ChannelManager:
         channels_config: ChannelsConfig,
         bus: MessageBus,
         groq_api_key: str = "",
+        partner_id: str = "",
     ):
         self.channels_config = channels_config
         self.bus = bus
         self._groq_api_key = groq_api_key
+        self._partner_id = str(partner_id or "")
         self.channels: dict[str, BaseChannel] = {}
         self._dispatch_task: asyncio.Task | None = None
         self._origin_reply_fingerprints: dict[tuple[str, str, str], str] = {}
@@ -62,7 +64,7 @@ class ChannelManager:
 
     def _init_channels(self) -> None:
         """Initialize channels discovered via pkgutil scan + entry_points plugins."""
-        for name, cls in discover_all().items():
+        for name, cls in channel_registry.discover_all().items():
             section = getattr(self.channels_config, name, None)
             if section is None:
                 continue
@@ -75,6 +77,7 @@ class ChannelManager:
                 continue
             try:
                 channel = cls(section, self.bus)
+                channel.partner_id = self._partner_id
                 channel.transcription_api_key = self._groq_api_key
                 # Effective delivery flags are per-channel only. Historical
                 # top-level channel config keys are ignored at runtime.
@@ -84,12 +87,16 @@ class ChannelManager:
                 channel.send_tool_hints = self._resolve_bool_override(
                     section, "send_tool_hints", default=True
                 )
+                if getattr(channel.config, "allow_from", None) == []:
+                    _logger().warning(
+                        'Skipping channel "{}": allowFrom is empty (denies all)',
+                        name,
+                    )
+                    continue
                 self.channels[name] = channel
                 _logger().info("{} channel enabled", cls.display_name)
             except Exception as e:
                 _logger().warning("{} channel not available: {}", name, e)
-
-        self._validate_allow_from()
 
     @staticmethod
     def _resolve_bool_override(section: Any, key: str, *, default: bool) -> bool:
@@ -108,14 +115,6 @@ class ChannelManager:
             return value if isinstance(value, bool) else default
         value = getattr(section, key, None)
         return value if isinstance(value, bool) else default
-
-    def _validate_allow_from(self) -> None:
-        for name, ch in self.channels.items():
-            if getattr(ch.config, "allow_from", None) == []:
-                raise SystemExit(
-                    f'Error: "{name}" has empty allowFrom (denies all). '
-                    f'Set ["*"] to allow everyone, or add specific user IDs.'
-                )
 
     async def _start_channel(self, name: str, channel: BaseChannel) -> None:
         try:

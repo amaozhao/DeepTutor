@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+from deeptutor.capabilities.ima.tools import IMA_TOOL_TYPES
+from deeptutor.capabilities.marginnote4.tools import MARGINNOTE_TOOL_TYPES
 from deeptutor.capabilities.mastery.tools import MASTERY_TOOL_TYPES
 from deeptutor.capabilities.obsidian.tools import OBSIDIAN_TOOL_TYPES
+from deeptutor.capabilities.reading.tools import READING_TOOL_TYPES
+from deeptutor.capabilities.setup.tools import SETUP_TOOL_TYPES
 from deeptutor.capabilities.solve.tools import SOLVE_TOOL_TYPES
 from deeptutor.capabilities.subagent.tools import SUBAGENT_TOOL_TYPES
 from deeptutor.core.tool_protocol import BaseTool
@@ -12,7 +16,7 @@ from deeptutor.tools.builtin.execution import CodeExecutionTool
 from deeptutor.tools.builtin.external import CronTool, GithubTool, WebFetchTool
 from deeptutor.tools.builtin.interaction import AskUserTool
 from deeptutor.tools.builtin.memory import ReadMemoryTool, WriteMemoryTool
-from deeptutor.tools.builtin.notes import ListNotebookTool, WriteNoteTool
+from deeptutor.tools.builtin.notes import ListNotebookTool, QuestionBankTool, WriteNoteTool
 from deeptutor.tools.builtin.search import (
     BrainstormTool,
     PaperSearchToolWrapper,
@@ -42,6 +46,7 @@ BUILTIN_TOOL_TYPES: tuple[type[BaseTool], ...] = (
     WebFetchTool,
     ListNotebookTool,
     WriteNoteTool,
+    QuestionBankTool,
     GithubTool,
     AskUserTool,
     CronTool,
@@ -51,7 +56,11 @@ BUILTIN_TOOL_TYPES: tuple[type[BaseTool], ...] = (
     *MASTERY_TOOL_TYPES,
     *SOLVE_TOOL_TYPES,
     *OBSIDIAN_TOOL_TYPES,
+    *MARGINNOTE_TOOL_TYPES,
     *SUBAGENT_TOOL_TYPES,
+    *IMA_TOOL_TYPES,
+    *READING_TOOL_TYPES,
+    *SETUP_TOOL_TYPES,
     PartnerReadTool,
     PartnerMemorizeTool,
     PartnerSearchTool,

@@ -154,7 +154,7 @@ export type Action =
   | { type: 'SET_CAPABILITY'; cap: string | null }
   | { type: 'SET_KB'; kbs: string[] }
   | { type: 'SET_LLM_SELECTION'; selection: LLMSelection | null }
-  | { type: 'SET_MASTERY_PATH_ID'; masteryPathId: string | null }
+  | { type: 'SET_MASTERY_PATH_ID'; masteryPathId: string | null; key?: string }
   | { type: 'SET_PERSONA_SELECTION'; persona: string }
   | { type: 'SET_LANGUAGE'; lang: string }
   | {
@@ -195,6 +195,7 @@ export type Action =
     }
   | { type: 'DELETE_TURN'; key: string; messageId: number }
   | { type: 'NEW_SESSION'; key: string }
+  | { type: 'ENSURE_DRAFT_SESSION'; key: string }
   | {
       type: 'SET_SELECTED_BRANCH'
       key: string
@@ -286,11 +287,23 @@ export function chatReducer(state: ProviderState, action: Action): ProviderState
         ...session,
         llmSelection: action.selection,
       }))
-    case 'SET_MASTERY_PATH_ID':
-      return updateSelectedSession(state, session => ({
-        ...session,
-        masteryPathId: action.masteryPathId,
-      }))
+    case 'SET_MASTERY_PATH_ID': {
+      if (!action.key) {
+        return updateSelectedSession(state, session => ({
+          ...session,
+          masteryPathId: action.masteryPathId,
+        }))
+      }
+      const target = state.sessions[action.key]
+      if (!target) return state
+      return {
+        ...state,
+        sessions: {
+          ...state.sessions,
+          [action.key]: { ...target, masteryPathId: action.masteryPathId },
+        },
+      }
+    }
     case 'SET_PERSONA_SELECTION':
       return updateSelectedSession(state, session => ({
         ...session,
@@ -662,7 +675,14 @@ export function chatReducer(state: ProviderState, action: Action): ProviderState
         ...state,
         sidebarRefreshToken: state.sidebarRefreshToken + 1,
       }
-    case 'NEW_SESSION': {
+    case 'NEW_SESSION':
+    case 'ENSURE_DRAFT_SESSION': {
+      if (
+        action.type === 'ENSURE_DRAFT_SESSION' &&
+        state.selectedKey &&
+        state.sessions[state.selectedKey]
+      )
+        return state
       const MAX_CACHED_SESSIONS = 20
       let nextSessions = {
         ...state.sessions,

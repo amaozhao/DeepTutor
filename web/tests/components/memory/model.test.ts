@@ -55,7 +55,7 @@ test("entityDeepLinkUrl builds surface-specific destinations", () => {
   assert.equal(entityDeepLinkUrl("chat", entity("s1")), "/home/s1");
   assert.equal(
     entityDeepLinkUrl("notebook", entity("r1", { notebook_id: "nb 1" })),
-    "/space/notebooks?notebook=nb%201",
+    "/notebook?notebook=nb%201",
   );
   assert.equal(
     entityDeepLinkUrl("partner", entity("p1:session")),

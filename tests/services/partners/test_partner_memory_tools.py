@@ -12,8 +12,23 @@ from pathlib import Path
 
 import pytest
 
-from deeptutor.multi_user.paths import get_admin_path_service, user_context
-from deeptutor.partners.config.paths import get_partner_sessions_dir, get_partner_workspace
+from deeptutor.multi_user.models import CurrentUser
+from deeptutor.multi_user.paths import (
+    get_admin_path_service,
+    get_current_path_service,
+    scope_for_user,
+    user_context,
+)
+from deeptutor.partners.config.paths import (
+    get_partner_sessions_dir,
+    get_partner_user_sessions_dir,
+    get_partner_user_workspace,
+    get_partner_workspace,
+)
+from deeptutor.services.partners.interaction import (
+    build_partner_turn_context,
+    partner_turn_context,
+)
 from deeptutor.services.partners.scope import partner_user
 from deeptutor.services.partners.sessions import PartnerSessionStore
 from deeptutor.tools.partner_memory import (
@@ -89,6 +104,55 @@ def test_read_own_does_not_leak_into_owner(partners_root: Path) -> None:
     shared_part, _, own_part = result.content.partition("## Your own memory")
     assert "secret partner note" not in shared_part
     assert "secret partner note" in own_part
+
+
+def test_assigned_users_get_private_relationship_memory(partners_root: Path) -> None:
+    def actor(user_id: str) -> CurrentUser:
+        return CurrentUser(user_id, user_id, "user", scope_for_user(user_id, is_admin=False))
+
+    async def write_for(user: CurrentUser, text: str) -> None:
+        store = PartnerSessionStore(get_partner_user_sessions_dir(PID, user.id))
+        with user_context(partner_user(PID, name="Alice")):
+            turn = build_partner_turn_context(
+                PID,
+                user,
+                store,
+                legacy_own_memory=get_current_path_service(),
+            )
+            with partner_turn_context(turn):
+                result = await PartnerMemorizeTool().execute(op="add", text=text)
+                assert result.success
+
+    _run(write_for(actor("u_alice"), "alice-only preference"))
+    _run(write_for(actor("u_bob"), "bob-only preference"))
+
+    alice_memory = get_partner_user_workspace(PID, "u_alice") / "memory"
+    bob_memory = get_partner_user_workspace(PID, "u_bob") / "memory"
+    assert "alice-only preference" in (alice_memory / "L3" / "preferences.md").read_text()
+    assert "bob-only preference" not in (alice_memory / "L3" / "preferences.md").read_text()
+    assert "bob-only preference" in (bob_memory / "L3" / "preferences.md").read_text()
+    assert not (get_partner_workspace(PID) / "memory" / "L3" / "preferences.md").exists()
+
+    alice_store = PartnerSessionStore(get_partner_user_sessions_dir(PID, "u_alice"))
+    bob_store = PartnerSessionStore(get_partner_user_sessions_dir(PID, "u_bob"))
+    alice_store.append("same-key", "user", "alice private calculus topic")
+    bob_store.append("same-key", "user", "bob private geometry topic")
+
+    async def search_for(user: CurrentUser, store: PartnerSessionStore, query: str):
+        with user_context(partner_user(PID, name="Alice")):
+            turn = build_partner_turn_context(
+                PID,
+                user,
+                store,
+                legacy_own_memory=get_current_path_service(),
+            )
+            with partner_turn_context(turn):
+                return await PartnerSearchTool().execute(query=query)
+
+    bob_search = _run(search_for(actor("u_bob"), bob_store, "alice private"))
+    assert bob_search.metadata["count"] == 0
+    alice_search = _run(search_for(actor("u_alice"), alice_store, "alice private"))
+    assert alice_search.metadata["count"] == 1
 
 
 def test_search_matches_history(partners_root: Path) -> None:

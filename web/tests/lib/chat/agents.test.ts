@@ -55,3 +55,15 @@ test("toggleKnowledgeBaseSelection adds and removes names", () => {
     "notes",
   ]);
 });
+
+test("PageIndex OSS selection keeps only one OSS knowledge base", () => {
+  const options = [
+    { name: "oss-a", metadata: { rag_provider: "pageindex-oss" } },
+    { name: "oss-b", statistics: { rag_provider: "pageindex-oss" } },
+    { name: "math" },
+  ];
+  assert.deepEqual(
+    toggleKnowledgeBaseSelection(["math", "oss-a"], "oss-b", options),
+    ["math", "oss-b"],
+  );
+});

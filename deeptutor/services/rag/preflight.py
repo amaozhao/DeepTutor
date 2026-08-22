@@ -16,7 +16,9 @@ from typing import Any
 from .factory import (
     DEFAULT_PROVIDER,
     GRAPHRAG_PROVIDER,
+    IMA_PROVIDER,
     LIGHTRAG_PROVIDER,
+    PAGEINDEX_OSS_PROVIDER,
     PAGEINDEX_PROVIDER,
     normalize_provider_name,
 )
@@ -80,17 +82,33 @@ def _pageindex_preflight() -> dict:
         )
         cfg = pageindex_config.get_pageindex_config(require_key=False)
         configured = bool(cfg.api_key)
-        base = cfg.api_base_url or pageindex_config.DEFAULT_API_BASE_URL
     except Exception:
-        configured, base = False, ""
+        configured = False
     return _finalize(
         [
             _check(
                 "api_key",
                 "API key configured",
                 configured,
-                base if configured else "Add a PageIndex API key under Credentials.",
+                "PageIndex Cloud" if configured else "Add a PageIndex API key under Credentials.",
             )
+        ]
+    )
+
+
+def _pageindex_oss_preflight() -> dict:
+    try:
+        pageindex_client = importlib.import_module(
+            "deeptutor.services.rag.pipelines.pageindex.client"
+        )
+        model, _backend = pageindex_client.resolve_oss_sdk_config()
+        llm_ok, detail = bool(model), model
+    except Exception as exc:
+        llm_ok = False
+        detail = str(exc)
+    return _finalize(
+        [
+            _check("chat", "Active LLM for indexing", llm_ok, detail),
         ]
     )
 
@@ -178,6 +196,30 @@ def _lightrag_preflight() -> dict:
     )
 
 
+def _ima_preflight() -> dict:
+    try:
+        ima_config = importlib.import_module("deeptutor.services.rag.pipelines.ima.config")
+        credentials = ima_config.get_account_credentials()
+        complete = credentials.complete
+        client_id = credentials.client_id
+    except Exception:
+        complete = False
+        client_id = ""
+    return _finalize(
+        [
+            _check(
+                "credentials",
+                "IMA Client ID and API key configured",
+                complete,
+                client_id
+                if complete
+                else "Add them under Credentials, or supply a pair per knowledge base "
+                "when connecting one.",
+            )
+        ]
+    )
+
+
 def _finalize(checks: list[dict]) -> dict:
     ok = all(c["ok"] for c in checks if not c["optional"])
     return {"ok": ok, "checks": checks}
@@ -186,8 +228,10 @@ def _finalize(checks: list[dict]) -> dict:
 _PREFLIGHTS = {
     DEFAULT_PROVIDER: _llamaindex_preflight,
     PAGEINDEX_PROVIDER: _pageindex_preflight,
+    PAGEINDEX_OSS_PROVIDER: _pageindex_oss_preflight,
     GRAPHRAG_PROVIDER: _graphrag_preflight,
     LIGHTRAG_PROVIDER: _lightrag_preflight,
+    IMA_PROVIDER: _ima_preflight,
 }
 
 

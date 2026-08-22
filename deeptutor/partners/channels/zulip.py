@@ -24,7 +24,6 @@ except ModuleNotFoundError:  # pragma: no cover - optional dependency
 from deeptutor.partners.bus.events import OutboundMessage
 from deeptutor.partners.bus.queue import MessageBus
 from deeptutor.partners.channels.base import BaseChannel
-from deeptutor.partners.config.paths import get_media_dir
 from deeptutor.partners.config.schema import DeliveryOverrides
 from deeptutor.partners.helpers import split_message
 
@@ -555,7 +554,7 @@ class ZulipChannel(BaseChannel):
         if not upload_links:
             return paths
 
-        media_dir = get_media_dir("zulip")
+        media_dir = self.media_dir()
 
         for name, path_id in upload_links:
             local_path = self._download_upload_path(
@@ -640,7 +639,7 @@ class ZulipChannel(BaseChannel):
         name: str | None = None,
         index: int = 0,
     ) -> str | None:
-        media_dir = media_dir or get_media_dir("zulip")
+        media_dir = media_dir or self.media_dir()
         filename = name or Path(unquote(path_id)).name
         dest = self._attachment_destination(media_dir, filename, path_id, index)
 

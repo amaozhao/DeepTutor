@@ -67,3 +67,7 @@ typer>=0.24.2,<0.25.0
 rich>=15.0.0
 prompt_toolkit>=3.0.52
 pyte>=0.8.2
+
+# --- MCP client (configurable deferred tools; core, not partners-only) ---
+mcp>=1.26.0,<2.0.0
+pageindex>=0.2.10,<0.3.0

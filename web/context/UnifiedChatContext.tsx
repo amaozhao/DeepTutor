@@ -22,6 +22,7 @@ import {
 import { notify } from '@/lib/notifications'
 import { resolvePersistedMessage } from '@/lib/optimistic-id'
 import i18n from 'i18next'
+import { forwardReaderAction } from '@/lib/reading-reader-action'
 
 import {
   chatReducer,
@@ -194,6 +195,7 @@ export function UnifiedChatProvider({ children }: { children: React.ReactNode })
 
   const handleRunnerEvent = useCallback((runnerKey: string, event: StreamEvent) => {
     const effectiveKey = effectiveRunnerKey(runnersRef.current, runnerKey)
+    forwardReaderAction(event)
     if (event.type === 'session') {
       const action = sessionBindAction(effectiveKey, event)
       if (action) {
@@ -203,6 +205,15 @@ export function UnifiedChatProvider({ children }: { children: React.ReactNode })
       return
     }
     if (event.type === 'session_meta') {
+      const masteryPathId = (event.metadata as { mastery_path_id?: unknown } | null)
+        ?.mastery_path_id
+      if (typeof masteryPathId === 'string') {
+        dispatch({
+          type: 'SET_MASTERY_PATH_ID',
+          key: effectiveKey,
+          masteryPathId: masteryPathId.trim() || null,
+        })
+      }
       dispatch(sessionMetaAction(effectiveKey, event))
       return
     }
@@ -359,7 +370,6 @@ export function UnifiedChatProvider({ children }: { children: React.ReactNode })
   useActiveSessionStorageSync(state)
   useStoredLanguageSync(dispatch)
   useInitialDraftSession({
-    selectedKey: state.selectedKey,
     dispatch,
     makeDraftKey,
   })

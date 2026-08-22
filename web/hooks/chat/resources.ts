@@ -23,11 +23,14 @@ export interface ChatKnowledgeBase {
     type?: string;
     /** Backend of a connected subagent: "claude_code" | "codex" | "partner". */
     agent_kind?: string;
+    rag_provider?: string;
   };
+  statistics?: { rag_provider?: string };
 }
 
 export function useChatBasicResources() {
   const [knowledgeBases, setKnowledgeBases] = useState<ChatKnowledgeBase[]>([]);
+  const [knowledgeBasesLoaded, setKnowledgeBasesLoaded] = useState(false);
   const [llmOptions, setLLMOptions] = useState<LLMOption[]>([]);
   const [activeLLMDefault, setActiveLLMDefault] = useState<LLMSelection | null>(
     null,
@@ -40,17 +43,19 @@ export function useChatBasicResources() {
       try {
         const list = await listKnowledgeBases({ force: options?.force });
         setKnowledgeBases(list);
+        setKnowledgeBasesLoaded(true);
       } catch {
+        setKnowledgeBasesLoaded(false);
         setKnowledgeBases([]);
       }
     },
     [],
   );
 
-  const refreshLLMOptions = useCallback(async () => {
+  const refreshLLMOptions = useCallback(async (options?: { force?: boolean }) => {
     setLLMOptionsLoading(true);
     try {
-      const payload = await listLLMOptions();
+      const payload = await listLLMOptions(options);
       setLLMOptions(payload.options);
       setActiveLLMDefault(payload.active);
       setLLMOptionsError(false);
@@ -73,6 +78,7 @@ export function useChatBasicResources() {
 
   return {
     knowledgeBases,
+    knowledgeBasesLoaded,
     llmOptions,
     activeLLMDefault,
     llmOptionsLoading,
@@ -85,6 +91,7 @@ export function useChatBasicResources() {
 export function useChatResources() {
   const {
     knowledgeBases,
+    knowledgeBasesLoaded,
     llmOptions,
     activeLLMDefault,
     llmOptionsLoading,
@@ -141,12 +148,14 @@ export function useChatResources() {
 
   return {
     knowledgeBases,
+    knowledgeBasesLoaded,
     llmOptions,
     activeLLMDefault,
     llmOptionsLoading,
     llmOptionsError,
     capabilityConfigs,
     userEnabledTools,
+    refreshLLMOptions,
   };
 }
 

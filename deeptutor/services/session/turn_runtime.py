@@ -9,6 +9,7 @@ from collections.abc import AsyncIterator, Callable
 import contextlib
 from contextvars import Token
 from dataclasses import dataclass, field
+import importlib
 import logging
 import threading
 from typing import TYPE_CHECKING, Any
@@ -85,6 +86,9 @@ from deeptutor.services.session.followup import (
     format_followup_question_context as _format_followup_question_context,
 )
 from deeptutor.services.session.payloads import (
+    READING_SELECTION_MAX_CHARS as READING_SELECTION_MAX_CHARS,
+)
+from deeptutor.services.session.payloads import (
     clip_text as _clip_text,
 )
 from deeptutor.services.session.payloads import (
@@ -94,8 +98,10 @@ from deeptutor.services.session.payloads import (
     llm_selection_dict as _llm_selection_dict,
 )
 from deeptutor.services.session.payloads import mastery_path_id as _mastery_path_id
+from deeptutor.services.session.payloads import reading_material_id as _reading_material_id
+from deeptutor.services.session.payloads import reading_viewport as _reading_viewport
 from deeptutor.services.session.payloads import (
-    request_snapshot_metadata as _request_snapshot_metadata,
+    request_snapshot_metadata as _base_request_snapshot_metadata,
 )
 from deeptutor.services.session.payloads import (
     sanitize_session_title as _sanitize_session_title,
@@ -112,11 +118,21 @@ from deeptutor.services.settings import interface_settings
 from deeptutor.services.skill.service import SkillService, render_skills_manifest
 
 if TYPE_CHECKING:
+    from deeptutor.learning.storage import MasteryPathLease
     from deeptutor.services.llm.config import LLMConfig
 
 logger = logging.getLogger(__name__)
 
 _INTERRUPTED_TURN_ERROR = "Turn interrupted by server restart. Please retry your message."
+
+
+def _request_snapshot_metadata(**kwargs: Any) -> dict[str, Any]:
+    """Persist reading context omitted by the shared snapshot helper."""
+    metadata = _base_request_snapshot_metadata(**kwargs)
+    material_id = _reading_material_id(kwargs["payload"].get("reading_material_id"))
+    if material_id:
+        metadata["request_snapshot"]["readingMaterialId"] = material_id
+    return metadata
 
 
 async def _count_branch_user_turns(
@@ -199,9 +215,16 @@ class _TurnExecution:
     capability: str
     payload: dict[str, Any]
     task: asyncio.Task[None] | None = None
+    # True while the turn is parked inside ``ask_user`` waiting for a learner
+    # reply. Such a turn holds its resources (notably a mastery path lease)
+    # but is doing no work, so another turn may take over from it.
+    awaiting_user_reply: bool = False
     subscribers: list[_LiveSubscriber] = field(default_factory=list)
     events: list[dict[str, Any]] = field(default_factory=list)
     next_seq: int = 1
+    flush_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+    events_persisted: bool = False
+    persisted_events: list[dict[str, Any]] = field(default_factory=list)
     events_flushed: bool = False
 
 
@@ -264,6 +287,75 @@ class TurnRuntimeManager:
         for turn in await self.store.list_active_turns(session_id):
             await self._fail_orphan_running_turn(turn)
 
+    async def _is_awaiting_user_reply(self, turn_id: str) -> bool:
+        async with self._lock:
+            execution = self._executions.get(turn_id)
+            return execution is not None and execution.awaiting_user_reply
+
+    async def _release_superseded_lease(self, path_id: str, lease: MasteryPathLease) -> None:
+        """Free ``lease`` when its turn can no longer be working on the path.
+
+        Two cases release it. A turn that is no longer ``running`` (finished,
+        or orphaned by a restart) is simply gone. A turn parked inside
+        ``ask_user`` is alive but idle — it holds the lease for as long as the
+        learner takes to answer, which may be forever. Since the posed question
+        is persisted on the path itself, the arriving turn resumes exactly
+        where the parked one stopped, so handing the path over loses nothing;
+        the parked turn is cancelled rather than left to mutate a path it no
+        longer owns. Only a turn that is actively generating keeps the lease.
+        """
+        LearningStore = importlib.import_module("deeptutor.learning.storage").LearningStore
+        leased_turn = await self._fail_orphan_running_turn(await self.store.get_turn(lease.turn_id))
+        alive = leased_turn is not None and str(leased_turn.get("status") or "") == "running"
+        if alive:
+            if not await self._is_awaiting_user_reply(lease.turn_id):
+                # Genuinely busy — leave the lease, and let the store report
+                # the conflict to the caller.
+                return
+            await self.cancel_turn(lease.turn_id)
+        # Scoped to the superseded turn id, so a lease already re-taken by
+        # someone else survives.
+        await asyncio.to_thread(
+            LearningStore().release_path_lease,
+            path_id,
+            turn_id=lease.turn_id,
+        )
+
+    async def _acquire_mastery_path_lease(
+        self,
+        *,
+        path_id: str,
+        session_id: str,
+        turn_id: str,
+        owns_path: bool,
+    ) -> None:
+        """Bind a session to its path and take over from any superseded turn."""
+        learning_storage = importlib.import_module("deeptutor.learning.storage")
+        LearningStore = learning_storage.LearningStore
+        PathLeaseConflictError = learning_storage.PathLeaseConflictError
+        learning_store = LearningStore()
+        await asyncio.to_thread(
+            learning_store.bind_session,
+            path_id,
+            session_id,
+            owns_path=owns_path,
+        )
+        lease = await asyncio.to_thread(learning_store.get_path_lease, path_id)
+        if lease is not None and lease.turn_id != turn_id and lease.session_id != "__path_api__":
+            await self._release_superseded_lease(path_id, lease)
+        try:
+            await asyncio.to_thread(
+                learning_store.acquire_path_lease,
+                path_id,
+                session_id,
+                turn_id,
+            )
+        except PathLeaseConflictError as exc:
+            raise RuntimeError(
+                "mastery_path_busy: "
+                f"path {path_id!r} is already active in session {exc.lease.session_id!r}"
+            ) from exc
+
     async def start_turn(self, payload: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
         capability = str(payload.get("capability") or "chat")
         if not payload.get("language"):
@@ -299,11 +391,23 @@ class TurnRuntimeManager:
         session = await self.store.ensure_session(payload.get("session_id"))
         preferences = session.get("preferences") or {}
         mastery_path_explicit = "mastery_path_id" in payload
-        mastery_path_id = _mastery_path_id(
+        configured_mastery_path_id = _mastery_path_id(
             payload.get("mastery_path_id")
             if mastery_path_explicit
             else preferences.get("mastery_path_id")
         )
+        mastery_binding = None
+        if capability == "mastery_path":
+            mastery_binding = importlib.import_module(
+                "deeptutor.learning.identity"
+            ).resolve_mastery_path_binding(
+                configured_path_id=configured_mastery_path_id,
+                book_references=payload.get("book_references", []),
+                session_id=session["id"],
+            )
+            mastery_path_id = mastery_binding.path_id
+        else:
+            mastery_path_id = configured_mastery_path_id
         payload = {**payload, "mastery_path_id": mastery_path_id}
         # Persona is a session-level preference (mirrors llm_selection): an
         # explicit ``persona`` key in the payload — including an empty string,
@@ -394,7 +498,8 @@ class TurnRuntimeManager:
         if persona_explicit:
             # Persist explicit set AND explicit clear ("" = back to Default).
             preference_update["persona"] = persona_pref
-        if mastery_path_explicit:
+        if mastery_path_explicit or mastery_binding is not None:
+            # Mastery turns persist their resolved path for later turns.
             preference_update["mastery_path_id"] = mastery_path_id
         await self.store.update_session_preferences(session["id"], preference_update)
         turn = await self.store.create_turn(session["id"], capability=capability)
@@ -404,6 +509,43 @@ class TurnRuntimeManager:
             capability=capability,
             payload=dict(payload),
         )
+        # Publish an ownership marker before trying to recover another path
+        # lease. Two start_turn calls can otherwise interleave after the first
+        # turn row is created but before its task is registered, causing the
+        # second caller to misclassify that healthy turn as a restart orphan.
+        async with self._lock:
+            self._executions[turn["id"]] = execution
+        mastery_lease_acquired = False
+        if mastery_binding is not None:
+            try:
+                await self._acquire_mastery_path_lease(
+                    path_id=mastery_binding.path_id,
+                    session_id=session["id"],
+                    turn_id=turn["id"],
+                    owns_path=mastery_binding.owned_by_session,
+                )
+                mastery_lease_acquired = True
+            except Exception as exc:
+                async with self._lock:
+                    self._executions.pop(turn["id"], None)
+                with contextlib.suppress(Exception):
+                    await self.store.update_turn_status(turn["id"], "rejected", str(exc))
+                raise
+            persisted_turn = await self.store.get_turn(turn["id"])
+            if persisted_turn is None or persisted_turn.get("status") != "running":
+                # An administrative reset/delete can cancel the placeholder
+                # while lease acquisition is in flight. Never launch a task
+                # after that cancellation has already become durable.
+                LearningStore = importlib.import_module("deeptutor.learning.storage").LearningStore
+                async with self._lock:
+                    self._executions.pop(turn["id"], None)
+                with contextlib.suppress(Exception):
+                    await asyncio.to_thread(
+                        LearningStore().release_path_lease,
+                        mastery_binding.path_id,
+                        turn_id=turn["id"],
+                    )
+                raise RuntimeError("Mastery turn was cancelled while starting")
         session_metadata: dict[str, Any] = {
             "session_id": session["id"],
             "turn_id": turn["id"],
@@ -416,17 +558,31 @@ class TurnRuntimeManager:
             session_metadata["superseded_turn_id"] = str(superseded_turn_id)
         if runtime_only_config.get("_regenerate"):
             session_metadata["regenerate"] = True
-        await self._publish_live_event(
-            execution,
-            StreamEvent(
-                type=StreamEventType.SESSION,
-                source="turn_runtime",
-                metadata=session_metadata,
-            ),
-        )
-        async with self._lock:
-            self._executions[turn["id"]] = execution
-            execution.task = asyncio.create_task(self._run_turn(execution))
+        try:
+            await self._publish_live_event(
+                execution,
+                StreamEvent(
+                    type=StreamEventType.SESSION,
+                    source="turn_runtime",
+                    metadata=session_metadata,
+                ),
+            )
+            async with self._lock:
+                execution.task = asyncio.create_task(self._run_turn(execution))
+        except Exception as exc:
+            async with self._lock:
+                self._executions.pop(turn["id"], None)
+            if mastery_binding is not None and mastery_lease_acquired:
+                LearningStore = importlib.import_module("deeptutor.learning.storage").LearningStore
+                with contextlib.suppress(Exception):
+                    await asyncio.to_thread(
+                        LearningStore().release_path_lease,
+                        mastery_binding.path_id,
+                        turn_id=turn["id"],
+                    )
+            with contextlib.suppress(Exception):
+                await self.store.update_turn_status(turn["id"], "failed", str(exc))
+            raise
         return session, turn
 
     async def regenerate_last_turn(
@@ -539,6 +695,15 @@ class TurnRuntimeManager:
                 else snapshot.get("bookReferences") or []
             ),
             "mastery_path_id": mastery_path_id,
+            # Recovered from the original turn's snapshot so the regenerate runs
+            # against the same document. An explicit override wins (the reader
+            # may have moved on), and the viewport is deliberately not restored —
+            # "where the user was looking" is stale by definition on a retry.
+            "reading_material_id": _reading_material_id(
+                overrides.get("reading_material_id")
+                if "reading_material_id" in overrides
+                else snapshot.get("readingMaterialId")
+            ),
             "config": config,
         }
         if llm_selection:
@@ -741,7 +906,13 @@ class TurnRuntimeManager:
         self._reply_queues[turn_id] = reply_queue
 
         async def _wait_for_user_reply() -> dict[str, Any] | None:
-            return await reply_queue.get()
+            # Publish the pause so a turn that wants the same mastery path can
+            # tell "busy generating" apart from "parked, learner walked away".
+            execution.awaiting_user_reply = True
+            try:
+                return await reply_queue.get()
+            finally:
+                execution.awaiting_user_reply = False
 
         try:
             request_config = dict(payload.get("config", {}) or {})
@@ -1093,6 +1264,12 @@ class TurnRuntimeManager:
                     "question_notebook_references": question_notebook_references,
                     "book_references": book_references,
                     "mastery_path_id": _mastery_path_id(payload.get("mastery_path_id")),
+                    "mastery_path_lease_managed": capability_name == "mastery_path",
+                    # Immersive reading: the open material activates the reading
+                    # capability and binds its tools; the viewport tells the
+                    # model where the user is actually looking.
+                    "reading_material_id": _reading_material_id(payload.get("reading_material_id")),
+                    "reading_viewport": _reading_viewport(payload.get("reading_viewport")),
                     "book_context": book_context,
                     "book_context_warnings": book_context_result.warnings,
                     "memory_references": memory_references,
@@ -1141,6 +1318,18 @@ class TurnRuntimeManager:
                     if attachment["url"] not in seen_artifact_urls:
                         seen_artifact_urls.add(attachment["url"])
                         generated_attachments.append(attachment)
+
+            # A mastery turn may have changed which path it is on
+            # (``mastery_switch`` / ``mastery_leave``). The conversation's
+            # stored preference already followed it; tell the open client too,
+            # so what it shows as "currently mastering" is not the path the
+            # turn merely started on.
+            await self._publish_mastery_path_change(
+                execution,
+                capability_name=capability_name,
+                started_on=_mastery_path_id(payload.get("mastery_path_id")),
+                ended_on=str(context.metadata.get("mastery_path_id") or ""),
+            )
 
             # Office binaries the browser cannot render need their text pulled
             # out now, while the files are still on disk, or their preview card
@@ -1197,7 +1386,6 @@ class TurnRuntimeManager:
                 )
             except Exception:
                 logger.warning("Failed to record usage for turn %s", turn_id, exc_info=True)
-            await self._flush_buffered_events(execution)
             turn_status, turn_error = _resolve_turn_outcome(
                 assistant_events,
                 pending_done_event,
@@ -1229,6 +1417,10 @@ class TurnRuntimeManager:
                 pending_done_event.metadata = {**pending_done_event.metadata, **persisted_ids}
             await self._publish_live_event(execution, pending_done_event)
             stream_done_sent = True
+            # DONE is part of the same persisted replay log as all preceding
+            # events. Reconnects therefore observe the real terminal envelope
+            # (including message ids), not a lossy synthesized substitute.
+            await self._flush_buffered_events(execution)
             if not is_regenerate and turn_status == "completed":
                 # Title generation is post-turn metadata. Keep it after DONE
                 # so the composer and duration clock stop as soon as the
@@ -1243,6 +1435,17 @@ class TurnRuntimeManager:
                     )
                 except Exception:
                     logger.debug("Failed to generate session title", exc_info=True)
+            # Flush once every terminal/post-turn event (DONE, and the title
+            # ``session_meta`` above) has been published, not before: a
+            # client that reconnects after this task's ``finally`` pops
+            # ``execution`` from ``_executions`` falls back entirely to this
+            # persisted backlog, and ``subscribe_turn`` synthesises an
+            # id-less DONE when it finds none there -- permanently orphaning
+            # the just-persisted assistant reply from that client's
+            # reconcile path (it can still see the message after a full
+            # session reload, since the row itself is fine; only the
+            # targeted in-place swap is unreachable).
+            await self._flush_buffered_events(execution)
         except asyncio.CancelledError:
             if not stream_done_sent:
                 await self._publish_live_event(
@@ -1331,6 +1534,16 @@ class TurnRuntimeManager:
             # that finds the queue gone will return ``False`` rather than
             # accumulating on a dead turn.
             self._reply_queues.pop(turn_id, None)
+            if capability_name == "mastery_path":
+                LearningStore = importlib.import_module("deeptutor.learning.storage").LearningStore
+                # By turn, not by the path the turn started on: mastery_switch
+                # can move a turn onto a different path mid-flight, and freeing
+                # the original id would release someone else's lease while
+                # leaking the one this turn actually holds.
+                with contextlib.suppress(Exception):
+                    await asyncio.shield(
+                        asyncio.to_thread(LearningStore().release_leases_for_turn, turn_id)
+                    )
             async with self._lock:
                 current = self._executions.get(turn_id)
                 if current is not None:
@@ -1342,6 +1555,26 @@ class TurnRuntimeManager:
             # temporary prompts/results. Reclaim after this coroutine returns,
             # outside the user-visible streaming path.
             schedule_memory_reclaim()
+
+    async def _publish_mastery_path_change(
+        self,
+        execution: _TurnExecution,
+        *,
+        capability_name: str,
+        started_on: str,
+        ended_on: str,
+    ) -> None:
+        """Announce a path the turn moved onto, so the client stops lying."""
+        if capability_name != "mastery_path" or not ended_on or ended_on == started_on:
+            return
+        await self._publish_live_event(
+            execution,
+            StreamEvent(
+                type=StreamEventType.SESSION_META,
+                source="turn_runtime",
+                metadata={"mastery_path_id": ended_on},
+            ),
+        )
 
     async def _publish_live_event(
         self,
@@ -1489,18 +1722,24 @@ class TurnRuntimeManager:
 
     async def _flush_buffered_events(self, execution: _TurnExecution) -> None:
         """Persist buffered turn events after the live stream has already drained."""
+        async with execution.flush_lock:
+            await self._flush_buffered_events_once(execution)
+
+    async def _flush_buffered_events_once(self, execution: _TurnExecution) -> None:
+        """One serialized persistence attempt for :meth:`_flush_buffered_events`."""
+        if execution.events_flushed:
+            return
         async with self._lock:
-            if execution.events_flushed:
-                return
-            execution.events_flushed = True
             events = list(execution.events)
 
-        await _flush_buffered_events(
+        execution.events_persisted = await _flush_buffered_events(
             store=self.store,
             turn_id=execution.turn_id,
             capability=execution.capability,
             events=events,
+            persisted_events=execution.persisted_events,
         )
+        execution.events_flushed = execution.events_persisted
 
 
 _runtime_lock = threading.Lock()

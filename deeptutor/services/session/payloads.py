@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+import re
 from typing import Any, Literal
 
 from deeptutor.services.llm.utils import clean_thinking_tags
 from deeptutor.services.model_selection import LLMSelection
 
 MemoryReference = Literal["recent", "profile", "scope", "preferences", "summary"]
+_READING_ID_RE = re.compile(r"^[0-9a-f]{8,64}$")
+READING_SELECTION_MAX_CHARS = 2000
 
 
 def clip_text(value: str, limit: int = 4000) -> str:
@@ -85,6 +88,27 @@ def string_list(value: Any) -> list[str]:
 def mastery_path_id(value: Any) -> str:
     """Normalize the optional session-to-mastery-path association."""
     return str(value or "").strip()
+
+
+def reading_material_id(value: Any) -> str:
+    candidate = str(value or "").strip().lower()
+    return candidate if _READING_ID_RE.fullmatch(candidate) else ""
+
+
+def reading_viewport(value: Any) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        return {}
+    viewport: dict[str, Any] = {}
+    try:
+        locator = int(value.get("locator") or 0)
+    except (TypeError, ValueError):
+        locator = 0
+    if locator > 0:
+        viewport["locator"] = locator
+    selection = str(value.get("selection") or "").strip()
+    if selection:
+        viewport["selection"] = selection[:READING_SELECTION_MAX_CHARS]
+    return viewport
 
 
 def llm_selection_dict(value: Any) -> dict[str, str] | None:

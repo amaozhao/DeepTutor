@@ -1,5 +1,6 @@
 import asyncio
 from datetime import datetime
+import importlib
 import json
 import logging
 import re
@@ -26,6 +27,7 @@ from deeptutor.co_writer.storage import (
 from deeptutor.core.stream_bus import StreamBus
 from deeptutor.services.config import PROJECT_ROOT, load_config_with_main
 from deeptutor.services.llm import clean_thinking_tags
+from deeptutor.services.rag.pipelines.pageindex import is_pageindex_kb
 from deeptutor.services.settings.interface_settings import get_response_language
 
 router = APIRouter()
@@ -34,6 +36,11 @@ router = APIRouter()
 config = load_config_with_main("main.yaml", PROJECT_ROOT)
 log_dir = config.get("paths", {}).get("user_log_dir") or config.get("logging", {}).get("log_dir")
 logger = logging.getLogger(__name__)
+
+
+def _get_pageindex_reasoning_module():
+    return importlib.import_module("deeptutor.services.rag.pipelines.pageindex.reasoning")
+
 
 _edit_agent: EditAgent | None = None
 
@@ -245,9 +252,13 @@ async def _run_react_edit(
     query = instruction or selected_text[:400]
     context_blocks: list[str] = []
     tools_used: list[str] = []
+    pageindex_source = "rag" in tools and is_pageindex_kb(request.kb_name)
     for tool in tools:
         kb_name = request.kb_name if tool == "rag" else None
         if tool == "rag" and not kb_name:
+            continue
+        if tool == "rag" and pageindex_source:
+            # The edit loop below receives PageIndex tools directly.
             continue
         if stream is not None:
             await stream.tool_call(
@@ -287,8 +298,29 @@ async def _run_react_edit(
     )
 
     response_chunks: list[str] = []
+    pageindex_sources: list[dict[str, object]] = []
 
     async def _consume() -> None:
+        if pageindex_source and request.kb_name:
+            reading = await _get_pageindex_reasoning_module().read_pageindex_with_agent(
+                kb_name=request.kb_name,
+                system_prompt=system_prompt,
+                user_prompt=prompt,
+                stream=stream,
+                source="co_writer_react_edit",
+                stage="responding",
+            )
+            if reading.text:
+                response_chunks.append(reading.text)
+                pageindex_sources.extend(reading.sources)
+                tools_used.append("rag")
+                if stream is not None:
+                    await stream.content(
+                        reading.text,
+                        source="co_writer_react_edit",
+                        stage="responding",
+                    )
+            return
         async for chunk in agent.stream_llm(
             user_prompt=prompt,
             system_prompt=system_prompt,
@@ -329,6 +361,7 @@ async def _run_react_edit(
                 "instruction": instruction,
             },
             "output": {"edited_text": edited_text},
+            "sources": pageindex_sources,
             "model": agent.get_model(),
         }
     )

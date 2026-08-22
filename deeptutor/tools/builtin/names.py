@@ -22,6 +22,7 @@ CONFIGURABLE_BUILTIN_TOOL_NAMES: tuple[str, ...] = (
     "read_skill",
     "list_notebook",
     "write_note",
+    "question_bank",
     "web_fetch",
     "github",
     "exec",

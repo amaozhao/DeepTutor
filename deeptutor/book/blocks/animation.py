@@ -20,6 +20,7 @@ from deeptutor.agents.math_animator.request_config import MathAnimatorRequestCon
 from deeptutor.services.llm.config import get_llm_config
 
 from ..models import BlockType, SourceAnchor
+from ._prompts import get_book_prompt, load_book_prompts
 from .base import BlockContext, BlockGenerator, GenerationFailure
 
 logger = logging.getLogger(__name__)
@@ -45,21 +46,28 @@ class AnimationGenerator(BlockGenerator):
         focus = str(params.get("focus") or "")
         quality = str(params.get("quality") or "medium")
         style_hint = str(params.get("style_hint") or "")
+        prompts = load_book_prompts("animation", ctx.language)
 
         history_lines: list[str] = []
         if chapter_summary:
-            history_lines.append(f"Chapter summary: {chapter_summary}")
+            history_lines.append(
+                get_book_prompt(prompts, "context_summary")
+                .strip()
+                .format(chapter_summary=chapter_summary)
+            )
         if objectives:
-            history_lines.append("Learning objectives:")
+            history_lines.append(get_book_prompt(prompts, "context_objectives").strip())
             for obj in objectives:
                 history_lines.append(f"- {obj}")
         history_context = "\n".join(history_lines)
 
-        focus_clause = f" focusing on {focus}" if focus else ""
+        focus_clause = (
+            get_book_prompt(prompts, "focus_clause").rstrip().format(focus=focus) if focus else ""
+        )
         user_input = (
-            f"Create a short Manim animation that walks through the core "
-            f'derivation of "{chapter_title}"{focus_clause}. Aim for a '
-            "clear, step-by-step explanation a learner can follow."
+            get_book_prompt(prompts, "brief")
+            .strip()
+            .format(chapter_title=chapter_title, focus_clause=focus_clause)
         )
 
         try:

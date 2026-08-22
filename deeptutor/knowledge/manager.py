@@ -11,9 +11,11 @@ import shutil
 import stat
 from typing import Any
 
+from deeptutor.capabilities.marginnote4.store import resolve_db_path
 from deeptutor.knowledge import connections, folders, info, store
 from deeptutor.knowledge.kb_types import (
     IMA_KB_TYPE,
+    MARGINNOTE4_KB_TYPE,
     external_root_of,
     is_connected_kb,
 )
@@ -24,6 +26,8 @@ from deeptutor.services.rag.factory import (
     DEFAULT_PROVIDER,
     IMA_PROVIDER,
     KNOWN_PROVIDERS,
+    PAGEINDEX_OSS_PROVIDER,
+    PAGEINDEX_PROVIDER,
     has_ready_provider_index,
     normalize_provider_name,
 )
@@ -222,18 +226,32 @@ class KnowledgeBaseManager:
             kb_config["progress"] = progress
 
         if status == "ready":
-            fp = _get_embedding_fingerprint()
-            if fp:
-                kb_config["embedding_model"], kb_config["embedding_dim"] = fp
+            provider = normalize_provider_name(kb_config.get("rag_provider"))
+            pageindex_provider = provider in {PAGEINDEX_PROVIDER, PAGEINDEX_OSS_PROVIDER}
+            if pageindex_provider:
+                for key in (
+                    "embedding_model",
+                    "embedding_dim",
+                    "embedding_signature",
+                    "embedding_mismatch",
+                ):
+                    kb_config.pop(key, None)
+            else:
+                fp = _get_embedding_fingerprint()
+                if fp:
+                    kb_config["embedding_model"], kb_config["embedding_dim"] = fp
             # Record the active signature + the on-disk version registry so
             # the UI can render version chips without recomputing.
             try:
-                sig = embedding_signature.signature_from_embedding_config()
+                sig = (
+                    None
+                    if pageindex_provider
+                    else embedding_signature.signature_from_embedding_config()
+                )
                 if sig is not None:
                     kb_config["embedding_signature"] = sig.hash()
                 kb_dir = self.base_dir / name
                 if kb_dir.is_dir():
-                    provider = normalize_provider_name(kb_config.get("rag_provider"))
                     kb_config["index_versions"] = inspect_kb_versions(kb_dir, provider)
             except Exception:  # pragma: no cover - best-effort metadata
                 pass
@@ -563,8 +581,8 @@ class KnowledgeBaseManager:
         knowledge_base_id = (knowledge_base_id or "").strip()
         if not name:
             raise ValueError("Knowledge base name is required.")
-        if not client_id or not api_key:
-            raise ValueError("IMA Client ID and API Key are required.")
+        if bool(client_id) != bool(api_key):
+            raise ValueError("IMA Client ID and API Key must be given together.")
         if not knowledge_base_id:
             raise ValueError("IMA knowledge base ID is required.")
 
@@ -578,8 +596,7 @@ class KnowledgeBaseManager:
             "path": name,
             "type": IMA_KB_TYPE,
             "rag_provider": IMA_PROVIDER,
-            "client_id": client_id,
-            "api_key": api_key,
+            **({"client_id": client_id, "api_key": api_key} if client_id else {}),
             "knowledge_base_id": knowledge_base_id,
             "description": description or f"Tencent IMA: {name}",
             "status": "ready",
@@ -590,6 +607,64 @@ class KnowledgeBaseManager:
         knowledge_bases[name] = entry
         self._save_config()
         return entry
+
+    def register_marginnote4_kb(
+        self,
+        name: str,
+        *,
+        db_path: str = "",
+        description: str = "",
+    ) -> dict:
+        """Register a connected MarginNote 4 library without a local RAG index."""
+        name = (name or "").strip()
+        if not name:
+            raise ValueError("Knowledge base name is required.")
+
+        self.config = self._load_config()
+        knowledge_bases = self.config.setdefault("knowledge_bases", {})
+        if name in knowledge_bases:
+            raise ValueError(f"A knowledge base named '{name}' already exists.")
+
+        db_path = (db_path or "").strip()
+        claimed_by = self._marginnote4_store_owner(name, db_path, knowledge_bases)
+        if claimed_by:
+            raise ValueError(
+                f"Knowledge base '{claimed_by}' already uses that MarginNote store. "
+                "Pick a name that differs by more than punctuation."
+            )
+
+        now = datetime.now().isoformat()
+        entry: dict[str, Any] = {
+            "path": name,
+            "type": MARGINNOTE4_KB_TYPE,
+            "description": description or f"MarginNote 4 library: {name}",
+            "status": "ready",
+            "needs_reindex": False,
+            "created_at": now,
+            "updated_at": now,
+        }
+        if db_path:
+            entry["db_path"] = db_path
+        knowledge_bases[name] = entry
+        self._save_config()
+        return entry
+
+    @staticmethod
+    def _marginnote4_store_owner(
+        name: str,
+        db_path: str,
+        knowledge_bases: dict[str, Any],
+    ) -> str | None:
+        def _store(kb_name: str, entry: dict) -> Path:
+            return resolve_db_path(kb_name, metadata=entry).expanduser().resolve()
+
+        wanted = _store(name, {"db_path": db_path})
+        for other_name, other in knowledge_bases.items():
+            if not isinstance(other, dict) or other.get("type") != MARGINNOTE4_KB_TYPE:
+                continue
+            if _store(other_name, other) == wanted:
+                return other_name
+        return None
 
     def get_knowledge_base_path(self, name: str | None = None) -> Path:
         """Get path to a knowledge base.
@@ -703,7 +778,10 @@ class KnowledgeBaseManager:
         # First, try kb_config.json (authoritative source)
         self.config = self._load_config()
         kb_config = self.config.get("knowledge_bases", {}).get(kb_name, {})
-        return info.get_metadata(kb_name, kb_config)
+        metadata = info.get_metadata(kb_name, kb_config)
+        if kb_config.get("db_path"):
+            metadata["db_path"] = kb_config["db_path"]
+        return metadata
 
     def get_info(
         self,
@@ -742,7 +820,10 @@ class KnowledgeBaseManager:
 
         # Get config from kb_config.json (authoritative source)
         kb_config = self.config.get("knowledge_bases", {}).get(kb_name, {})
-        return info.get_info(self.base_dir, kb_name, kb_config, kb_name == resolved_default)
+        result = info.get_info(self.base_dir, kb_name, kb_config, kb_name == resolved_default)
+        if kb_config.get("db_path"):
+            result["metadata"]["db_path"] = kb_config["db_path"]
+        return result
 
     def delete_knowledge_base(self, name: str, confirm: bool = False) -> bool:
         """
@@ -774,9 +855,12 @@ class KnowledgeBaseManager:
         # reference the user's own external resource — or, for subagents, no
         # folder at all. Deleting one must only drop our pointer entry; never
         # touch what it references, and don't warn about the "missing" folder.
-        connected = is_connected_kb(config_kbs.get(name, {}))
+        entry = config_kbs.get(name, {})
+        connected = is_connected_kb(entry)
         if connected:
             dir_exists = False
+        if entry.get("type") == MARGINNOTE4_KB_TYPE:
+            self._delete_marginnote4_store(name, entry)
 
         if not confirm:
             # Ask for confirmation in CLI
@@ -801,7 +885,11 @@ class KnowledgeBaseManager:
                 # leaving the KB stuck in the list is worse than orphan files on
                 # disk (issue #370).
                 try:
-                    os.chmod(path, stat.S_IRWXU)
+                    current_mode = os.stat(path).st_mode
+                    writable_mode = current_mode | stat.S_IWRITE
+                    if stat.S_ISDIR(current_mode):
+                        writable_mode |= stat.S_IXUSR
+                    os.chmod(path, writable_mode)
                     func(path)
                 except Exception as retry_exc:
                     logger.warning(
@@ -826,6 +914,21 @@ class KnowledgeBaseManager:
 
         self._save_config()
         return True
+
+    def _delete_marginnote4_store(self, name: str, entry: dict) -> None:
+        """Remove the project-owned MarginNote SQLite store, best-effort."""
+        try:
+            db_path = resolve_db_path(name, metadata=entry)
+            db_path.unlink(missing_ok=True)
+            for suffix in ("-wal", "-shm"):
+                db_path.with_name(db_path.name + suffix).unlink(missing_ok=True)
+        except Exception as exc:  # noqa: BLE001 - do not strand the config entry
+            logger.warning(
+                "Could not remove the MarginNote store for KB '%s': %s. "
+                "Continuing; the config entry is still cleaned up.",
+                name,
+                exc,
+            )
 
     def clean_rag_storage(self, name: str | None = None, backup: bool = True) -> bool:
         """

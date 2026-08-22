@@ -1,5 +1,6 @@
 import {
   BarChart3,
+  BookOpenText,
   BrainCircuit,
   Clapperboard,
   Code2,
@@ -50,7 +51,7 @@ export interface CapabilityDef {
   icon: LucideIcon;
   allowedTools: ToolName[];
   defaultTools: ToolName[];
-  loopEngine?: boolean;
+  secondary?: boolean;
 }
 
 export const CAPABILITIES: CapabilityDef[] = [
@@ -78,7 +79,7 @@ export const CAPABILITIES: CapabilityDef[] = [
     icon: BrainCircuit,
     allowedTools: ["web_search", "code_execution", "reason"],
     defaultTools: ["web_search", "code_execution", "reason"],
-    loopEngine: true,
+    secondary: true,
   },
   {
     value: "deep_question",
@@ -112,7 +113,15 @@ export const CAPABILITIES: CapabilityDef[] = [
     icon: GraduationCap,
     allowedTools: ["web_search", "code_execution"],
     defaultTools: [],
-    loopEngine: true,
+    secondary: true,
+  },
+  {
+    value: "immersive_reading",
+    label: "Immersive Reading",
+    description: "Read a document with the assistant, cited line by line",
+    icon: BookOpenText,
+    allowedTools: ["web_search", "code_execution", "reason"],
+    defaultTools: [],
   },
 ];
 

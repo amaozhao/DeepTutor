@@ -22,6 +22,7 @@ from deeptutor.agents.visualize.utils import validate_visualization
 from deeptutor.services.llm.config import get_llm_config
 
 from ..models import BlockType, SourceAnchor
+from ._prompts import get_book_prompt, load_book_prompts
 from .base import BlockContext, BlockGenerator, GenerationFailure
 
 logger = logging.getLogger(__name__)
@@ -39,21 +40,32 @@ class FigureGenerator(BlockGenerator):
         objectives = params.get("objectives") or ctx.chapter.learning_objectives
         variant = str(params.get("variant") or "diagram")
         focus = str(params.get("focus") or "")
+        prompts = load_book_prompts("figure", ctx.language)
 
         history_lines: list[str] = []
         if chapter_summary:
-            history_lines.append(f"Chapter summary: {chapter_summary}")
+            history_lines.append(
+                get_book_prompt(prompts, "context_summary")
+                .strip()
+                .format(chapter_summary=chapter_summary)
+            )
         if objectives:
-            history_lines.append("Learning objectives:")
+            history_lines.append(get_book_prompt(prompts, "context_objectives").strip())
             for obj in objectives:
                 history_lines.append(f"- {obj}")
         history_context = "\n".join(history_lines)
 
-        focus_clause = f" focusing on {focus}" if focus else ""
+        focus_clause = (
+            get_book_prompt(prompts, "focus_clause").rstrip().format(focus=focus) if focus else ""
+        )
         user_input = (
-            f"Create a {variant} figure for the chapter "
-            f'"{chapter_title}"{focus_clause}. The figure should help a '
-            "learner build intuition about the core relationships covered above."
+            get_book_prompt(prompts, "brief")
+            .strip()
+            .format(
+                variant=variant,
+                chapter_title=chapter_title,
+                focus_clause=focus_clause,
+            )
         )
 
         try:

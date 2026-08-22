@@ -2,12 +2,43 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 import sqlite3
 import time
 from typing import Any, Callable
 
 JsonDumps = Callable[[Any], str]
 JsonLoads = Callable[[str | None, Any], Any]
+
+
+@dataclass(frozen=True)
+class QuestionBankQuery:
+    category_id: int | None = None
+    uncategorized: bool = False
+    bookmarked: bool | None = None
+    is_correct: bool | None = None
+    search: str = ""
+    session_id: str | None = None
+    sort: str = "recent"
+    limit: int = 50
+    offset: int = 0
+
+    def normalized(self) -> "QuestionBankQuery":
+        return QuestionBankQuery(
+            category_id=self.category_id,
+            uncategorized=self.uncategorized and self.category_id is None,
+            bookmarked=self.bookmarked,
+            is_correct=self.is_correct,
+            search=(self.search or "").strip()[:200],
+            session_id=self.session_id,
+            sort="oldest" if self.sort == "oldest" else "recent",
+            limit=max(1, min(int(self.limit), 500)),
+            offset=max(0, int(self.offset)),
+        )
+
+
+def _escape_like(value: str) -> str:
+    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
 def upsert_entries(
@@ -128,17 +159,35 @@ def serialize_entry(row: sqlite3.Row, *, json_loads: JsonLoads) -> dict[str, Any
     }
 
 
+def load_categories_for(
+    conn: sqlite3.Connection, entry_ids: list[int]
+) -> dict[int, list[dict[str, Any]]]:
+    if not entry_ids:
+        return {}
+    placeholders = ",".join("?" * len(entry_ids))
+    rows = conn.execute(
+        f"""
+        SELECT ec.entry_id, c.id, c.name
+        FROM notebook_entry_categories ec
+        INNER JOIN notebook_categories c ON c.id = ec.category_id
+        WHERE ec.entry_id IN ({placeholders})
+        ORDER BY c.name
+        """,  # nosec B608 - placeholders contain only generated question marks
+        tuple(entry_ids),
+    ).fetchall()
+    grouped: dict[int, list[dict[str, Any]]] = {entry_id: [] for entry_id in entry_ids}
+    for row in rows:
+        grouped[int(row["entry_id"])].append({"id": int(row["id"]), "name": row["name"]})
+    return grouped
+
+
 def list_entries(
     conn: sqlite3.Connection,
-    category_id: int | None,
-    bookmarked: bool | None,
-    is_correct: bool | None,
-    limit: int,
-    offset: int,
-    session_id: str | None,
+    query: QuestionBankQuery,
     *,
     json_loads: JsonLoads,
 ) -> dict[str, Any]:
+    query = query.normalized()
     base = """
         SELECT
             n.id, n.session_id, COALESCE(s.title, '') AS session_title,
@@ -149,32 +198,50 @@ def list_entries(
         FROM notebook_entries n
         LEFT JOIN sessions s ON s.id = n.session_id
     """
-    count_base = "SELECT COUNT(*) AS cnt FROM notebook_entries n"
+    joins: list[str] = []
     conditions: list[str] = []
     params: list[Any] = []
-    if category_id is not None:
-        join = " INNER JOIN notebook_entry_categories ec ON ec.entry_id = n.id"
-        base += join
-        count_base += join
+    if query.category_id is not None:
+        joins.append(" INNER JOIN notebook_entry_categories ec ON ec.entry_id = n.id")
         conditions.append("ec.category_id = ?")
-        params.append(category_id)
-    if bookmarked is not None:
+        params.append(query.category_id)
+    elif query.uncategorized:
+        conditions.append(
+            "NOT EXISTS (SELECT 1 FROM notebook_entry_categories ec WHERE ec.entry_id = n.id)"
+        )
+    if query.bookmarked is not None:
         conditions.append("n.bookmarked = ?")
-        params.append(1 if bookmarked else 0)
-    if is_correct is not None:
+        params.append(1 if query.bookmarked else 0)
+    if query.is_correct is not None:
         conditions.append("n.is_correct = ?")
-        params.append(1 if is_correct else 0)
-    if session_id is not None:
+        params.append(1 if query.is_correct else 0)
+    if query.session_id is not None:
         conditions.append("n.session_id = ?")
-        params.append(session_id)
+        params.append(query.session_id)
+    if query.search:
+        needle = f"%{_escape_like(query.search)}%"
+        conditions.append(
+            "(n.question LIKE ? ESCAPE '\\' OR n.user_answer LIKE ? ESCAPE '\\' "
+            "OR n.correct_answer LIKE ? ESCAPE '\\' OR n.explanation LIKE ? ESCAPE '\\')"
+        )
+        params.extend([needle] * 4)
+    join = "".join(joins)
+    base += join
+    count_base = "SELECT COUNT(*) AS cnt FROM notebook_entries n" + join
     where = (" WHERE " + " AND ".join(conditions)) if conditions else ""
     total_row = conn.execute(count_base + where, tuple(params)).fetchone()
     total = int(total_row["cnt"]) if total_row else 0
     rows = conn.execute(
-        base + where + " ORDER BY n.created_at DESC LIMIT ? OFFSET ?",
-        tuple(params) + (limit, offset),
+        base
+        + where
+        + f" ORDER BY n.created_at {'ASC' if query.sort == 'oldest' else 'DESC'}, "
+        + f"n.id {'ASC' if query.sort == 'oldest' else 'DESC'} LIMIT ? OFFSET ?",
+        tuple(params) + (query.limit, query.offset),
     ).fetchall()
     items = [serialize_entry(row, json_loads=json_loads) for row in rows]
+    categories = load_categories_for(conn, [int(item["id"]) for item in items])
+    for item in items:
+        item["categories"] = categories.get(int(item["id"]), [])
     return {"items": items, "total": total}
 
 
@@ -265,14 +332,25 @@ def delete_entry(conn: sqlite3.Connection, entry_id: int) -> bool:
     return cur.rowcount > 0
 
 
+def _name_taken(conn: sqlite3.Connection, name: str, *, excluding: int | None = None) -> bool:
+    row = conn.execute(
+        "SELECT id FROM notebook_categories WHERE name = ? COLLATE NOCASE",
+        (name.strip(),),
+    ).fetchone()
+    return row is not None and (excluding is None or int(row["id"]) != excluding)
+
+
 def create_category(conn: sqlite3.Connection, name: str) -> dict[str, Any]:
     now = time.time()
+    cleaned = name.strip()
+    if _name_taken(conn, cleaned):
+        raise ValueError(f"A category named {cleaned!r} already exists.")
     cur = conn.execute(
         "INSERT INTO notebook_categories (name, created_at) VALUES (?, ?)",
-        (name.strip(), now),
+        (cleaned, now),
     )
     conn.commit()
-    return {"id": int(cur.lastrowid), "name": name.strip(), "created_at": now}
+    return {"id": int(cur.lastrowid), "name": cleaned, "created_at": now}
 
 
 def list_categories(conn: sqlite3.Connection) -> list[dict[str, Any]]:
@@ -298,9 +376,12 @@ def list_categories(conn: sqlite3.Connection) -> list[dict[str, Any]]:
 
 
 def rename_category(conn: sqlite3.Connection, category_id: int, name: str) -> bool:
+    cleaned = name.strip()
+    if _name_taken(conn, cleaned, excluding=category_id):
+        raise ValueError(f"A category named {cleaned!r} already exists.")
     cur = conn.execute(
         "UPDATE notebook_categories SET name = ? WHERE id = ?",
-        (name.strip(), category_id),
+        (cleaned, category_id),
     )
     conn.commit()
     return cur.rowcount > 0

@@ -83,6 +83,28 @@ test("chatReducer does not revalidate over a running session", () => {
   assert.notEqual(state.sessions.s1.messages[0]?.id, 99);
 });
 
+test("chatReducer ensures a draft without replacing a configured session", () => {
+  const state = stateWithSession();
+  const next = chatReducer(state, {
+    type: "ENSURE_DRAFT_SESSION",
+    key: "draft-new",
+  });
+
+  assert.equal(next, state);
+  assert.equal(next.selectedKey, "s1");
+});
+
+test("chatReducer applies mastery metadata to its originating session", () => {
+  const state = stateWithSession();
+  const next = chatReducer(state, {
+    type: "SET_MASTERY_PATH_ID",
+    key: "s1",
+    masteryPathId: "path-1",
+  });
+
+  assert.equal(next.sessions.s1.masteryPathId, "path-1");
+});
+
 test("chatReducer reconciles optimistic turn ids from DONE metadata", () => {
   let state = stateWithSession();
   state = chatReducer(state, {

@@ -8,7 +8,12 @@ from typing import Any
 from deeptutor.knowledge.kb_types import external_root_of
 from deeptutor.knowledge.manifest import iter_kb_documents
 from deeptutor.services.rag import embedding_signature
-from deeptutor.services.rag.factory import normalize_provider_name, provider_uses_embedding_versions
+from deeptutor.services.rag.factory import (
+    PAGEINDEX_OSS_PROVIDER,
+    PAGEINDEX_PROVIDER,
+    normalize_provider_name,
+    provider_uses_embedding_versions,
+)
 from deeptutor.services.rag.index_probe import (
     inspect_kb_versions,
     inspect_provider_version,
@@ -148,7 +153,10 @@ def get_info(base_dir: Path, kb_name: str, kb_config: dict, is_default: bool) ->
 
     kb_probe_dir = kb_dir if dir_exists else None
     rag_initialized = has_ready_provider
-    active_signature = embedding_signature.signature_from_embedding_config()
+    pageindex_provider = rag_provider in {PAGEINDEX_PROVIDER, PAGEINDEX_OSS_PROVIDER}
+    active_signature = (
+        None if pageindex_provider else embedding_signature.signature_from_embedding_config()
+    )
     if provider_uses_embedding_versions(rag_provider):
         matched_entry = (
             find_matching_version(kb_probe_dir, active_signature)

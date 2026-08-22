@@ -76,7 +76,7 @@ test('ordinary users can edit only their owner-scoped Codex reasoning overrides'
     card,
     /reasoningEffortOptionsFromSupportedLevels\(\s*model\.supported_reasoning_levels/
   )
-  assert.match(card, /setCodexReasoningEffort\(\s*model\.model,\s*value \|\| null/)
+  assert.match(card, /setCodexReasoningEffort\(\s*model\.model,\s*value \|\| null,?\s*\)/)
 })
 
 test('Codex OAuth copy stays in sync across locales', () => {

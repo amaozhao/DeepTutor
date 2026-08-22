@@ -3,7 +3,9 @@ export interface ChatAgentKnowledgeBase {
   metadata?: {
     type?: string;
     agent_kind?: string;
+    rag_provider?: string;
   };
+  statistics?: { rag_provider?: string };
 }
 
 export function agentKnowledgeBaseNames(
@@ -47,8 +49,20 @@ export function selectedConnectedAgent(
 export function toggleKnowledgeBaseSelection(
   selectedKnowledgeBases: string[],
   name: string,
+  knowledgeBases: ChatAgentKnowledgeBase[] = [],
 ): string[] {
-  return selectedKnowledgeBases.includes(name)
-    ? selectedKnowledgeBases.filter((kb) => kb !== name)
-    : [...selectedKnowledgeBases, name];
+  if (selectedKnowledgeBases.includes(name)) {
+    return selectedKnowledgeBases.filter((kb) => kb !== name);
+  }
+  const providerOf = (kbName: string) => {
+    const kb = knowledgeBases.find((item) => item.name === kbName);
+    return kb?.metadata?.rag_provider || kb?.statistics?.rag_provider || "";
+  };
+  const current =
+    providerOf(name) === "pageindex-oss"
+      ? selectedKnowledgeBases.filter(
+          (kb) => providerOf(kb) !== "pageindex-oss",
+        )
+      : selectedKnowledgeBases;
+  return [...current, name];
 }

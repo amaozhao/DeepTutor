@@ -315,10 +315,7 @@ class TestDownloadAttachments:
                 "_extract_upload_links",
                 return_value=[("img.png", "/user_uploads/2/ce/abc/img.png")],
             ),
-            patch(
-                "deeptutor.partners.channels.zulip.get_media_dir",
-                return_value=tmp_path,
-            ),
+            patch.object(ch, "media_dir", return_value=tmp_path),
             patch("deeptutor.partners.channels.zulip.requests.get") as mock_get,
         ):
             mock_resp = MagicMock()
@@ -352,10 +349,7 @@ class TestDownloadAttachments:
                 "_extract_upload_links",
                 return_value=[("img.png", "/user_uploads/2/ce/abc/img.png")],
             ),
-            patch(
-                "deeptutor.partners.channels.zulip.get_media_dir",
-                return_value=tmp_path,
-            ),
+            patch.object(ch, "media_dir", return_value=tmp_path),
         ):
             RealPath = __import__("pathlib", fromlist=["Path"]).Path
 
@@ -870,10 +864,7 @@ class TestResolveMediaPath:
         ch = _make_channel()
         path_id = "/user_uploads/2/ce/abc123/photo.png"
 
-        with patch(
-            "deeptutor.partners.channels.zulip.get_media_dir",
-            return_value=tmp_path,
-        ):
+        with patch.object(ch, "media_dir", return_value=tmp_path):
             dest = ZulipChannel._attachment_destination(tmp_path, "photo.png", path_id, 0)
             dest.write_bytes(b"cached-data")
 
@@ -886,10 +877,7 @@ class TestResolveMediaPath:
         path_id = "/user_uploads/2/ce/abc123/photo.png"
 
         with (
-            patch(
-                "deeptutor.partners.channels.zulip.get_media_dir",
-                return_value=tmp_path,
-            ),
+            patch.object(ch, "media_dir", return_value=tmp_path),
             patch("deeptutor.partners.channels.zulip.requests.get") as mock_get,
         ):
             mock_resp = MagicMock()
@@ -907,10 +895,7 @@ class TestResolveMediaPath:
         url = "https://example.zulipchat.com/user_uploads/2/ce/abc/photo.png"
 
         with (
-            patch(
-                "deeptutor.partners.channels.zulip.get_media_dir",
-                return_value=tmp_path,
-            ),
+            patch.object(ch, "media_dir", return_value=tmp_path),
             patch("deeptutor.partners.channels.zulip.requests.get") as mock_get,
         ):
             mock_resp = MagicMock()
@@ -926,10 +911,7 @@ class TestResolveMediaPath:
         url = "https://example.zulipchat.com/user_uploads/2/ce/abc/photo.png"
 
         with (
-            patch(
-                "deeptutor.partners.channels.zulip.get_media_dir",
-                return_value=tmp_path,
-            ),
+            patch.object(ch, "media_dir", return_value=tmp_path),
             patch("deeptutor.partners.channels.zulip.requests.get") as mock_get,
         ):
             mock_resp = MagicMock()

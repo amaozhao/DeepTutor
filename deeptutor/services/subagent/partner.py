@@ -25,6 +25,7 @@ from typing import TYPE_CHECKING
 import uuid
 
 from deeptutor.core.stream import StreamEventType
+from deeptutor.multi_user import partner_access
 from deeptutor.services import partners
 from deeptutor.services.subagent.base import OnEvent, SubagentBackend
 from deeptutor.services.subagent.config import BackendConfig
@@ -90,6 +91,13 @@ class PartnerBackend(SubagentBackend):
         if not pid:
             return ConsultResult(success=False, error="No partner is bound to this connection.")
 
+        # Re-check on every consult: a connection may outlive the grant that
+        # created it, and stale metadata must never remain an authorization path.
+        try:
+            partner_access.assert_partner_allowed(pid)
+        except Exception as exc:
+            detail = getattr(exc, "detail", None) or str(exc)
+            return ConsultResult(success=False, error=str(detail))
         manager = get_partner_manager()
         if not manager.partner_exists(pid):
             return ConsultResult(success=False, error=f"Partner '{pid}' no longer exists.")

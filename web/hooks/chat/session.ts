@@ -2,6 +2,11 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import {
+  SESSION_LOAD_TIMEOUT_MS,
+  shouldSurfaceLoadFailure,
+} from "@/lib/session-load";
+
 type RouterLike = {
   replace: (href: string, options?: { scroll?: boolean }) => void;
 };
@@ -32,6 +37,7 @@ export function useChatSessionRoute({
   const prevSessionIdParam = useRef(sessionIdParam);
   const loadAbortRef = useRef<AbortController | null>(null);
   const [sessionLoading, setSessionLoading] = useState(false);
+  const [sessionLoadFailed, setSessionLoadFailed] = useState(false);
 
   const navigateToHome = useCallback(() => {
     router.replace("/home", { scroll: false });
@@ -41,6 +47,7 @@ export function useChatSessionRoute({
     loadAbortRef.current?.abort();
     loadAbortRef.current = null;
     setSessionLoading(false);
+    setSessionLoadFailed(false);
     navigateToHome();
   }, [navigateToHome]);
 
@@ -51,24 +58,42 @@ export function useChatSessionRoute({
       loadAbortRef.current = ctrl;
       const cached = showCachedSession(sid);
       setSessionLoading(!cached);
+      setSessionLoadFailed(false);
+      let timedOut = false;
+      const timeout = setTimeout(() => {
+        timedOut = true;
+        ctrl.abort();
+      }, SESSION_LOAD_TIMEOUT_MS);
 
       void loadSession(sid, { signal: ctrl.signal, revalidate: cached })
         .then(() => {
+          clearTimeout(timeout);
           if (!ctrl.signal.aborted) {
             loadAbortRef.current = null;
             setSessionLoading(false);
           }
         })
         .catch(() => {
-          if (!ctrl.signal.aborted) {
-            loadAbortRef.current = null;
-            setSessionLoading(false);
-            if (!cached) navigateToHome();
-          }
+          clearTimeout(timeout);
+          if (
+            !shouldSurfaceLoadFailure({
+              aborted: ctrl.signal.aborted,
+              timedOut,
+              cached,
+            })
+          )
+            return;
+          loadAbortRef.current = null;
+          setSessionLoading(false);
+          setSessionLoadFailed(true);
         });
     },
-    [loadSession, navigateToHome, showCachedSession],
+    [loadSession, showCachedSession],
   );
+
+  const retrySessionLoad = useCallback(() => {
+    if (sessionIdParam) startSessionLoad(sessionIdParam);
+  }, [sessionIdParam, startSessionLoad]);
 
   useEffect(() => {
     if (initialLoadRef.current) return;
@@ -91,12 +116,14 @@ export function useChatSessionRoute({
     if (sessionIdParam) {
       if (sessionIdParam === sessionId) {
         setSessionLoading(false);
+        setSessionLoadFailed(false);
         return;
       }
       startSessionLoad(sessionIdParam);
     } else {
       newSession();
       setSessionLoading(false);
+      setSessionLoadFailed(false);
     }
   }, [sessionIdParam, startSessionLoad, newSession, sessionId]);
 
@@ -112,6 +139,8 @@ export function useChatSessionRoute({
 
   return {
     sessionLoading,
+    sessionLoadFailed,
     cancelSessionLoad,
+    retrySessionLoad,
   };
 }

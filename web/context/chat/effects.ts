@@ -10,7 +10,6 @@ import {
 import { hasPendingAskUserInMessages } from "@/lib/ask-user-state";
 import type { Action, ProviderState } from "@/context/chat/state";
 import type { ChatRunnerMap } from "@/context/chat/transport";
-import { initialDraftSessionAction } from "@/context/chat/session";
 
 export function useActiveSessionStorageSync(state: ProviderState): void {
   useEffect(() => {
@@ -46,18 +45,15 @@ export function useStoredLanguageSync(dispatch: Dispatch<Action>): void {
 }
 
 export function useInitialDraftSession({
-  selectedKey,
   dispatch,
   makeDraftKey,
 }: {
-  selectedKey: string | null;
   dispatch: Dispatch<Action>;
   makeDraftKey: () => string;
 }): void {
   useEffect(() => {
     if (typeof window === "undefined") return;
-    const action = initialDraftSessionAction({ selectedKey, makeDraftKey });
-    if (action) dispatch(action);
+    dispatch({ type: "ENSURE_DRAFT_SESSION", key: makeDraftKey() });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 }
 

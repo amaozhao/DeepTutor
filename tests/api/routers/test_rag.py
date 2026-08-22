@@ -40,6 +40,7 @@ def test_rag_providers_lists_llamaindex_and_pageindex() -> None:
     assert set(by_id) == {
         "llamaindex",
         "pageindex",
+        "pageindex-oss",
         "graphrag",
         "lightrag",
         "lightrag-server",
@@ -47,12 +48,13 @@ def test_rag_providers_lists_llamaindex_and_pageindex() -> None:
     }
     assert by_id["llamaindex"]["requires_api_key"] is False
     assert by_id["pageindex"]["requires_api_key"] is True
+    assert by_id["pageindex-oss"]["requires_api_key"] is False
     assert by_id["graphrag"]["requires_api_key"] is False
     assert by_id["lightrag"]["requires_api_key"] is False
     assert by_id["lightrag-server"]["requires_api_key"] is False
     assert by_id["lightrag-server"]["configured"] is True
-    assert by_id["ima"]["requires_api_key"] is False
-    assert by_id["ima"]["configured"] is True
+    assert by_id["ima"]["requires_api_key"] is True
+    assert isinstance(by_id["ima"]["configured"], bool)
     assert "hybrid" in by_id["lightrag"]["modes"]
     assert "mix" in by_id["lightrag-server"]["modes"]
     assert not by_id["llamaindex"].get("modes")
@@ -92,4 +94,5 @@ def test_rag_providers_marks_linkable() -> None:
     assert by_id["graphrag"]["linkable"] is True
     assert by_id["lightrag"]["linkable"] is True
     assert by_id["pageindex"]["linkable"] is False
+    assert by_id["pageindex-oss"]["linkable"] is False
     assert by_id["lightrag-server"]["linkable"] is False

@@ -255,6 +255,18 @@ def delete_turn_by_message(
     ids_to_delete = [int(message_id)]
     if paired_msg is not None:
         ids_to_delete.append(int(paired_msg["id"]))
+    # Keep descendant branches reachable after splicing this turn out.
+    for deleted_id in sorted(ids_to_delete, reverse=True):
+        conn.execute(
+            """
+            UPDATE messages
+            SET parent_message_id = (
+                SELECT parent_message_id FROM messages WHERE id = ?
+            )
+            WHERE session_id = ? AND parent_message_id = ?
+            """,
+            (deleted_id, session_id, deleted_id),
+        )
     conn.execute(
         f"DELETE FROM messages WHERE id IN ({','.join('?' * len(ids_to_delete))})",  # nosec B608
         tuple(ids_to_delete),

@@ -22,6 +22,8 @@ from deeptutor.services.path_service import get_path_service
 from .factory import (
     DEFAULT_PROVIDER,
     KNOWN_PROVIDERS,
+    PAGEINDEX_OSS_PROVIDER,
+    PAGEINDEX_PROVIDER,
     get_pipeline,
     list_pipelines,
     normalize_provider_name,
@@ -99,6 +101,19 @@ class RAGService:
         **kwargs,
     ) -> Dict[str, Any]:
         provider = self._resolve_provider(kb_name)
+        if provider in {PAGEINDEX_PROVIDER, PAGEINDEX_OSS_PROVIDER}:
+            message = (
+                "PageIndex uses Reasoning as Retrieval. Read this knowledge base with "
+                "its PageIndex tools inside an agent loop instead of RAGService.search()."
+            )
+            return {
+                "query": query,
+                "answer": message,
+                "content": "",
+                "sources": [],
+                "provider": provider,
+                "error_type": "reasoning_as_retrieval_required",
+            }
         with self._capture_raw_logs(event_sink):
             await self._emit_tool_event(
                 event_sink,

@@ -179,7 +179,12 @@ export function ServiceConfigEditor({ service }: { service: ServiceName }) {
       const response = await apiFetch(apiUrl('/api/v1/settings/fetch-models'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ binding, base_url: baseUrl, api_key: apiKey || null }),
+        body: JSON.stringify({
+          binding,
+          base_url: baseUrl,
+          api_key: apiKey || null,
+          profile_id: profileId,
+        }),
       })
       if (!response.ok) {
         const payload = (await response.json().catch(() => ({}))) as { detail?: string }

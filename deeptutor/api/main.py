@@ -3,7 +3,7 @@ import importlib
 import logging
 import sys
 
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
@@ -39,6 +39,7 @@ from deeptutor.api.routers import (  # noqa: E402
     dashboard,
     imports,
     knowledge,
+    marginnote4,
     mastery_path,
     mcp_settings,
     memory,
@@ -50,6 +51,7 @@ from deeptutor.api.routers import (  # noqa: E402
     question,
     question_notebook,
     quiz_judge,
+    reading,
     sessions,
     settings,
     skills,
@@ -275,6 +277,38 @@ app = FastAPI(
     redirect_slashes=False,
 )
 
+
+@app.middleware("http")
+async def json_error_boundary(request: Request, call_next):
+    """Catch-all so 500s always return JSON, never Starlette's plain-text body.
+
+    Registered as a middleware rather than an ``@app.exception_handler``: a
+    handler for ``Exception`` is installed on Starlette's outermost
+    ``ServerErrorMiddleware``, so its response skips every middleware added
+    here — the 500 would carry no CORS headers (a cross-origin caller sees an
+    opaque CORS failure instead of this body) and would never reach the access
+    log below. Registered *before* ``CORSMiddleware``, this boundary sits
+    inside it, so the response travels back out through the normal stack.
+    """
+    try:
+        return await call_next(request)
+    except Exception as exc:
+        logger.error(
+            "Unhandled exception on %s %s: %s",
+            request.method,
+            request.url.path,
+            exc,
+            exc_info=True,
+        )
+        return JSONResponse(
+            status_code=500,
+            content={
+                "detail": f"{type(exc).__name__}: {exc}",
+                "type": type(exc).__name__,
+            },
+        )
+
+
 # Access logging is funneled through this one middleware. uvicorn's own
 # per-request access log is disabled on every launch path (run_server.py via
 # access_log=False; the launcher and Docker via `--no-access-log`), so routine
@@ -417,6 +451,9 @@ def _install_routers(api: FastAPI) -> None:
     )
     api.include_router(book.router, prefix="/api/v1/book", tags=["book"], dependencies=auth_deps)
     api.include_router(
+        reading.router, prefix="/api/v1/reading", tags=["reading"], dependencies=auth_deps
+    )
+    api.include_router(
         memory.router, prefix="/api/v1/memory", tags=["memory"], dependencies=auth_deps
     )
     api.include_router(
@@ -489,6 +526,14 @@ def _install_routers(api: FastAPI) -> None:
         prefix="/api/attachments",
         tags=["attachments"],
         dependencies=auth_deps,
+    )
+
+    # Pairing/management routes carry auth in-router; sync and heartbeat use
+    # device-token auth because the MarginNote add-on has no browser session.
+    api.include_router(
+        marginnote4.router,
+        prefix="/api/v1/marginnote4",
+        tags=["marginnote4"],
     )
 
     # WebSocket handlers check auth inside the handler because the upgrade path

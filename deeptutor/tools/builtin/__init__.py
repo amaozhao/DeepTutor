@@ -24,6 +24,7 @@ __all__ = [
     "VideogenTool",
     "ListNotebookTool",
     "PaperSearchToolWrapper",
+    "QuestionBankTool",
     "PartnerMemorizeTool",
     "PartnerReadTool",
     "PartnerSearchTool",
@@ -71,7 +72,7 @@ def __getattr__(name: str):
     if name in {"ReadMemoryTool", "WriteMemoryTool"}:
         module = importlib.import_module(f"{__name__}.memory")
         return getattr(module, name)
-    if name in {"ListNotebookTool", "WriteNoteTool"}:
+    if name in {"ListNotebookTool", "QuestionBankTool", "WriteNoteTool"}:
         module = importlib.import_module(f"{__name__}.notes")
         return getattr(module, name)
     if name in {"BrainstormTool", "PaperSearchToolWrapper", "ReasonTool", "WebSearchTool"}:

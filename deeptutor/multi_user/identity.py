@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import datetime, timezone
+import importlib
 import json
 import logging
 from pathlib import Path
@@ -170,6 +171,36 @@ def _migrate_secret() -> None:
         logger.warning("Failed to migrate legacy auth secret: %s", exc)
 
 
+def _env_bootstrap_admin() -> tuple[str, str]:
+    """Return the bootstrap admin accepted by the auth service, if configured."""
+    try:
+        auth_service = importlib.import_module("deeptutor.services.auth")
+
+        username = str(getattr(auth_service, "AUTH_USERNAME", "") or "")
+        password_hash = str(getattr(auth_service, "AUTH_PASSWORD_HASH", "") or "")
+    except Exception as exc:  # pragma: no cover - auth settings unavailable
+        logger.warning("Could not resolve the bootstrap admin credentials: %s", exc)
+        return "", ""
+    return (username, password_hash) if username and password_hash else ("", "")
+
+
+def _env_admin_record(password_hash: str) -> dict[str, Any]:
+    return {
+        "id": "env-admin",
+        "hash": password_hash,
+        "role": "admin",
+        "created_at": "",
+        "disabled": False,
+        "disabled_reason": "",
+        "avatar": "",
+        "token_version": 1,
+        "terms_accepted": False,
+        "terms_accepted_at": "",
+        "terms_version": "",
+        "privacy_version": "",
+    }
+
+
 def load_users(  # nosec B107 - empty defaults mean "no env fallback supplied".
     env_username: str = "",
     env_password_hash: str = "",
@@ -214,28 +245,9 @@ def _load_users_result(
         canonical[str(username)] = record
         changed = changed or record != value
 
-    if canonical:
-        return canonical, changed
-
-    if env_username and env_password_hash:
-        return {
-            env_username: {
-                "id": "env-admin",
-                "hash": env_password_hash,
-                "role": "admin",
-                "created_at": "",
-                "disabled": False,
-                "disabled_reason": "",
-                "avatar": "",
-                "token_version": 1,
-                "terms_accepted": False,
-                "terms_accepted_at": "",
-                "terms_version": "",
-                "privacy_version": "",
-            }
-        }, False
-
-    return {}, changed
+    if env_username and env_password_hash and env_username not in canonical:
+        canonical = {env_username: _env_admin_record(env_password_hash), **canonical}
+    return canonical, changed
 
 
 def _load_users_unlocked(
@@ -244,7 +256,8 @@ def _load_users_unlocked(
 ) -> dict[str, dict[str, Any]]:
     users, needs_write_back = _load_users_result(env_username, env_password_hash)
     if needs_write_back and USERS_FILE.exists():
-        _write_users(users)
+        persisted, _ = _load_users_result()
+        _write_users(persisted)
     return users
 
 
@@ -275,28 +288,11 @@ def _postgres_load_users(
             continue
         canonical[str(username)] = record
         changed = changed or record != value
-    if canonical:
-        if changed:
-            shared_state.save_users(canonical)
-        return canonical
-    if env_username and env_password_hash:
-        return {
-            env_username: {
-                "id": "env-admin",
-                "hash": env_password_hash,
-                "role": "admin",
-                "created_at": "",
-                "disabled": False,
-                "disabled_reason": "",
-                "avatar": "",
-                "token_version": 1,
-                "terms_accepted": False,
-                "terms_accepted_at": "",
-                "terms_version": "",
-                "privacy_version": "",
-            }
-        }
-    return {}
+    if changed:
+        shared_state.save_users(canonical)
+    if env_username and env_password_hash and env_username not in canonical:
+        canonical = {env_username: _env_admin_record(env_password_hash), **canonical}
+    return canonical
 
 
 def _postgres_save_users(users: dict[str, dict[str, Any]]) -> None:
@@ -308,7 +304,9 @@ def save_user(username: str, hashed_password: str, role: Role = "user") -> dict[
     if _postgres_enabled():
 
         def mutate(users: dict[str, dict[str, Any]]) -> dict[str, Any]:
-            effective_role: Role = "admin" if not users else role
+            env_username, _ = _env_bootstrap_admin()
+            account_exists = bool(users) or (bool(env_username) and env_username != username)
+            effective_role: Role = role if account_exists else "admin"
             existing = users.get(username) or {}
             record = {
                 "id": str(existing.get("id") or new_user_id()),
@@ -333,7 +331,9 @@ def save_user(username: str, hashed_password: str, role: Role = "user") -> dict[
     # cannot each see an empty store and each promote themselves to admin.
     with auth_store_write_lock():
         users = _load_users_unlocked()
-        effective_role: Role = "admin" if not users else role
+        env_username, _ = _env_bootstrap_admin()
+        account_exists = bool(users) or (bool(env_username) and env_username != username)
+        effective_role: Role = role if account_exists else "admin"
         existing = users.get(username) or {}
         record = {
             "id": str(existing.get("id") or new_user_id()),
@@ -361,7 +361,9 @@ def create_user(username: str, hashed_password: str, role: Role = "user") -> dic
         def mutate(users: dict[str, dict[str, Any]]) -> dict[str, Any] | None:
             if username in users:
                 return None
-            effective_role: Role = "admin" if not users else role
+            env_username, _ = _env_bootstrap_admin()
+            account_exists = bool(users) or (bool(env_username) and env_username != username)
+            effective_role: Role = role if account_exists else "admin"
             record = {
                 "id": new_user_id(),
                 "hash": hashed_password,
@@ -385,7 +387,9 @@ def create_user(username: str, hashed_password: str, role: Role = "user") -> dic
         users = _load_users_unlocked()
         if username in users:
             return None
-        effective_role: Role = "admin" if not users else role
+        env_username, _ = _env_bootstrap_admin()
+        account_exists = bool(users) or (bool(env_username) and env_username != username)
+        effective_role: Role = role if account_exists else "admin"
         record = {
             "id": new_user_id(),
             "hash": hashed_password,

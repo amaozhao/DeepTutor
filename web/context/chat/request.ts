@@ -1,4 +1,5 @@
 import type { BookReferencePayload } from "@/lib/book-references";
+import { readingTurnFields } from "@/lib/reading-turn-state";
 import type { ChatMessage } from "@/lib/unified-ws";
 import type {
   HistoryReferencePayload,
@@ -178,6 +179,7 @@ export function buildEffectiveChatRequest({
       ? { book_references: effectiveBookReferences as BookReferencePayload[] }
       : {}),
     ...(masteryPathId ? { mastery_path_id: masteryPathId } : {}),
+    ...readingTurnFields(capability),
     persona: effectivePersona,
     ...(effectiveMemoryReferences?.length
       ? { memory_references: effectiveMemoryReferences }

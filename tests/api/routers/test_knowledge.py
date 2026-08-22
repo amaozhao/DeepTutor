@@ -226,6 +226,31 @@ def test_create_preserves_known_nondefault_provider(monkeypatch, tmp_path: Path)
     assert manager.config["knowledge_bases"]["kb-page"]["rag_provider"] == "pageindex"
 
 
+def test_create_pageindex_oss_persists_mode(monkeypatch, tmp_path: Path) -> None:
+    manager = _FakeKBManager(tmp_path / "knowledge_bases")
+    monkeypatch.setattr(knowledge_router_module, "get_kb_manager", lambda: manager)
+    monkeypatch.setattr(knowledge_router_module, "KnowledgeBaseInitializer", _FakeInitializer)
+
+    async def _noop_init_task(*_args, **_kwargs):
+        return None
+
+    monkeypatch.setattr(knowledge_router_module, "run_initialization_task", _noop_init_task)
+
+    with TestClient(_build_app()) as client:
+        response = client.post(
+            "/api/v1/knowledge/create",
+            data={
+                "name": "kb-oss",
+                "rag_provider": "pageindex-oss",
+                "pageindex_mode": "standard",
+            },
+            files=[("files", ("demo.pdf", b"%PDF-1.4\n", "application/pdf"))],
+        )
+
+    assert response.status_code == 200
+    assert manager.config["knowledge_bases"]["kb-oss"]["pageindex_mode"] == "standard"
+
+
 def test_create_rejects_invalid_files_before_registering_kb(monkeypatch, tmp_path: Path) -> None:
     manager = _FakeKBManager(tmp_path / "knowledge_bases")
     monkeypatch.setattr(knowledge_router_module, "get_kb_manager", lambda: manager)
@@ -663,6 +688,41 @@ def test_upload_allows_same_filename_in_different_folders(monkeypatch, tmp_path:
     assert response.status_code == 200
     assert (manager.base_dir / "kb" / "raw" / "ModuleA" / "note.txt").is_file()
     assert (manager.base_dir / "kb" / "raw" / "ModuleB" / "note.txt").is_file()
+
+
+def test_upload_places_batch_under_destination(monkeypatch, tmp_path: Path) -> None:
+    manager = _ready_kb_manager(tmp_path)
+    monkeypatch.setattr(knowledge_router_module, "get_kb_manager", lambda: manager)
+
+    async def _noop_upload_task(*_args, **_kwargs):
+        return None
+
+    monkeypatch.setattr(knowledge_router_module, "run_upload_processing_task", _noop_upload_task)
+
+    with TestClient(_build_app()) as client:
+        response = client.post(
+            "/api/v1/knowledge/kb/upload",
+            files=[("files", ("README.txt", b"cli", "text/plain"))],
+            data={"rel_paths": "DingTalkCLI/README.txt", "dest_subdir": "AppDev"},
+        )
+
+    assert response.status_code == 200
+    assert (manager.base_dir / "kb" / "raw" / "AppDev/DingTalkCLI/README.txt").is_file()
+
+
+def test_upload_destination_rejects_traversal(monkeypatch, tmp_path: Path) -> None:
+    manager = _ready_kb_manager(tmp_path)
+    monkeypatch.setattr(knowledge_router_module, "get_kb_manager", lambda: manager)
+
+    with TestClient(_build_app()) as client:
+        response = client.post(
+            "/api/v1/knowledge/kb/upload",
+            files=[("files", ("note.txt", b"hi", "text/plain"))],
+            data={"dest_subdir": "../../escaped"},
+        )
+
+    assert response.status_code == 400
+    assert not (manager.base_dir.parent / "escaped").exists()
 
 
 def test_move_file_into_folder(monkeypatch, tmp_path: Path) -> None:

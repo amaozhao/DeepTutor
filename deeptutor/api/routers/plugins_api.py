@@ -33,6 +33,7 @@ from deeptutor.logging import (
     capture_process_logs,
     current_log_context,
 )
+from deeptutor.multi_user.partner_access import assert_partner_allowed
 from deeptutor.runtime.orchestrator import ChatOrchestrator
 from deeptutor.runtime.registry.capability_registry import get_capability_registry
 from deeptutor.runtime.registry.tool_registry import get_tool_registry
@@ -311,6 +312,7 @@ async def _execute_capability_stream(
             yield _sse("error", {"detail": "content is required"})
             return
         try:
+            assert_partner_allowed(partner_id)
             await _ensure_running_partner(partner_id)
         except HTTPException as exc:
             yield _sse("error", {"detail": exc.detail, "status_code": exc.status_code})
