@@ -29,7 +29,7 @@ def _build_app() -> FastAPI:
     if FastAPI is None or router is None:  # pragma: no cover - guarded by pytestmark
         raise RuntimeError("fastapi is not installed")
     app = FastAPI()
-    app.include_router(router, prefix="/api/v1/knowledge")
+    app.include_router(router, prefix="/api")
     return app
 
 
@@ -76,7 +76,7 @@ def test_probe_folder_endpoint_finds_ready_index(tmp_path: Path) -> None:
 
     with TestClient(_build_app()) as client:
         response = client.post(
-            "/api/v1/knowledge/probe-folder",
+            "/api/knowledge-bases/probe-folder",
             json={"folder_path": str(tmp_path), "rag_provider": "llamaindex"},
         )
 
@@ -89,7 +89,7 @@ def test_probe_folder_endpoint_finds_ready_index(tmp_path: Path) -> None:
 def test_probe_folder_endpoint_rejects_pageindex(tmp_path: Path) -> None:
     with TestClient(_build_app()) as client:
         response = client.post(
-            "/api/v1/knowledge/probe-folder",
+            "/api/knowledge-bases/probe-folder",
             json={"folder_path": str(tmp_path), "rag_provider": "pageindex"},
         )
     assert response.status_code == 200
@@ -119,7 +119,7 @@ def test_probe_lightrag_server_endpoint_reports_verdict(monkeypatch) -> None:
     _patch_server_probe(monkeypatch, ok=True)
     with TestClient(_build_app()) as client:
         response = client.post(
-            "/api/v1/knowledge/probe-lightrag-server",
+            "/api/knowledge-bases/probe-lightrag-server",
             json={"server_url": "http://localhost:9621", "api_key": "k"},
         )
     assert response.status_code == 200
@@ -135,7 +135,7 @@ def test_connect_lightrag_server_registers_pointer(monkeypatch, tmp_path: Path) 
 
     with TestClient(_build_app()) as client:
         response = client.post(
-            "/api/v1/knowledge/connect-lightrag-server",
+            "/api/knowledge-bases/connect-lightrag-server",
             json={
                 "name": "remote-kb",
                 "server_url": "http://localhost:9621/",
@@ -160,7 +160,7 @@ def test_connect_lightrag_server_rejects_unreachable(monkeypatch, tmp_path: Path
 
     with TestClient(_build_app()) as client:
         response = client.post(
-            "/api/v1/knowledge/connect-lightrag-server",
+            "/api/knowledge-bases/connect-lightrag-server",
             json={"name": "bad", "server_url": "http://nope:9621"},
         )
 

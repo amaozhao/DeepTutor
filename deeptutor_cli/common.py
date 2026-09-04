@@ -20,7 +20,7 @@ from rich.table import Table
 from rich.text import Text
 
 from deeptutor.app import DeepTutorApp, TurnRequest
-from deeptutor.core.stream_bus import get_bus
+from deeptutor.runtime.stream_bus import get_bus
 
 from ._tool_result import ToolResultBuffer, ToolResultEntry
 

@@ -20,8 +20,10 @@ if FastAPI is not None and TestClient is not None:
     knowledge_router_module = importlib.import_module("deeptutor.api.routers.knowledge")
     config_router_module = importlib.import_module("deeptutor.api.routers.knowledge_config")
     router = knowledge_router_module.router
+    knowledge_access_module = importlib.import_module("deeptutor.multi_user.knowledge_access")
 else:  # pragma: no cover - optional dependency in lightweight envs
     config_router_module = None
+    knowledge_access_module = None
     router = None
 
 
@@ -29,7 +31,7 @@ def _build_app() -> FastAPI:
     if FastAPI is None or router is None:  # pragma: no cover - guarded by pytestmark
         raise RuntimeError("fastapi is not installed")
     app = FastAPI()
-    app.include_router(router, prefix="/api/v1/knowledge")
+    app.include_router(router, prefix="/api")
     return app
 
 
@@ -63,7 +65,7 @@ def test_update_config_coerces_legacy_provider_to_llamaindex(monkeypatch) -> Non
 
     with TestClient(_build_app()) as client:
         response = client.put(
-            "/api/v1/knowledge/demo/config",
+            "/api/knowledge-bases/demo/config",
             json={"rag_provider": "raganything"},
         )
 
@@ -78,7 +80,7 @@ def test_update_config_preserves_known_provider(monkeypatch) -> None:
 
     with TestClient(_build_app()) as client:
         response = client.put(
-            "/api/v1/knowledge/demo/config",
+            "/api/knowledge-bases/demo/config",
             json={"rag_provider": "pageindex"},
         )
 
@@ -95,11 +97,11 @@ def test_update_config_rejects_provider_change_for_ready_index(monkeypatch, tmp_
     config_module = importlib.import_module("deeptutor.services.config")
 
     monkeypatch.setattr(config_module, "get_kb_config_service", lambda: fake_service)
-    monkeypatch.setattr(config_router_module, "_kb_base_dir_resolver", lambda: tmp_path)
+    monkeypatch.setattr(knowledge_router_module, "_current_kb_base_dir", lambda: tmp_path)
 
     with TestClient(_build_app()) as client:
         response = client.put(
-            "/api/v1/knowledge/demo/config",
+            "/api/knowledge-bases/demo/config",
             json={"rag_provider": "pageindex"},
         )
 

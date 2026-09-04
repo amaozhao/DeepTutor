@@ -32,7 +32,7 @@ def _build_app() -> FastAPI:
     if FastAPI is None or router is None:  # pragma: no cover - guarded by pytestmark
         raise RuntimeError("fastapi is not installed")
     app = FastAPI()
-    app.include_router(router, prefix="/api/v1/knowledge")
+    app.include_router(router, prefix="/api")
     return app
 
 
@@ -45,10 +45,10 @@ def test_get_progress_returns_persisted_progress(monkeypatch, tmp_path: Path) ->
         encoding="utf-8",
     )
     resource = SimpleNamespace(name="kb", base_dir=base_dir)
-    monkeypatch.setattr(knowledge_progress_module, "resolve_kb", lambda _kb_name: resource)
+    monkeypatch.setattr(knowledge_router_module, "resolve_kb", lambda _kb_name: resource)
 
     with TestClient(_build_app()) as client:
-        response = client.get("/api/v1/knowledge/kb/progress")
+        response = client.get("/api/knowledge-bases/kb/progress")
 
     assert response.status_code == 200
     assert response.json()["stage"] == "processing"
@@ -74,7 +74,7 @@ def test_clear_progress_uses_writable_kb_resolver(monkeypatch, tmp_path: Path) -
     monkeypatch.setattr(knowledge_router_module, "get_kb_manager", lambda: _Manager(base_dir))
 
     with TestClient(_build_app()) as client:
-        response = client.post("/api/v1/knowledge/kb/progress/clear")
+        response = client.post("/api/knowledge-bases/kb/progress/clear")
 
     assert response.status_code == 200
     assert not progress_file.exists()
@@ -83,5 +83,5 @@ def test_clear_progress_uses_writable_kb_resolver(monkeypatch, tmp_path: Path) -
 def test_task_stream_route_is_still_mounted() -> None:
     app = _build_app()
     assert str(app.url_path_for("stream_task_logs", task_id="task")) == (
-        "/api/v1/knowledge/tasks/task/stream"
+        "/api/knowledge-bases/tasks/task/stream"
     )

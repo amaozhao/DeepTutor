@@ -21,9 +21,11 @@ if FastAPI is not None and TestClient is not None:
     knowledge_router_module = importlib.import_module("deeptutor.api.routers.knowledge")
     knowledge_linked_module = importlib.import_module("deeptutor.api.routers.knowledge_linked")
     router = knowledge_router_module.router
+    knowledge_access_module = importlib.import_module("deeptutor.multi_user.knowledge_access")
 else:  # pragma: no cover - optional dependency in lightweight envs
     knowledge_router_module = None
     knowledge_linked_module = None
+    knowledge_access_module = None
     router = None
 
 
@@ -31,7 +33,7 @@ def _build_app() -> FastAPI:
     if FastAPI is None or router is None:  # pragma: no cover - guarded by pytestmark
         raise RuntimeError("fastapi is not installed")
     app = FastAPI()
-    app.include_router(router, prefix="/api/v1/knowledge")
+    app.include_router(router, prefix="/api")
     return app
 
 
@@ -105,7 +107,7 @@ def test_link_folder_uses_existing_knowledge_url(monkeypatch, tmp_path: Path) ->
 
     with TestClient(_build_app()) as client:
         response = client.post(
-            "/api/v1/knowledge/kb/link-folder",
+            "/api/knowledge-bases/kb/link-folder",
             json={"folder_path": str(tmp_path / "docs")},
         )
 
@@ -117,11 +119,11 @@ def test_link_folder_uses_existing_knowledge_url(monkeypatch, tmp_path: Path) ->
 def test_get_linked_folders_reads_resolved_resource(monkeypatch, tmp_path: Path) -> None:
     manager = _FakeKBManager(tmp_path / "knowledge_bases")
     resource = SimpleNamespace(name="kb")
-    monkeypatch.setattr(knowledge_linked_module, "resolve_kb", lambda _kb_name: resource)
-    monkeypatch.setattr(knowledge_linked_module, "manager_for_resource", lambda _resource: manager)
+    monkeypatch.setattr(knowledge_router_module, "resolve_kb", lambda _kb_name: resource)
+    monkeypatch.setattr(knowledge_router_module, "manager_for_resource", lambda _resource: manager)
 
     with TestClient(_build_app()) as client:
-        response = client.get("/api/v1/knowledge/kb/linked-folders")
+        response = client.get("/api/knowledge-bases/kb/linked-folders")
 
     assert response.status_code == 200
     assert response.json()[0]["id"] == "folder-1"
@@ -145,7 +147,7 @@ def test_sync_folder_schedules_upload_task(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setattr(knowledge_router_module, "run_upload_processing_task", _upload_task)
 
     with TestClient(_build_app()) as client:
-        response = client.post("/api/v1/knowledge/kb/sync-folder/folder-1")
+        response = client.post("/api/knowledge-bases/kb/sync-folder/folder-1")
 
     assert response.status_code == 200
     assert response.json()["new_files"] == 1
@@ -163,6 +165,6 @@ def test_unlink_folder_reports_missing_id(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setattr(knowledge_router_module, "get_kb_manager", lambda: manager)
 
     with TestClient(_build_app()) as client:
-        response = client.delete("/api/v1/knowledge/kb/linked-folders/missing")
+        response = client.delete("/api/knowledge-bases/kb/linked-folders/missing")
 
     assert response.status_code == 404
